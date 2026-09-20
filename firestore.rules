@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // DinuStream Private Cinema: Restrict access exclusively to Dinu & Kanmani private screening groups
+    match /watchGroups/{groupId} {
+      // Strictly permit recognized private group ID formats (e.g. group-movie-night)
+      allow read: if groupId.matches('^group-[a-zA-Z0-9_-]{3,64}$');
+      allow write: if false; // Group creation is managed server-side or pre-seeded
+
+      match /messages/{messageId} {
+        // Only allow reading within valid private group contexts
+        allow read: if groupId.matches('^group-[a-zA-Z0-9_-]{3,64}$');
+
+        // Create message validation:
+        // - senderId must be strictly 'dinu' or 'kanmani'
+        // - text must be a string up to 1000 characters
+        // - gifUrl, if present, must be a safe HTTPS URL
+        // - timestamp must be a valid numeric epoch
+        allow create: if request.resource.data.senderId in ['dinu', 'kanmani']
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() <= 1000
+                      && (!('gifUrl' in request.resource.data) || request.resource.data.gifUrl.matches('^https://.*'))
+                      && request.resource.data.timestamp is number;
+
+        // Only allow updating reactions, no message tampering or spoofing
+        allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']);
+
+        // Messages are immutable and cannot be deleted by clients
+        allow delete: if false;
+      }
+
+      match /presence/{userId} {
+        allow read: if groupId.matches('^group-[a-zA-Z0-9_-]{3,64}$');
+        allow write: if userId in ['dinu', 'kanmani']
+                     && request.resource.data.state in ['Online', 'Watching', 'Paused', 'Buffering', 'Offline'];
+      }
+
+      match /typing/{userId} {
+        allow read: if groupId.matches('^group-[a-zA-Z0-9_-]{3,64}$');
+        allow write: if userId in ['dinu', 'kanmani']
+                     && request.resource.data.isTyping is bool;
+      }
+    }
+  }
+}

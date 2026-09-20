@@ -1,0 +1,143 @@
+/* DinuStream — Private Cinema Design System Tokens & Aesthetics */
+
+:root {
+  /* Near-black cinematic background with midnight ink undertones */
+  --cinema-bg: #06080d;
+  --cinema-surface: #0c111a;
+  --cinema-surface-elevated: #111724;
+  --cinema-surface-highlight: #172133;
+
+  /* Midnight Blue Accents */
+  --cinema-midnight: #162032;
+  --cinema-midnight-hover: #1e2c45;
+  --cinema-midnight-active: #253755;
+  --cinema-midnight-subtle: rgba(22, 32, 50, 0.6);
+
+  /* Subtle Silver & Platinum */
+  --cinema-silver-light: #f1f5f9;
+  --cinema-silver-base: #cbd5e1;
+  --cinema-silver-muted: #94a3b8;
+  --cinema-silver-subtle: #64748b;
+  --cinema-silver-border: rgba(203, 213, 225, 0.12);
+  --cinema-silver-border-hover: rgba(203, 213, 225, 0.25);
+
+  /* Private Profiles — Understated Accents */
+  --cinema-dinu-accent: #38bdf8;
+  --cinema-dinu-muted: rgba(56, 189, 248, 0.15);
+  --cinema-kanmani-accent: #f43f5e;
+  --cinema-kanmani-muted: rgba(244, 63, 94, 0.15);
+}
+
+/* Base Viewport & Typography */
+html,
+body {
+  background-color: var(--cinema-bg);
+  color: var(--cinema-silver-light);
+  color-scheme: dark;
+  overflow-x: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Restrained, Minimal Cinema Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #06080d;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e2638;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2d3b55;
+}
+
+/* Delicate Film Texture */
+.cinema-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.02'/%3E%3C/svg%3E");
+}
+
+/* Subtle, Understated Silver Sheen */
+.silver-shimmer {
+  background: linear-gradient(
+    110deg,
+    #94a3b8 0%,
+    #f8fafc 40%,
+    #cbd5e1 60%,
+    #94a3b8 100%
+  );
+  background-size: 200% 100%;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Refined TV / Keyboard Focus Ring */
+.cinema-focus:focus-visible {
+  outline: 2px solid rgba(203, 213, 225, 0.6);
+  outline-offset: 3px;
+  transition: outline 0.15s ease;
+}
+
+/* ==========================================================================
+   10-Foot UI / Large TV Mode Optimization
+   ========================================================================== */
+[data-tv-mode="true"] {
+  font-size: 18px;
+}
+
+[data-tv-mode="true"] .cinema-focus:focus-visible,
+[data-tv-mode="true"] button:focus-visible,
+[data-tv-mode="true"] a:focus-visible,
+[data-tv-mode="true"] [role="button"]:focus-visible,
+[data-tv-mode="true"] input:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 4px #38bdf8, 0 0 28px rgba(56, 189, 248, 0.85) !important;
+  transform: scale(1.04);
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease;
+  z-index: 40 !important;
+}
+
+[data-tv-mode="true"] h1 {
+  font-size: 3.25rem !important;
+  line-height: 1.15 !important;
+}
+
+[data-tv-mode="true"] h2 {
+  font-size: 2.25rem !important;
+  line-height: 1.25 !important;
+}
+
+[data-tv-mode="true"] h3 {
+  font-size: 1.75rem !important;
+}
+
+/* TV Remote Friendly Large Buttons */
+[data-tv-mode="true"] button,
+[data-tv-mode="true"] .btn-tv {
+  min-height: 48px;
+}
+
+[data-tv-mode="true"] .tv-large-btn {
+  min-height: 60px;
+  font-size: 1.15rem;
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
+/* Mobile Safe-Area Utilities */
+.pb-safe {
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+}
+
+.pt-safe {
+  padding-top: max(12px, env(safe-area-inset-top, 12px));
+}
+
