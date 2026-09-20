@@ -32,8 +32,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'PIN is required' }, { status: 400 });
     }
 
-    // Configured admin PIN from environment variable, with secure server fallback
-    const targetPin = process.env.ADMIN_MASTER_PIN || '1337';
+    // Require configured admin master PIN from environment variable (no fallback secrets)
+    const targetPin = process.env.ADMIN_MASTER_PIN;
+    if (!targetPin) {
+      console.error('[Auth Error]: ADMIN_MASTER_PIN is not configured on the server');
+      return NextResponse.json(
+        { error: 'Master PIN authorization is not configured on this server' },
+        { status: 500 }
+      );
+    }
 
     // Constant-time comparison to prevent timing attacks
     const pinBuffer = Buffer.from(pin.padEnd(32, ' '));
@@ -44,9 +51,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid master PIN' }, { status: 401 });
     }
 
+    // Server-side HMAC secret strictly from environment variables
+    const hmacSecret = process.env.SYNC_MANAGER_API_KEY || targetPin;
+
     // Create session signature
     const sessionToken = crypto
-      .createHmac('sha256', process.env.SYNC_MANAGER_API_KEY || 'dinustream_secure_session_secret')
+      .createHmac('sha256', hmacSecret)
       .update(`dinu_admin_session_${Math.floor(Date.now() / (1000 * 60 * 60 * 24))}`)
       .digest('hex');
 

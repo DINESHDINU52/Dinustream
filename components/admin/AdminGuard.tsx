@@ -114,7 +114,7 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
         <div className="mt-6 pt-5 border-t border-white/[0.06]">
           <form onSubmit={handlePinSubmit} className="space-y-3">
             <label className="block text-[11px] font-mono text-slate-400 text-left">
-              Or enter Master PIN (default: 1337):
+              Or enter Master PIN:
             </label>
             <div className="flex gap-2">
               <input
