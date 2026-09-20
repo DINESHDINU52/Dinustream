@@ -7,18 +7,17 @@ import { CinemaShell } from '@/components/layout/CinemaShell';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { GlassPanel } from '@/components/ui/GlassPanel';
-import { Modal } from '@/components/ui/Modal';
 import { Drawer } from '@/components/ui/Drawer';
 import { Toast } from '@/components/ui/Toast';
 import { Avatar } from '@/components/ui/Avatar';
 import { MediaCard } from '@/components/ui/MediaCard';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { getMediaById, getSimilarMedia, FEATURED_HERO_MEDIA } from '@/lib/mock-data';
 import { mediaService } from '@/lib/services/mediaService';
 import { MediaItem } from '@/types/cinema';
-import { SyncAndPlayButton, CacheStatus } from '@/components/sync';
-import { getSyncStatus, SyncState } from '@/lib/api/syncManager';
+import { SyncAndPlayButton } from '@/components/sync';
 import {
   Play,
   Plus,
@@ -27,53 +26,53 @@ import {
   ArrowLeft,
   Volume2,
   Subtitles,
-  HardDrive,
+  Sparkles,
 } from 'lucide-react';
 
 export default function MovieDetailsPage() {
   const params = useParams();
   const router = useRouter();
-  const { profile, companionProfile } = useActiveProfile();
+  const { profile, companionProfile, myList, toggleMyList } = useActiveProfile();
 
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
-  const [liveMedia, setLiveMedia] = useState<MediaItem | null>(null);
 
-  useEffect(() => {
-    if (id) {
-      mediaService.getMediaById(id).then((m) => {
-        if (m) setLiveMedia(m);
-      }).catch(() => {});
-    }
-  }, [id]);
-
-  const fallbackMedia = useMemo(() => {
-    if (!id) return FEATURED_HERO_MEDIA;
-    return getMediaById(id) || FEATURED_HERO_MEDIA;
-  }, [id]);
-
-  const media = liveMedia || fallbackMedia;
-
-  const similarMedia = useMemo(() => {
-    return getSimilarMedia(media.id, 6);
-  }, [media.id]);
-
-  const [savedIds, setSavedIds] = useState<string[]>([
-    'blade-runner-2049',
-    'dune-part-two',
-    'shogun',
-  ]);
+  const [loading, setLoading] = useState(true);
+  const [media, setMedia] = useState<MediaItem | null>(null);
+  const [similarMovies, setSimilarMovies] = useState<MediaItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [toastInfo, setToastInfo] = useState<{ message: string; subtext?: string } | null>(null);
-  const [isTrailerOpen, setIsTrailerOpen] = useState(false);
   const [isSyncDrawerOpen, setIsSyncDrawerOpen] = useState(false);
-  const [cacheState, setCacheState] = useState<SyncState>('not_cached');
 
   useEffect(() => {
-    getSyncStatus(`${media.id}.mkv`)
-      .then((res) => setCacheState(res.state))
-      .catch(() => setCacheState('not_cached'));
-  }, [media.id]);
+    if (!id) return;
+    setLoading(true);
+    setError(null);
 
-  const isSaved = savedIds.includes(media.id);
+    mediaService
+      .getMediaById(id)
+      .then(async (m) => {
+        if (!m) {
+          setError('Movie not found in your private vault');
+          setLoading(false);
+          return;
+        }
+        setMedia(m);
+
+        // Fetch similar movies from Jellyfin
+        const allMovies = await mediaService.getMovies(20).catch(() => []);
+        const similar = allMovies
+          .filter((item) => item.id !== m.id)
+          .slice(0, 6);
+        setSimilarMovies(similar);
+      })
+      .catch((err) => {
+        console.error('[MovieDetailsPage] Failed to fetch movie:', err);
+        setError('Unable to load movie details from server');
+      })
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  const isSaved = media ? myList.includes(media.id) : false;
 
   const notify = (message: string, subtext?: string) => {
     setToastInfo({ message, subtext });
@@ -81,20 +80,53 @@ export default function MovieDetailsPage() {
   };
 
   const handleToggleSave = () => {
-    setSavedIds((prev) => {
-      const exists = prev.includes(media.id);
-      const updated = exists ? prev.filter((item) => item !== media.id) : [...prev, media.id];
-      notify(
-        exists ? `Removed "${media.title}" from My List` : `Added "${media.title}" to ${profile.name}'s List`,
-        'Updated private screening list'
-      );
-      return updated;
-    });
+    if (!media) return;
+    const added = toggleMyList(media.id);
+    notify(
+      added ? `Added "${media.title}" to ${profile.name}'s List` : `Removed "${media.title}" from My List`,
+      'Updated private screening list'
+    );
   };
+
+  if (loading) {
+    return (
+      <CinemaShell>
+        <div className="min-h-[80vh] flex flex-col justify-center items-center gap-4">
+          <div className="w-10 h-10 border-2 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
+          <p className="text-xs text-slate-400 font-mono tracking-wider uppercase">
+            Loading movie presentation...
+          </p>
+        </div>
+      </CinemaShell>
+    );
+  }
+
+  if (error || !media) {
+    return (
+      <CinemaShell>
+        <div className="max-w-2xl mx-auto px-4 py-24 text-center">
+          <ErrorState
+            title="Feature Unavailable"
+            message={error || 'This title could not be found.'}
+            onRetry={() => router.push('/')}
+          />
+          <div className="mt-6">
+            <Button
+              variant="secondary"
+              icon={<ArrowLeft className="w-4 h-4" />}
+              onClick={() => router.push('/')}
+            >
+              Return to Cinema Hall
+            </Button>
+          </div>
+        </div>
+      </CinemaShell>
+    );
+  }
 
   return (
     <CinemaShell>
-      {/* Toast Notification System */}
+      {/* Toast Notification */}
       <Toast
         message={toastInfo?.message || ''}
         subtext={toastInfo?.subtext}
@@ -103,82 +135,48 @@ export default function MovieDetailsPage() {
         onDismiss={() => setToastInfo(null)}
       />
 
-      {/* Trailer Video Preview Modal */}
-      <Modal
-        isOpen={isTrailerOpen}
-        onClose={() => setIsTrailerOpen(false)}
-        kicker="Official Cinema Trailer"
-        title={`${media.title} — 4K Atmos Preview`}
-        description="Reference theatrical preview stream calibrated with uncompressed multichannel audio."
-        size="xl"
-      >
-        <div className="space-y-4">
-          <div className="relative aspect-video rounded-lg overflow-hidden bg-black border border-slate-400/[0.12] flex items-center justify-center group shadow-2xl">
-            {/* Backdrop preview representation */}
-            <div
-              className="absolute inset-0 bg-cover bg-center opacity-60 filter blur-[1px]"
-              style={{ backgroundImage: `url(${media.backdropUrl})` }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/60" />
-
-            <div className="relative z-10 text-center space-y-3 p-6">
-              <div className="w-16 h-16 rounded-full bg-white/90 text-zinc-950 flex items-center justify-center mx-auto shadow-2xl transition-transform hover:scale-105">
-                <Play className="w-7 h-7 fill-current ml-1" />
-              </div>
-              <div>
-                <p className="text-base font-semibold text-white">Theatrical Trailer Stream</p>
-                <p className="text-xs text-slate-300">4K UHD • Dolby Atmos 7.1.4 Surround</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-            <span>Director: {media.director}</span>
-            <div className="flex items-center gap-2">
-              <Badge variant="atmos" size="sm">Dolby Atmos</Badge>
-              <Badge variant="uhd" size="sm">4K UHD</Badge>
-            </div>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Synchronized Watch Room Drawer */}
+      {/* Synchronized Screening Room Drawer */}
       <Drawer
         isOpen={isSyncDrawerOpen}
         onClose={() => setIsSyncDrawerOpen(false)}
-        kicker="Screening Room"
-        title={`Sync & Play: ${media.title}`}
+        kicker="Private Screening Room"
+        title="Sync & Play Together"
       >
-        <div className="space-y-5">
-          <div className="p-3.5 rounded-lg bg-[#111927] border border-slate-400/[0.12] space-y-2.5">
+        <div className="space-y-6">
+          <div className="p-4 rounded-xl bg-[#0b101b] border border-slate-700/40 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-white">Private Room Active</span>
-              <Badge variant="sync" size="sm">Connected</Badge>
+              <span className="text-xs font-semibold text-white">Live Session Ready</span>
+              <Badge variant="sync" size="sm">Sub-100ms Sync</Badge>
             </div>
             <div className="flex items-center justify-between pt-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <Avatar profile={profile} size="sm" />
-                <span className="text-xs text-slate-200">{profile.name} (Host)</span>
+                <div>
+                  <p className="text-xs font-medium text-slate-200">{profile.name}</p>
+                  <p className="text-[10px] text-cyan-400">Host</p>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <Avatar profile={companionProfile} size="sm" />
-                <span className="text-xs text-slate-200">{companionProfile.name}</span>
+                <div>
+                  <p className="text-xs font-medium text-slate-200">{companionProfile.name}</p>
+                  <p className="text-[10px] text-rose-400">Companion</p>
+                </div>
               </div>
             </div>
           </div>
 
           <p className="text-xs text-slate-400 font-light leading-relaxed">
-            Invite sent to {companionProfile.name}. Both players will lockstep sync play, pause, and seek commands in 4K Atmos.
+            Clicking Launch will start playback on both screens simultaneously, syncing play, pause, and seek events with drift correction.
           </p>
 
           <Button
-            variant="silver"
-            size="md"
-            fullWidth
-            icon={<Play className="w-4 h-4 fill-current" />}
+            variant="primary"
+            className="w-full justify-center"
+            icon={<Sparkles className="w-4 h-4" />}
             onClick={() => {
               setIsSyncDrawerOpen(false);
-              notify(`Launching synchronized screening of "${media.title}"`);
+              router.push(`/watch/${media.id}?sync=true`);
             }}
           >
             Launch Synchronized Stream
@@ -186,303 +184,173 @@ export default function MovieDetailsPage() {
         </div>
       </Drawer>
 
-      {/* Main Details Presentation Container */}
-      <div className="relative min-h-screen">
-        {/* Full Cinematic Backdrop Hero */}
-        <div className="relative w-full min-h-[70vh] sm:min-h-[75vh] lg:min-h-[82vh] overflow-hidden">
-          {/* Backdrop Image */}
-          <motion.div
-            initial={{ opacity: 0, scale: 1.05 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, ease: 'easeOut' }}
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${media.backdropUrl})` }}
+      <div className="relative min-h-screen pb-20">
+        {/* Back Button */}
+        <div className="absolute top-6 left-4 sm:left-8 z-30">
+          <button
+            onClick={() => router.back()}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#080d17]/80 hover:bg-[#121c2f] border border-white/[0.08] text-xs font-medium text-slate-300 hover:text-white backdrop-blur-md transition-all shadow-lg shadow-black/50 cinema-focus"
+            aria-label="Go Back"
           >
-            {/* Multi-angle cinematic scrims */}
-            <div className="absolute inset-0 bg-gradient-to-r from-[#06080d] via-[#06080d]/85 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#06080d] via-[#06080d]/60 to-transparent" />
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(6,8,13,0.92)_100%)]" />
-          </motion.div>
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back</span>
+          </button>
+        </div>
 
-          {/* Navigation Back Pill */}
-          <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 pt-24 sm:pt-28">
-            <button
-              onClick={() => router.push('/')}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#090e17]/80 hover:bg-[#121927] border border-slate-400/[0.12] text-xs font-medium text-slate-300 hover:text-white transition-colors cinema-focus"
+        {/* Hero Backdrop Presentation */}
+        <div className="relative w-full h-[65vh] sm:h-[75vh] max-h-[800px] overflow-hidden">
+          <img
+            src={media.backdropUrl || media.posterUrl}
+            alt={media.title}
+            className="w-full h-full object-cover object-center filter brightness-[0.75]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#05070c] via-[#05070c]/50 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#05070c] via-[#05070c]/40 to-transparent" />
+
+          {/* Hero Content Overlay */}
+          <div className="absolute bottom-0 left-0 right-0 max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 pb-12 z-20">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="max-w-3xl space-y-4"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Back to Browse</span>
-            </button>
-          </div>
-
-          {/* Hero Content Information with Poster */}
-          <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 pt-6 sm:pt-10 pb-16">
-            <div className="flex flex-col md:flex-row items-start gap-8 lg:gap-12">
-              {/* Poster Column */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
-                className="shrink-0 w-44 sm:w-56 md:w-64 lg:w-72 aspect-[2/3] rounded-xl overflow-hidden border border-slate-400/[0.18] shadow-[0_16px_48px_rgba(0,0,0,0.9)] bg-[#090e17] hidden sm:block"
-              >
-                <div
-                  className="w-full h-full bg-cover bg-center"
-                  style={{ backgroundImage: `url(${media.posterUrl})` }}
-                />
-              </motion.div>
-
-              {/* Information Column */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.15 }}
-                className="space-y-5 max-w-3xl"
-              >
-                {/* Meta Bar */}
-                <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 text-xs">
-                  <span className="font-mono text-slate-300 font-semibold">{media.releaseYear}</span>
-                  <span className="text-slate-600">•</span>
-                  <span className="font-mono text-slate-300">{media.runtime}</span>
-                  <span className="text-slate-600">•</span>
-                  <span className="text-slate-300">{media.genres.join(' / ')}</span>
-                  <span className="text-slate-600">•</span>
-                  <Badge variant="rating" size="sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="midnight" size="sm">
+                  {media.releaseYear}
+                </Badge>
+                <Badge variant="midnight" size="sm">
+                  {media.runtime}
+                </Badge>
+                {media.rating && (
+                  <Badge variant="midnight" size="sm">
                     {media.rating}
                   </Badge>
-                  <span className="text-slate-600">•</span>
-                  <span className="font-mono text-emerald-400 font-semibold">
-                    {media.matchScore}% Match
-                  </span>
-                </div>
-
-                {/* Title & Tagline */}
-                <div>
-                  {media.tagline && (
-                    <p className="text-xs font-mono uppercase tracking-[0.25em] text-slate-400 mb-1">
-                      {media.tagline}
-                    </p>
-                  )}
-                  <h1 className="text-3xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-white leading-tight">
-                    {media.title}
-                  </h1>
-                </div>
-
-                {/* Description */}
-                <p className="text-sm sm:text-base leading-relaxed text-slate-300 font-light">
-                  {media.overview}
-                </p>
-
-                {/* Key Personnel & Metadata */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs text-slate-400">
-                  <div>
-                    <span className="text-slate-500 font-mono uppercase text-[10px] block">
-                      Director
-                    </span>
-                    <span className="text-slate-200 font-medium">{media.director}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono uppercase text-[10px] block mb-1">
-                      Screening Room Cache
-                    </span>
-                    <CacheStatus state={cacheState} />
-                  </div>
-                </div>
-
-                {/* Audio & Video Badges */}
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {media.badges.map((badge) => (
-                    <Badge
-                      key={badge}
-                      variant={
-                        badge === 'Dolby Atmos'
-                          ? 'atmos'
-                          : badge === 'Dolby Vision'
-                          ? 'vision'
-                          : 'uhd'
-                      }
-                      size="sm"
-                    >
-                      {badge}
-                    </Badge>
-                  ))}
-                  <Badge variant="silver" size="sm">
-                    Subtitles [CC]
+                )}
+                {media.badges.map((b) => (
+                  <Badge key={b} variant={b === 'Dolby Atmos' ? 'atmos' : 'silver'} size="sm">
+                    {b}
                   </Badge>
-                </div>
+                ))}
+              </div>
 
-                {/* Primary & Secondary Action Controls */}
-                <div className="flex flex-wrap items-center gap-3 pt-3">
-                  {/* ▶ Play */}
-                  <Button
-                    variant="silver"
-                    size="lg"
-                    icon={<Play className="w-4 h-4 fill-current" />}
-                    onClick={() => router.push(`/watch/${media.id}`)}
-                    id="movie-action-play"
-                  >
-                    Play
-                  </Button>
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-tight">
+                {media.title}
+              </h1>
 
-                  {/* ⚡ Sync & Play */}
-                  <SyncAndPlayButton
-                    media={media}
-                    variant="primary"
-                    size="lg"
-                    isGroupMode={true}
-                  />
+              {media.tagline && (
+                <p className="text-sm sm:text-base font-medium text-cyan-400/90 tracking-wide italic">
+                  &ldquo;{media.tagline}&rdquo;
+                </p>
+              )}
 
-                  {/* ＋ My List */}
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    icon={
-                      isSaved ? (
-                        <Check className="w-4 h-4 text-emerald-400" />
-                      ) : (
-                        <Plus className="w-4 h-4 text-slate-300" />
-                      )
-                    }
-                    onClick={handleToggleSave}
-                    id="movie-action-mylist"
-                  >
-                    {isSaved ? 'In My List' : 'My List'}
-                  </Button>
+              <p className="text-sm sm:text-base text-slate-300 font-light leading-relaxed max-w-2xl line-clamp-3 sm:line-clamp-none">
+                {media.overview}
+              </p>
 
-                  {/* Trailer */}
-                  <Button
-                    variant="ghost"
-                    size="lg"
-                    icon={<Film className="w-4 h-4 text-slate-300" />}
-                    onClick={() => setIsTrailerOpen(true)}
-                    id="movie-action-trailer"
-                  >
-                    Trailer
-                  </Button>
-                </div>
-              </motion.div>
-            </div>
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-3 pt-3">
+                <Button
+                  variant="silver"
+                  size="md"
+                  icon={<Play className="w-4 h-4 fill-current" />}
+                  onClick={() => router.push(`/watch/${media.id}`)}
+                >
+                  Play Feature
+                </Button>
+
+                <SyncAndPlayButton
+                  media={media}
+                  variant="primary"
+                  size="md"
+                  isGroupMode={true}
+                  onBeforeSync={() => setIsSyncDrawerOpen(true)}
+                />
+
+                <Button
+                  variant="secondary"
+                  size="md"
+                  icon={isSaved ? <Check className="w-4 h-4 text-emerald-400" /> : <Plus className="w-4 h-4" />}
+                  onClick={handleToggleSave}
+                >
+                  {isSaved ? 'In My List' : 'Add to List'}
+                </Button>
+              </div>
+            </motion.div>
           </div>
         </div>
 
-        {/* Extended Details Body */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 space-y-16 py-12">
-          {/* Cast & Technical Specifications Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Cast Section (2 cols) */}
-            <GlassPanel variant="standard" padding="lg" className="lg:col-span-2 space-y-5">
-              <SectionHeader
-                kicker="Ensemble"
-                title="Starring Cast"
-                subtitle="Theatrical cast in order of reference billing."
-              />
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {media.cast?.map((actor, idx) => (
-                  <div
-                    key={actor}
-                    className="p-3 rounded-lg bg-[#0d1421] border border-white/[0.05] space-y-1"
-                  >
-                    <p className="text-xs font-medium text-white line-clamp-1">{actor}</p>
-                    <p className="text-[10px] font-mono text-slate-500">
-                      {idx === 0 ? 'Lead Actor' : idx === 1 ? 'Co-Lead' : 'Key Role'}
-                    </p>
-                  </div>
-                ))}
+        {/* Technical Specs & Details Container */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 mt-8 space-y-12">
+          {/* Metadata Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <GlassPanel variant="standard" padding="md" className="space-y-3">
+              <div className="flex items-center gap-2 text-slate-400 text-xs font-mono uppercase tracking-wider">
+                <Volume2 className="w-4 h-4 text-cyan-400" />
+                <span>Audio Streams</span>
               </div>
+              <p className="text-sm font-semibold text-white">
+                {media.audioFormats && media.audioFormats.length > 0 ? media.audioFormats.join(' • ') : 'Stereo / Surround Sound'}
+              </p>
+              <p className="text-xs text-slate-400">
+                Direct streamed bitstream without lossy downmixing.
+              </p>
             </GlassPanel>
 
-            {/* Technical Specifications (1 col) */}
-            <GlassPanel variant="standard" padding="lg" className="space-y-5">
-              <SectionHeader
-                kicker="Specifications"
-                title="Audio & Subtitles"
-                subtitle="Calibrated bitstream channels."
-              />
-
-              <div className="space-y-4 text-xs">
-                {/* Audio Formats */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-slate-300 font-medium">
-                    <Volume2 className="w-4 h-4 text-slate-400" />
-                    <span>Audio Tracks</span>
-                  </div>
-                  <div className="space-y-1.5 pl-6 font-mono text-[11px] text-slate-400">
-                    {media.audioFormats?.map((af) => (
-                      <div key={af} className="flex items-center justify-between">
-                        <span>{af}</span>
-                        <Badge variant="midnight" size="sm">Lossless</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Subtitle Languages */}
-                <div className="space-y-2 pt-2 border-t border-white/[0.06]">
-                  <div className="flex items-center gap-2 text-slate-300 font-medium">
-                    <Subtitles className="w-4 h-4 text-slate-400" />
-                    <span>Subtitle Languages</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 pl-6">
-                    {media.subtitleLanguages?.map((sub) => (
-                      <span
-                        key={sub}
-                        className="px-2 py-0.5 rounded bg-[#0d1421] border border-white/[0.06] text-[10px] font-mono text-slate-300"
-                      >
-                        {sub}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Storage & Caching Details */}
-                <div className="space-y-2 pt-2 border-t border-white/[0.06]">
-                  <div className="flex items-center gap-2 text-slate-300 font-medium">
-                    <HardDrive className="w-4 h-4 text-slate-400" />
-                    <span>Playback Infrastructure</span>
-                  </div>
-                  <p className="pl-6 text-[11px] text-slate-400 font-light">
-                    Hosted on Oracle Cloud NVMe SSD cache with Google Drive master storage mirror.
-                  </p>
-                </div>
+            <GlassPanel variant="standard" padding="md" className="space-y-3">
+              <div className="flex items-center gap-2 text-slate-400 text-xs font-mono uppercase tracking-wider">
+                <Subtitles className="w-4 h-4 text-rose-400" />
+                <span>Subtitle Tracks</span>
               </div>
+              <p className="text-sm font-semibold text-white">
+                {media.subtitleLanguages && media.subtitleLanguages.length > 0 ? media.subtitleLanguages.join(' • ') : 'Subtitles Available'}
+              </p>
+              <p className="text-xs text-slate-400">
+                Synchronized subtitle tracks embedded in container.
+              </p>
+            </GlassPanel>
+
+            <GlassPanel variant="standard" padding="md" className="space-y-3">
+              <div className="flex items-center gap-2 text-slate-400 text-xs font-mono uppercase tracking-wider">
+                <Film className="w-4 h-4 text-amber-400" />
+                <span>Genres & Cast</span>
+              </div>
+              <p className="text-sm font-semibold text-white">
+                {media.genres.join(', ') || 'Feature Cinema'}
+              </p>
+              <p className="text-xs text-slate-400 truncate">
+                {media.cast && media.cast.length > 0 ? `Starring: ${media.cast.join(', ')}` : 'Private vault selection'}
+              </p>
             </GlassPanel>
           </div>
 
-          {/* More Like This (Recommendation Grid) */}
-          <section className="space-y-5">
-            <SectionHeader
-              kicker="Recommendations"
-              title="More Like This"
-              subtitle={`Curated recommendations matching "${media.title}" based on genres, tone, and cinematic scale.`}
-              action={
-                <span className="text-xs font-mono text-slate-500">
-                  {similarMedia.length} Recommendations
-                </span>
-              }
-            />
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5 sm:gap-5">
-              {similarMedia.map((sim) => (
-                <MediaCard
-                  key={sim.id}
-                  media={sim}
-                  aspectRatio="poster"
-                  isSaved={savedIds.includes(sim.id)}
-                  onToggleSave={() => {
-                    setSavedIds((prev) =>
-                      prev.includes(sim.id) ? prev.filter((i) => i !== sim.id) : [...prev, sim.id]
-                    );
-                    notify(
-                      savedIds.includes(sim.id)
-                        ? `Removed "${sim.title}" from list`
-                        : `Saved "${sim.title}" to list`
-                    );
-                  }}
-                  onPlay={() => router.push(`/movie/${sim.id}`)}
-                />
-              ))}
+          {/* Similar Movies Section */}
+          {similarMovies.length > 0 && (
+            <div className="space-y-4">
+              <SectionHeader
+                title="More Titles from the Vault"
+                kicker="Recommended Presentations"
+                subtitle="Curated companion features with matching cinematic attributes."
+              />
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {similarMovies.map((item) => (
+                  <MediaCard
+                    key={item.id}
+                    media={item}
+                    aspectRatio="poster"
+                    isSaved={myList.includes(item.id)}
+                    onToggleSave={() => {
+                      const added = toggleMyList(item.id);
+                      notify(
+                        added ? `Added "${item.title}" to My List` : `Removed "${item.title}" from My List`
+                      );
+                    }}
+                    onPlay={() => router.push(`/movie/${item.id}`)}
+                  />
+                ))}
+              </div>
             </div>
-          </section>
+          )}
         </div>
       </div>
     </CinemaShell>

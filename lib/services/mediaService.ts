@@ -7,49 +7,79 @@ import {
   adaptJellyfinEpisodeToEpisode,
   adaptJellyfinSegmentsToMediaSegments,
 } from '@/lib/adapters/jellyfinAdapter';
-import {
-  MOCK_MOVIES,
-  MOCK_SERIES,
-  FEATURED_HERO_MEDIA,
-  getMediaById as getMockMediaById,
-} from '@/lib/mock-data';
-import { getSeasonsForSeries as getMockSeasonsForSeries } from '@/lib/mock-series';
 
 /**
- * High-Level DinuStream Media Service
+ * Production DinuStream Media Service
  *
- * Provides a clean abstraction that delegates to the Jellyfin API Client & Adapter,
- * while transparently providing graceful local mock data fallbacks.
+ * Exclusively communicates with the live Jellyfin media server.
+ * Zero mock data fallbacks.
  */
 class MediaService {
   /**
    * Fetch movies from Jellyfin (adapted into MediaItem[])
    */
-  async getMovies(): Promise<MediaItem[]> {
+  async getMovies(limit = 50): Promise<MediaItem[]> {
     try {
-      const res = await jellyfinApi.getMovies();
+      const res = await jellyfinApi.getMovies(limit);
       if (res && res.Items && res.Items.length > 0) {
         return res.Items.map(adaptJellyfinItemToMediaItem);
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.error('[MediaService] getMovies failed:', err);
     }
-    return MOCK_MOVIES;
+    return [];
   }
 
   /**
    * Fetch series from Jellyfin (adapted into MediaItem[])
    */
-  async getSeries(): Promise<MediaItem[]> {
+  async getSeries(limit = 50): Promise<MediaItem[]> {
     try {
-      const res = await jellyfinApi.getSeries();
+      const res = await jellyfinApi.getSeries(limit);
       if (res && res.Items && res.Items.length > 0) {
         return res.Items.map(adaptJellyfinItemToMediaItem);
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.error('[MediaService] getSeries failed:', err);
     }
-    return MOCK_SERIES;
+    return [];
+  }
+
+  /**
+   * Fetch recently added media items
+   */
+  async getRecentlyAdded(limit = 20): Promise<MediaItem[]> {
+    try {
+      const items = await jellyfinApi.getRecentlyAddedItems(limit);
+      if (items && items.length > 0) {
+        return items.map(adaptJellyfinItemToMediaItem);
+      }
+    } catch (err) {
+      console.error('[MediaService] getRecentlyAdded failed:', err);
+    }
+    return [];
+  }
+
+  /**
+   * Fetch hero item for the cinematic hero banner
+   */
+  async getHeroItem(): Promise<MediaItem | null> {
+    try {
+      // Pick first movie from Jellyfin or first recently added
+      const recent = await this.getRecentlyAdded(10);
+      if (recent.length > 0) {
+        // Find one with a valid backdrop if possible
+        const withBackdrop = recent.find((m) => m.backdropUrl && !m.backdropUrl.includes('Primary'));
+        return withBackdrop || recent[0];
+      }
+      const movies = await this.getMovies(5);
+      if (movies.length > 0) {
+        return movies[0];
+      }
+    } catch (err) {
+      console.error('[MediaService] getHeroItem failed:', err);
+    }
+    return null;
   }
 
   /**
@@ -61,10 +91,10 @@ class MediaService {
       if (jItem && jItem.Name) {
         return adaptJellyfinItemToMediaItem(jItem);
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.error(`[MediaService] getMediaById(${id}) failed:`, err);
     }
-    return getMockMediaById(id) || FEATURED_HERO_MEDIA;
+    return null;
   }
 
   /**
@@ -87,10 +117,10 @@ class MediaService {
           return adaptJellyfinSeasonToSeason(s, seasonEpisodes);
         });
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.error(`[MediaService] getSeasonsForSeries(${seriesId}) failed:`, err);
     }
-    return getMockSeasonsForSeries(seriesId);
+    return [];
   }
 
   /**
@@ -114,18 +144,14 @@ class MediaService {
       if (tracks && tracks.length > 0) {
         return tracks.map((t) => ({
           id: String(t.Index),
-          label: t.DisplayTitle || t.Title || t.Language || 'Surround Sound',
+          label: t.DisplayTitle || t.Title || t.Language || 'Audio Track',
           isDefault: Boolean(t.IsDefault),
         }));
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.error(`[MediaService] getAudioTracks(${mediaId}) failed:`, err);
     }
-    return [
-      { id: '1', label: 'Dolby Atmos (TrueHD 7.1)', isDefault: true },
-      { id: '2', label: 'Dolby Digital Plus 5.1', isDefault: false },
-      { id: '3', label: 'French Stereo', isDefault: false },
-    ];
+    return [];
   }
 
   /**
@@ -135,21 +161,19 @@ class MediaService {
     try {
       const subs = await jellyfinApi.getSubtitleTracks(mediaId);
       if (subs && subs.length > 0) {
-        return subs.map((s) => ({
-          id: String(s.Index),
-          label: s.DisplayTitle || s.Title || s.Language || 'Subtitles',
-          language: s.Language,
-        }));
+        return [
+          { id: 'off', label: 'Off' },
+          ...subs.map((s) => ({
+            id: String(s.Index),
+            label: s.DisplayTitle || s.Title || s.Language || 'Subtitles',
+            language: s.Language,
+          })),
+        ];
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.error(`[MediaService] getSubtitleTracks(${mediaId}) failed:`, err);
     }
-    return [
-      { id: 'off', label: 'Off' },
-      { id: '1', label: 'English [CC]', language: 'eng' },
-      { id: '2', label: 'Spanish', language: 'spa' },
-      { id: '3', label: 'French', language: 'fra' },
-    ];
+    return [{ id: 'off', label: 'Off' }];
   }
 
   /**
@@ -162,7 +186,7 @@ class MediaService {
         return adaptJellyfinSegmentsToMediaSegments(segments);
       }
     } catch {
-      // Fallback
+      // Ignored if server segment plugin not enabled
     }
     return [];
   }

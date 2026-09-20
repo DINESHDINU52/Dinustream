@@ -150,18 +150,18 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isPiPActive, setIsPiPActive] = useState(false);
 
-  // Dynamic Stream Source with resilient fallback
-  const fallbackVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-  const defaultStreamUrl = episode?.videoUrl || media?.videoUrl || fallbackVideoUrl;
+  // Dynamic Stream Source from real Jellyfin streaming proxy
+  const activeItemId = episode?.id || media?.id;
+  const jellyfinStreamUrl = activeItemId ? `/api/jellyfin/videos/${encodeURIComponent(activeItemId)}/stream` : '';
+  const activeVideoSrc = episode?.videoUrl || media?.videoUrl || jellyfinStreamUrl;
   const [videoError, setVideoError] = useState(false);
-  const activeVideoSrc = videoError ? fallbackVideoUrl : defaultStreamUrl;
 
   const handleVideoError = useCallback(() => {
     if (!videoError) {
-      console.warn('[CinemaPlayer] Primary stream failed, switching to fallback sample video');
+      console.warn('[CinemaPlayer] Primary stream playback issue detected on item:', activeItemId);
       setVideoError(true);
     }
-  }, [videoError]);
+  }, [videoError, activeItemId]);
 
   // Sync fullscreen state with native browser fullscreen changes
   useEffect(() => {

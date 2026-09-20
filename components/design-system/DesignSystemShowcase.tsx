@@ -14,7 +14,24 @@ import { Toast } from '@/components/ui/Toast';
 import { Avatar } from '@/components/ui/Avatar';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Logo } from '@/components/ui/Logo';
-import { FEATURED_HERO_MEDIA } from '@/lib/mock-data';
+import { MediaItem } from '@/types/cinema';
+
+const SAMPLE_MEDIA_ITEM: MediaItem = {
+  id: 'sample-feature',
+  title: 'Cinema Master Presentation',
+  overview: 'Reference-grade 4K HDR playback showcasing cinematic tokens and design components.',
+  type: 'movie',
+  backdropUrl: '/images/hero-backdrop.jpg',
+  posterUrl: '/images/hero-poster.jpg',
+  releaseYear: 2026,
+  runtime: '2h 15m',
+  rating: '9.0/10',
+  genres: ['Cinema', 'Reference'],
+  badges: ['4K UHD', 'Dolby Atmos', 'Dolby Vision'],
+  audioFormats: ['Dolby Atmos (TrueHD 7.1)'],
+  subtitleLanguages: ['English [CC]'],
+  cast: ['Dinu', 'Kanmani'],
+};
 import { PROFILES } from '@/lib/constants';
 import {
   Play,
@@ -356,21 +373,22 @@ export const DesignSystemShowcase: React.FC = () => {
           subtitle="Precision aspect ratios: 2:3 Poster Frame and 16:9 Cinematic Backdrop."
         />
         <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-6">
-          <div>
-            <p className="text-[11px] font-mono text-slate-400 mb-2">Aspect: Poster (2:3)</p>
+          {/* Poster Card */}
+          <div className="max-w-[200px]">
             <MediaCard
-              media={FEATURED_HERO_MEDIA}
+              media={SAMPLE_MEDIA_ITEM}
               aspectRatio="poster"
-              onPlay={() => triggerToast(`Playing ${FEATURED_HERO_MEDIA.title}`)}
+              onPlay={() => triggerToast(`Playing ${SAMPLE_MEDIA_ITEM.title}`)}
               onToggleSave={() => triggerToast('Toggled watchlist')}
             />
           </div>
-          <div className="sm:col-span-2 md:col-span-3">
-            <p className="text-[11px] font-mono text-slate-400 mb-2">Aspect: Backdrop (16:9)</p>
+
+          {/* Backdrop Card */}
+          <div className="max-w-[340px]">
             <MediaCard
-              media={FEATURED_HERO_MEDIA}
+              media={SAMPLE_MEDIA_ITEM}
               aspectRatio="backdrop"
-              onPlay={() => triggerToast(`Playing ${FEATURED_HERO_MEDIA.title}`)}
+              onPlay={() => triggerToast(`Playing ${SAMPLE_MEDIA_ITEM.title}`)}
               onToggleSave={() => triggerToast('Toggled watchlist')}
             />
           </div>

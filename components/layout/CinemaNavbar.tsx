@@ -6,12 +6,29 @@ import { Badge } from '@/components/ui/Badge';
 import { Logo } from '@/components/ui/Logo';
 import { IconButton } from '@/components/ui/IconButton';
 import { NAV_LINKS } from '@/lib/constants';
-import { MOCK_NOTIFICATIONS } from '@/lib/mock-data';
 import { Search, Bell, Menu, X, Check, Tv } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { SearchOverlay } from '@/components/search/SearchOverlay';
 import { useTVNavigation } from '@/hooks/useTVNavigation';
+
+export interface CinemaNotification {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  unread: boolean;
+}
+
+const INITIAL_NOTIFICATIONS: CinemaNotification[] = [
+  {
+    id: 'n-1',
+    title: 'Private Cinema Ready',
+    message: 'Jellyfin high-bitrate streaming pipeline operational.',
+    time: 'Connected',
+    unread: false,
+  },
+];
 
 export interface CinemaNavbarProps {
   onSearchQuery?: (query: string) => void;
@@ -23,7 +40,7 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
   const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
   // Global Keyboard Shortcuts (Cmd+K, Ctrl+K, /) and Custom Event Listener
   useEffect(() => {

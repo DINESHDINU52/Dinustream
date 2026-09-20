@@ -22,7 +22,7 @@ const INITIAL_STORAGE: SSDStorageMetrics = {
   },
 };
 
-const INITIAL_SERVICES = {
+const INITIAL_SERVICES: Record<string, ServiceTelemetry> = {
   jellyfin: {
     name: 'Jellyfin Media Engine',
     status: 'healthy' as const,
@@ -225,12 +225,80 @@ class AdminService {
   private subscribers: Array<() => void> = [];
 
   constructor() {
-    // Periodically update active sync job progress for authentic telemetry
     if (typeof window !== 'undefined') {
+      this.refreshRealServiceHealth();
       setInterval(() => {
         this.tickSyncProgress();
       }, 3000);
+      setInterval(() => {
+        this.refreshRealServiceHealth();
+      }, 15000);
     }
+  }
+
+  public async refreshRealServiceHealth() {
+    // 1. Jellyfin Live Health
+    const jStart = Date.now();
+    try {
+      const res = await fetch('/api/jellyfin/system/info');
+      const jLatency = Date.now() - jStart;
+      if (res.ok) {
+        const info = await res.json();
+        this.services.jellyfin = {
+          name: 'Jellyfin Media Server',
+          status: 'healthy',
+          latencyMs: jLatency,
+          uptime: 'Operational',
+          details: `${info.ServerName || 'dinustream'} • v${info.Version || '12.1.0'}`,
+          endpoint: '/api/jellyfin',
+          lastChecked: 'Just now',
+        };
+      } else {
+        this.services.jellyfin = {
+          ...this.services.jellyfin,
+          status: 'degraded',
+          lastChecked: 'Just now',
+        };
+      }
+    } catch {
+      this.services.jellyfin = {
+        ...this.services.jellyfin,
+        status: 'offline',
+        lastChecked: 'Just now',
+      };
+    }
+
+    // 2. Sync Manager Live Health
+    const sStart = Date.now();
+    try {
+      const sRes = await fetch('/api/sync/health');
+      const sLatency = Date.now() - sStart;
+      if (sRes.ok) {
+        this.services.syncManager = {
+          name: 'Oracle NVMe Sync Manager',
+          status: 'healthy',
+          latencyMs: sLatency,
+          uptime: 'Operational',
+          details: 'Direct Play Engine • NVMe Direct I/O',
+          endpoint: '/api/sync',
+          lastChecked: 'Just now',
+        };
+      } else {
+        this.services.syncManager = {
+          ...this.services.syncManager,
+          status: 'degraded',
+          lastChecked: 'Just now',
+        };
+      }
+    } catch {
+      this.services.syncManager = {
+        ...this.services.syncManager,
+        status: 'offline',
+        lastChecked: 'Just now',
+      };
+    }
+
+    this.notify();
   }
 
   private tickSyncProgress() {

@@ -1,12 +1,10 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useMemo, useEffect } from 'react';
 import { MediaItem } from '@/types/cinema';
-import { MOCK_MOVIES, MOCK_SERIES, FEATURED_HERO_MEDIA } from '@/lib/mock-data';
+import { mediaService } from '@/lib/services/mediaService';
 import { Modal } from '@/components/ui/Modal';
 import { Search, Film, Tv, Check } from 'lucide-react';
-import Image from 'next/image';
 
 interface GroupMovieSelectorProps {
   isOpen: boolean;
@@ -23,13 +21,26 @@ export function GroupMovieSelector({
 }: GroupMovieSelectorProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'movies' | 'series'>('all');
+  const [availableItems, setAvailableItems] = useState<MediaItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const allAvailableItems = useMemo(() => {
-    return [FEATURED_HERO_MEDIA, ...MOCK_MOVIES, ...MOCK_SERIES];
-  }, []);
+  useEffect(() => {
+    if (isOpen) {
+      setLoading(true);
+      Promise.all([
+        mediaService.getMovies(30),
+        mediaService.getSeries(15),
+      ])
+        .then(([movies, series]) => {
+          setAvailableItems([...movies, ...series]);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [isOpen]);
 
   const filteredItems = useMemo(() => {
-    return allAvailableItems.filter((item) => {
+    return availableItems.filter((item) => {
       const matchesSearch =
         item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.genres.some((g) => g.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -37,7 +48,7 @@ export function GroupMovieSelector({
         categoryFilter === 'all' ? true : categoryFilter === 'movies' ? item.type === 'movie' : item.type === 'series';
       return matchesSearch && matchesCategory;
     });
-  }, [allAvailableItems, searchQuery, categoryFilter]);
+  }, [availableItems, searchQuery, categoryFilter]);
 
   return (
     <Modal
@@ -58,16 +69,16 @@ export function GroupMovieSelector({
               placeholder="Search 4K HDR films, series, genres..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-lg bg-[#0d1421] border border-white/[0.08] text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all"
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#090d16] border border-slate-700/50 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-rose-500/60 transition-colors"
             />
           </div>
 
-          <div className="flex items-center gap-1.5 p-1 rounded-lg bg-[#0d1421] border border-white/[0.08] w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 p-1 bg-[#090d16] rounded-xl border border-slate-700/50 w-full sm:w-auto justify-center">
             <button
               onClick={() => setCategoryFilter('all')}
-              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 categoryFilter === 'all'
-                  ? 'bg-sky-500 text-white shadow-sm'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -75,95 +86,81 @@ export function GroupMovieSelector({
             </button>
             <button
               onClick={() => setCategoryFilter('movies')}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 categoryFilter === 'movies'
-                  ? 'bg-sky-500 text-white shadow-sm'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Film className="w-3.5 h-3.5" />
+              <Film className="w-3 h-3" />
               <span>Movies</span>
             </button>
             <button
               onClick={() => setCategoryFilter('series')}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 categoryFilter === 'series'
-                  ? 'bg-sky-500 text-white shadow-sm'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Tv className="w-3.5 h-3.5" />
+              <Tv className="w-3 h-3" />
               <span>Series</span>
             </button>
           </div>
         </div>
 
         {/* Media Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[55vh] overflow-y-auto pr-1 py-1 custom-scrollbar">
-          {filteredItems.map((item) => {
-            const isSelected = item.id === currentMovieId;
-
-            return (
-              <motion.div
-                key={item.id}
-                whileHover={{ scale: 1.02 }}
-                onClick={() => {
-                  onSelectMovie(item);
-                  onClose();
-                }}
-                className={`group cursor-pointer rounded-xl border p-2.5 transition-all duration-200 flex gap-3 ${
-                  isSelected
-                    ? 'bg-sky-500/15 border-sky-400 shadow-[0_0_20px_rgba(14,165,233,0.2)]'
-                    : 'bg-[#0b111c] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#101928]'
-                }`}
-              >
-                {/* Poster Thumbnail */}
-                <div className="w-16 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-slate-900 relative shadow-md">
-                  <Image
-                    src={item.posterUrl}
-                    alt={item.title}
-                    width={64}
-                    height={96}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  {isSelected && (
-                    <div className="absolute inset-0 bg-sky-600/50 flex items-center justify-center backdrop-blur-xs">
-                      <Check className="w-5 h-5 text-white" />
+        {loading ? (
+          <div className="py-16 text-center text-slate-400 text-xs">
+            <div className="w-6 h-6 border-2 border-rose-500/30 border-t-rose-500 rounded-full animate-spin mx-auto mb-2" />
+            <span>Loading library items...</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+            {filteredItems.map((item) => {
+              const isCurrent = item.id === currentMovieId;
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => {
+                    onSelectMovie(item);
+                    onClose();
+                  }}
+                  className={`group relative rounded-xl overflow-hidden bg-[#0d1320] border cursor-pointer transition-all duration-200 transform hover:-translate-y-1 ${
+                    isCurrent
+                      ? 'border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.35)]'
+                      : 'border-slate-800/80 hover:border-slate-600'
+                  }`}
+                >
+                  <div className="relative aspect-[2/3] w-full bg-slate-900">
+                    <img
+                      src={item.posterUrl}
+                      alt={item.title}
+                      className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                    />
+                    {isCurrent && (
+                      <div className="absolute top-2 right-2 p-1 rounded-full bg-rose-600 text-white shadow-md">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
+                    )}
+                    <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm text-[9px] font-mono text-slate-300">
+                      {item.runtime}
                     </div>
-                  )}
-                </div>
-
-                {/* Details */}
-                <div className="flex-1 min-w-0 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-start justify-between gap-1">
-                      <h4 className="font-semibold text-sm text-white group-hover:text-sky-300 transition-colors line-clamp-1">
-                        {item.title}
-                      </h4>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {item.releaseYear} • {item.runtime} • {item.rating}
-                    </p>
-                    <p className="text-xs text-slate-400 line-clamp-2 mt-1 font-light">
-                      {item.overview}
-                    </p>
                   </div>
 
-                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                    {item.badges.slice(0, 2).map((badge) => (
-                      <span
-                        key={badge}
-                        className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-slate-300 border border-white/10"
-                      >
-                        {badge}
-                      </span>
-                    ))}
+                  <div className="p-2.5">
+                    <h4 className="text-xs font-bold text-white truncate group-hover:text-rose-300 transition-colors">
+                      {item.title}
+                    </h4>
+                    <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                      {item.releaseYear} • {item.genres.slice(0, 2).join(', ')}
+                    </p>
                   </div>
                 </div>
-              </motion.div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </Modal>
   );

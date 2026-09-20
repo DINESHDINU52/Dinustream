@@ -14,7 +14,7 @@ export interface JellyfinUserView {
 }
 
 export interface JellyfinMediaStream {
-  Type: 'Audio' | 'Video' | 'Subtitle';
+  Type: 'Audio' | 'Video' | 'Subtitle' | 'EmbeddedImage';
   Index: number;
   Codec: string;
   Language?: string;
@@ -25,6 +25,8 @@ export interface JellyfinMediaStream {
   ChannelLayout?: string;
   BitRate?: number;
   SampleRate?: number;
+  Width?: number;
+  Height?: number;
 }
 
 export interface JellyfinUserData {
@@ -260,12 +262,41 @@ export async function searchJellyfin(
 ): Promise<JellyfinItem[]> {
   try {
     const res = await fetchJellyfin<JellyfinItemsResponse>(
-      `/Items?searchTerm=${encodeURIComponent(query)}&includeItemTypes=${encodeURIComponent(
+      `/items?searchTerm=${encodeURIComponent(query)}&includeItemTypes=${encodeURIComponent(
         includeItemTypes
-      )}&recursive=true&limit=30`
+      )}&recursive=true&limit=30&fields=MediaStreams,Overview,Genres,People,UserData`
     );
     return res.Items || [];
   } catch {
     return [];
   }
 }
+
+/**
+ * 14. Recently Added Items
+ */
+export async function getRecentlyAddedItems(limit = 20): Promise<JellyfinItem[]> {
+  try {
+    const res = await fetchJellyfin<JellyfinItemsResponse>(
+      `/items?sortBy=DateCreated&sortOrder=Descending&includeItemTypes=Movie,Series&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData`
+    );
+    return res.Items || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 15. Resumable / Continue Watching Items
+ */
+export async function getResumeItems(limit = 12): Promise<JellyfinItem[]> {
+  try {
+    const res = await fetchJellyfin<JellyfinItemsResponse>(
+      `/items?filters=IsResumable&sortBy=DatePlayed&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData`
+    );
+    return res.Items || [];
+  } catch {
+    return [];
+  }
+}
+

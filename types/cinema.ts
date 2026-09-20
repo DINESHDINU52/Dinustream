@@ -60,7 +60,7 @@ export interface MediaItem {
   releaseYear: number;
   rating: string;
   runtime: string;
-  matchScore: number;
+  matchScore?: number;
   genres: string[];
   badges: MediaBadge[];
   director?: string;

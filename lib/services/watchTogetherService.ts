@@ -1,62 +1,12 @@
 import { MediaItem } from '@/types/cinema';
 import { WatchGroup, QueuedMovie } from '@/types/watchTogether';
-import { FEATURED_HERO_MEDIA, MOCK_MOVIES } from '@/lib/mock-data';
 import { getSyncStatus, syncMovie } from '@/lib/api/syncManager';
 import { createSyncPlayGroup } from '@/lib/api/syncPlay';
 
 const STORAGE_KEY = 'dinustream_active_watch_group';
 const EVENT_KEY = 'dinustream_watch_group_update';
 
-export const INITIAL_WATCH_QUEUE: QueuedMovie[] = [
-  {
-    id: 'queue-dc',
-    movieId: 'dc',
-    title: 'DC',
-    runtime: '2h 15m',
-    posterUrl: 'https://images.unsplash.com/photo-1531259683007-016a7b628fc3?q=80&w=800&auto=format&fit=crop',
-    backdropUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=1200&auto=format&fit=crop',
-    badges: ['Dolby Atmos', '4K UHD', 'Dolby Vision'],
-    addedBy: 'dinu',
-    addedByName: 'Dinu',
-    addedAt: Date.now() - 1000 * 60 * 30,
-  },
-  {
-    id: 'queue-kudumbasthan',
-    movieId: 'kudumbasthan',
-    title: 'Kudumbasthan',
-    runtime: '2h 22m',
-    posterUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?q=80&w=800&auto=format&fit=crop',
-    backdropUrl: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=1200&auto=format&fit=crop',
-    badges: ['Dolby Atmos', '4K UHD'],
-    addedBy: 'kanmani',
-    addedByName: 'Kanmani',
-    addedAt: Date.now() - 1000 * 60 * 25,
-  },
-  {
-    id: 'queue-good-night',
-    movieId: 'good-night',
-    title: 'Good Night',
-    runtime: '2h 18m',
-    posterUrl: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?q=80&w=800&auto=format&fit=crop',
-    backdropUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1200&auto=format&fit=crop',
-    badges: ['Dolby Atmos', 'Dolby Vision', '4K UHD'],
-    addedBy: 'dinu',
-    addedByName: 'Dinu',
-    addedAt: Date.now() - 1000 * 60 * 20,
-  },
-  {
-    id: 'queue-vishwanath-and-sons',
-    movieId: 'vishwanath-and-sons',
-    title: 'Vishwanath and Sons',
-    runtime: '2h 30m',
-    posterUrl: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=800&auto=format&fit=crop',
-    backdropUrl: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1200&auto=format&fit=crop',
-    badges: ['Dolby Atmos', '4K UHD'],
-    addedBy: 'kanmani',
-    addedByName: 'Kanmani',
-    addedAt: Date.now() - 1000 * 60 * 15,
-  },
-];
+export const INITIAL_WATCH_QUEUE: QueuedMovie[] = [];
 
 function getInitialGroup(): WatchGroup {
   return {
@@ -81,15 +31,15 @@ function getInitialGroup(): WatchGroup {
         name: 'Kanmani',
         avatarUrl: '/avatars/kanmani.png',
         isHost: false,
-        isOnline: true,
-        isReady: true,
+        isOnline: false,
+        isReady: false,
         playbackPositionSeconds: 0,
         syncLatencyMs: 18,
-        statusText: 'Connected • Ready to Watch',
+        statusText: 'Offline',
       },
     ],
-    selectedMovie: FEATURED_HERO_MEDIA,
-    queue: [...INITIAL_WATCH_QUEUE],
+    selectedMovie: null,
+    queue: [],
     syncProgress: {
       state: 'ready',
       percent: 100,
@@ -312,7 +262,7 @@ class WatchTogetherService {
     const nextItem = this.group.queue[0];
     this.group.queue = this.group.queue.slice(1);
 
-    const foundMovie: MediaItem = MOCK_MOVIES.find((m) => m.id === nextItem.movieId) || {
+    const foundMovie: MediaItem = {
       id: nextItem.movieId,
       title: nextItem.title,
       overview: 'Synchronized cinema feature for Dinu & Kanmani.',
@@ -322,9 +272,8 @@ class WatchTogetherService {
       releaseYear: 2024,
       rating: 'U/A',
       runtime: nextItem.runtime,
-      matchScore: 99,
       genres: ['Action', 'Drama'],
-      badges: nextItem.badges as import('@/types/cinema').MediaBadge[],
+      badges: nextItem.badges,
     };
 
     this.selectMovie(foundMovie);
@@ -339,7 +288,7 @@ class WatchTogetherService {
     const nextItem = this.group.queue[0];
     this.group.queue = this.group.queue.slice(1);
 
-    const foundMovie: MediaItem = MOCK_MOVIES.find((m) => m.id === nextItem.movieId) || {
+    const foundMovie: MediaItem = {
       id: nextItem.movieId,
       title: nextItem.title,
       overview: 'Synchronized cinema feature for Dinu & Kanmani.',
