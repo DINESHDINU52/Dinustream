@@ -13,18 +13,33 @@ const firebaseConfig = {
 let app: FirebaseApp | null = null;
 let firestore: Firestore | null = null;
 
+export function isFirebaseConfigured(): boolean {
+  return Boolean(
+    firebaseConfig.apiKey &&
+    firebaseConfig.projectId &&
+    !firebaseConfig.apiKey.startsWith('your_') &&
+    !firebaseConfig.apiKey.includes('placeholder')
+  );
+}
+
 if (typeof window !== 'undefined') {
   try {
-    if (getApps().length === 0) {
-      app = initializeApp(firebaseConfig);
+    if (isFirebaseConfigured()) {
+      if (getApps().length === 0) {
+        app = initializeApp(firebaseConfig);
+      } else {
+        app = getApps()[0];
+      }
+      if (app) {
+        firestore = getFirestore(app);
+      }
     } else {
-      app = getApps()[0];
-    }
-    if (app && firebaseConfig.projectId && !firebaseConfig.apiKey?.includes('mock')) {
-      firestore = getFirestore(app);
+      console.info(
+        '[Firebase] Cloud credentials not configured in environment; Watch Together running on resilient local real-time synchronization.'
+      );
     }
   } catch (error) {
-    console.warn('Firebase initialization skipped; using resilient peer-to-peer chat store.', error);
+    console.warn('[Firebase] Initialization skipped; falling back to local real-time channel.', error);
   }
 }
 

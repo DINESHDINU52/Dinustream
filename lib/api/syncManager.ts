@@ -104,3 +104,28 @@ export async function getSyncStatus(filename: string): Promise<SyncStatusRespons
 
   return res.json();
 }
+
+/**
+ * Check health status of the Sync Manager through the Next.js API proxy
+ */
+export async function getSyncHealth(): Promise<{
+  status: 'online' | 'offline';
+  service?: string;
+  port?: number;
+  message?: string;
+}> {
+  try {
+    const res = await fetch(`${BASE_URL}/health`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+    });
+    if (!res.ok) return { status: 'offline' };
+    return res.json();
+  } catch {
+    return { status: 'offline' };
+  }
+}
+
