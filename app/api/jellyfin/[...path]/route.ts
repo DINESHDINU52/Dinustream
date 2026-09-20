@@ -192,7 +192,7 @@ export async function GET(
 
     const serverUrl = process.env.JELLYFIN_SERVER_URL;
     const apiKey = process.env.JELLYFIN_API_KEY;
-    const userId = process.env.JELLYFIN_USER_ID;
+    const userId = process.env.JELLYFIN_USER_ID || 'admin';
 
     // 1. Attempt real forward to live Jellyfin server if reachable
     if (serverUrl && apiKey) {
@@ -200,25 +200,58 @@ export async function GET(
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2500);
 
-        const targetUrl = new URL(req.nextUrl.pathname.replace('/api/jellyfin', ''), serverUrl);
+        // Map DinuStream normalized subpaths to authentic Jellyfin REST paths
+        let jPath = `/${subPath}`;
+        if (subPath === 'user-views') {
+          jPath = `/Users/${encodeURIComponent(userId)}/Views`;
+        } else if (subPath === 'items') {
+          jPath = `/Users/${encodeURIComponent(userId)}/Items`;
+        } else if (subPath.startsWith('items/') && subPath.includes('/Images/')) {
+          // Image requests: /items/:id/Images/:type
+          const parts = subPath.split('/');
+          jPath = `/Items/${encodeURIComponent(parts[1])}/Images/${encodeURIComponent(parts[3])}`;
+        } else if (subPath.startsWith('shows/') && subPath.endsWith('/seasons')) {
+          const sId = subPath.split('/')[1];
+          jPath = `/Shows/${encodeURIComponent(sId)}/Seasons`;
+        } else if (subPath.startsWith('shows/') && subPath.endsWith('/episodes')) {
+          const sId = subPath.split('/')[1];
+          jPath = `/Shows/${encodeURIComponent(sId)}/Episodes`;
+        } else if (subPath.startsWith('items/') && !subPath.includes('/')) {
+          const itemId = subPath.replace('items/', '');
+          jPath = `/Users/${encodeURIComponent(userId)}/Items/${encodeURIComponent(itemId)}`;
+        }
+
+        const targetUrl = new URL(jPath, serverUrl);
         req.nextUrl.searchParams.forEach((v, k) => targetUrl.searchParams.set(k, v));
-        if (userId) targetUrl.searchParams.set('userId', userId);
+        if (!targetUrl.searchParams.has('userId') && !jPath.includes('/Users/')) {
+          targetUrl.searchParams.set('userId', userId);
+        }
 
         const jRes = await fetch(targetUrl.toString(), {
           headers: {
             'X-Emby-Token': apiKey,
-            Accept: 'application/json',
+            Accept: subPath.includes('/Images/') ? 'image/*,application/json' : 'application/json',
           },
           signal: controller.signal,
         });
         clearTimeout(timeout);
 
         if (jRes.ok) {
+          const contentType = jRes.headers.get('content-type') || '';
+          if (contentType.includes('image/')) {
+            const blob = await jRes.arrayBuffer();
+            return new NextResponse(blob, {
+              headers: {
+                'Content-Type': contentType,
+                'Cache-Control': 'public, max-age=86400',
+              },
+            });
+          }
           const data = await jRes.json();
           return NextResponse.json(data);
         }
       } catch {
-        // Fall through to mock adapter
+        // Fall through to resilient mock adapter
       }
     }
 

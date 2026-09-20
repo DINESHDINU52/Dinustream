@@ -30,7 +30,14 @@ export interface TypingState {
   kanmani: boolean;
 }
 
+export type ParticipantPresence =
+  | 'Online'
+  | 'Watching'
+  | 'Paused'
+  | 'Buffering'
+  | 'Offline';
+
 export interface PresenceState {
-  dinu: 'Online' | 'Offline';
-  kanmani: 'Online' | 'Offline';
+  dinu: ParticipantPresence;
+  kanmani: ParticipantPresence;
 }

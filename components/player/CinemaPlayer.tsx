@@ -142,13 +142,26 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     }).catch(() => {});
   }, [media.id]);
 
-  const { isPortrait, isLandscape, isMobile, isTV: isDeviceTV, requestFullscreenLandscape } = useDeviceOrientation();
+  const { isPortrait, isMobile, isTV: isDeviceTV, requestFullscreenLandscape } = useDeviceOrientation();
   const { isTVMode: isNavTVMode } = useTVNavigation();
   const isTV = isNavTVMode || isDeviceTV;
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isPiPActive, setIsPiPActive] = useState(false);
+
+  // Dynamic Stream Source with resilient fallback
+  const fallbackVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  const defaultStreamUrl = episode?.videoUrl || media?.videoUrl || fallbackVideoUrl;
+  const [videoError, setVideoError] = useState(false);
+  const activeVideoSrc = videoError ? fallbackVideoUrl : defaultStreamUrl;
+
+  const handleVideoError = useCallback(() => {
+    if (!videoError) {
+      console.warn('[CinemaPlayer] Primary stream failed, switching to fallback sample video');
+      setVideoError(true);
+    }
+  }, [videoError]);
 
   // Sync fullscreen state with native browser fullscreen changes
   useEffect(() => {
@@ -737,11 +750,12 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       {/* Video Element */}
       <video
         ref={videoRef}
-        src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        src={activeVideoSrc}
         poster={episode ? episode.thumbnailUrl : media.backdropUrl}
         playsInline
         className="relative z-10 w-full h-full object-contain"
         onClick={togglePlay}
+        onError={handleVideoError}
       />
 
       {/* Mobile Portrait Orientation Prompt */}

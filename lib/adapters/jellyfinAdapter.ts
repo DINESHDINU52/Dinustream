@@ -55,9 +55,23 @@ export function adaptJellyfinItemToMediaItem(jItem: JellyfinItem): MediaItem {
     ? `${jItem.CommunityRating.toFixed(1)}/10`
     : '8.8/10';
 
+  // Extract real audio formats & subtitle tracks from Jellyfin stream metadata
+  const audioFormats = jItem.MediaStreams
+    ?.filter((s) => s.Type === 'Audio')
+    .map((s) => s.DisplayTitle || s.Title || (s.Language ? s.Language.toUpperCase() : 'Audio Track'));
+
+  const subtitleLanguages = jItem.MediaStreams
+    ?.filter((s) => s.Type === 'Subtitle')
+    .map((s) => s.DisplayTitle || s.Title || (s.Language ? s.Language.toUpperCase() : 'Subtitles'));
+
   // Posters & Backdrops fallback to premium cinema imagery
-  const backdropUrl = FEATURED_HERO_MEDIA.backdropUrl;
-  const posterUrl = FEATURED_HERO_MEDIA.posterUrl;
+  const backdropUrl = jItem.BackdropImageTags && jItem.BackdropImageTags.length > 0
+    ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Backdrop`
+    : FEATURED_HERO_MEDIA.backdropUrl;
+
+  const posterUrl = jItem.ImageTags?.Primary
+    ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary`
+    : FEATURED_HERO_MEDIA.posterUrl;
 
   return {
     id: jItem.Id,
@@ -76,6 +90,8 @@ export function adaptJellyfinItemToMediaItem(jItem: JellyfinItem): MediaItem {
     posterUrl,
     badges,
     hasDolbyIntro: true,
+    audioFormats: audioFormats && audioFormats.length > 0 ? audioFormats : ['Dolby Atmos (TrueHD 7.1)', 'Dolby Digital Plus 5.1'],
+    subtitleLanguages: subtitleLanguages && subtitleLanguages.length > 0 ? subtitleLanguages : ['English [CC]', 'Tamil', 'French'],
   };
 }
 

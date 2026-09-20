@@ -39,6 +39,7 @@ export interface Episode {
     recapEnd?: number;
     outroStart?: number;
   };
+  videoUrl?: string;
 }
 
 export interface Season {
@@ -67,6 +68,7 @@ export interface MediaItem {
   hasDolbyIntro?: boolean;
   audioFormats?: string[];
   subtitleLanguages?: string[];
+  videoUrl?: string;
   trailerUrl?: string;
   similarTitles?: string[];
   seasonsCount?: number;

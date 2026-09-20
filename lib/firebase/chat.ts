@@ -4,6 +4,7 @@ import {
   ChatReplyTo,
   TypingState,
   PresenceState,
+  ParticipantPresence,
 } from '@/types/chat';
 import { UserProfile } from '@/types/cinema';
 import { firestore } from './config';
@@ -15,6 +16,7 @@ import {
   onSnapshot,
   addDoc,
   updateDoc,
+  setDoc,
   doc,
 } from 'firebase/firestore';
 
@@ -114,16 +116,23 @@ class FirebaseChatService {
           collection(firestore, 'watchGroups', groupId, 'messages'),
           orderBy('timestamp', 'asc')
         );
-        unsubscribeFirestore = onSnapshot(q, (snapshot) => {
-          if (!snapshot.empty) {
-            const list: ChatMessage[] = snapshot.docs.map((docSnap) => ({
-              id: docSnap.id,
-              ...(docSnap.data() as Omit<ChatMessage, 'id'>),
-            }));
-            this.saveMessages(groupId, list);
-            callback(list);
+        unsubscribeFirestore = onSnapshot(
+          q,
+          (snapshot) => {
+            if (!snapshot.empty) {
+              const list: ChatMessage[] = snapshot.docs.map((docSnap) => ({
+                id: docSnap.id,
+                ...(docSnap.data() as Omit<ChatMessage, 'id'>),
+              }));
+              this.saveMessages(groupId, list);
+              callback(list);
+            }
+          },
+          (error) => {
+            // Firestore error / offline / permission - fallback cleanly to local channel
+            console.warn('[FirebaseChat] Firestore messages listener fallback:', error.message);
           }
-        });
+        );
       } catch {
         // Fall through to resilient local real-time sync
       }
@@ -297,6 +306,18 @@ class FirebaseChatService {
         isTyping,
       });
     }
+
+    if (firestore) {
+      try {
+        await setDoc(
+          doc(firestore, 'watchGroups', groupId, 'typing', userId),
+          { isTyping, timestamp: Date.now() },
+          { merge: true }
+        );
+      } catch {
+        // Safe fallback
+      }
+    }
   }
 
   /**
@@ -314,6 +335,30 @@ class FirebaseChatService {
 
     const channel = this.getChannel(groupId);
     const timeouts: Record<string, NodeJS.Timeout> = {};
+
+    let unsubscribeFirestore: (() => void) | null = null;
+    if (firestore) {
+      try {
+        unsubscribeFirestore = onSnapshot(
+          collection(firestore, 'watchGroups', groupId, 'typing'),
+          (snapshot) => {
+            snapshot.docs.forEach((docSnap) => {
+              const uId = docSnap.id as 'dinu' | 'kanmani';
+              if (uId === 'dinu' || uId === 'kanmani') {
+                const data = docSnap.data();
+                current[uId] = Boolean(data?.isTyping);
+              }
+            });
+            callback({ ...current });
+          },
+          (error) => {
+            console.warn('[FirebaseChat] Firestore typing subscription fallback:', error.message);
+          }
+        );
+      } catch {
+        // Fallback
+      }
+    }
 
     const handleChannelMessage = (event: MessageEvent) => {
       if (event.data?.type === 'TYPING_UPDATE' && event.data.groupId === groupId) {
@@ -336,6 +381,7 @@ class FirebaseChatService {
     }
 
     return () => {
+      if (unsubscribeFirestore) unsubscribeFirestore();
       if (channel) {
         channel.removeEventListener('message', handleChannelMessage);
       }
@@ -349,7 +395,7 @@ class FirebaseChatService {
   public async updatePresence(
     groupId: string,
     userId: 'dinu' | 'kanmani',
-    status: 'Online' | 'Offline'
+    status: ParticipantPresence
   ): Promise<void> {
     const channel = this.getChannel(groupId);
     if (channel) {
@@ -359,6 +405,18 @@ class FirebaseChatService {
         userId,
         status,
       });
+    }
+
+    if (firestore) {
+      try {
+        await setDoc(
+          doc(firestore, 'watchGroups', groupId, 'presence', userId),
+          { status, timestamp: Date.now() },
+          { merge: true }
+        );
+      } catch {
+        // Safe fallback
+      }
     }
   }
 
@@ -375,6 +433,33 @@ class FirebaseChatService {
     };
     callback(current);
 
+    let unsubscribeFirestore: (() => void) | null = null;
+    if (firestore) {
+      try {
+        unsubscribeFirestore = onSnapshot(
+          collection(firestore, 'watchGroups', groupId, 'presence'),
+          (snapshot) => {
+            snapshot.docs.forEach((docSnap) => {
+              const uId = docSnap.id as 'dinu' | 'kanmani';
+              if (uId === 'dinu' || uId === 'kanmani') {
+                const data = docSnap.data();
+                if (data?.status) {
+                  current[uId] = data.status;
+                }
+              }
+            });
+            this.presenceCache.set(groupId, { ...current });
+            callback({ ...current });
+          },
+          (error) => {
+            console.warn('[FirebaseChat] Firestore presence subscription fallback:', error.message);
+          }
+        );
+      } catch {
+        // Fallback
+      }
+    }
+
     const channel = this.getChannel(groupId);
     const handleChannelMessage = (event: MessageEvent) => {
       if (event.data?.type === 'PRESENCE_UPDATE' && event.data.groupId === groupId) {
@@ -390,6 +475,7 @@ class FirebaseChatService {
     }
 
     return () => {
+      if (unsubscribeFirestore) unsubscribeFirestore();
       if (channel) {
         channel.removeEventListener('message', handleChannelMessage);
       }
