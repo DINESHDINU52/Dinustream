@@ -40,6 +40,7 @@ This guide details the environment variables, networking topology, and credentia
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | `your-app.appspot.com` | Firebase storage bucket endpoint. |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`| `your-sender-id` | Firebase Cloud Messaging sender identifier. |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | `1:...:web:...` | Unique application ID for the Firebase Web Client. |
+| `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` | `G-...` | Google Analytics / Firebase measurement identifier. |
 
 ---
 
