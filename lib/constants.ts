@@ -57,7 +57,7 @@ export const NAV_LINKS: NavLinkItem[] = [
   { label: 'Home', href: '/', id: 'nav-home' },
   { label: 'Movies', href: '/#movies', id: 'nav-movies' },
   { label: 'Series', href: '/#series', id: 'nav-series' },
-  { label: 'Newly Added', href: '/#new-movies', id: 'nav-new-movies', badge: 'New' },
-  { label: 'Watch Together', href: '/watch-together', id: 'nav-watch-together', badge: 'Live Sync' },
-  { label: 'My List', href: '/#my-list', id: 'nav-my-list' },
+  { label: 'Premieres', href: '/#new-movies', id: 'nav-new-movies' },
+  { label: 'Watch Together', href: '/watch-together', id: 'nav-watch-together' },
+  { label: 'Watchlist', href: '/#my-list', id: 'nav-my-list' },
 ];

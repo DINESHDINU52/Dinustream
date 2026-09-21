@@ -129,7 +129,7 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
       case 'nav-series':
         return <Tv className="w-4 h-4 text-slate-400 group-hover:text-white" />;
       case 'nav-new-movies':
-        return <Sparkles className="w-4 h-4 text-amber-400 group-hover:text-amber-300" />;
+        return <Sparkles className="w-4 h-4 text-slate-400 group-hover:text-white" />;
       case 'nav-watch-together':
         return <Zap className="w-4 h-4 text-sky-400 group-hover:text-sky-300" />;
       case 'nav-my-list':
@@ -162,10 +162,11 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
           </Link>
 
           {/* Desktop Navigation Links — Ultra Luxury Cinema */}
-          <nav className="hidden lg:flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/[0.05]">
+          <nav className="hidden lg:flex items-center gap-1 bg-white/[0.03] px-2 py-1 rounded-2xl border border-white/[0.06] backdrop-blur-xl">
             {NAV_LINKS.map((link) => {
               const targetId = link.href.startsWith('/#') ? link.href.replace('/#', '') : (link.href === '/' ? 'home' : link.id);
               const isActive = (pathname === '/' && activeTab === targetId) || (pathname === link.href);
+              const isWatchTogether = link.id === 'nav-watch-together';
 
               return (
                 <Link
@@ -174,23 +175,21 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
                   id={link.id}
                   onClick={(e) => handleNavClick(e, link.href)}
                   className={cn(
-                    'group relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all cinema-focus',
+                    'group relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium tracking-wide whitespace-nowrap transition-all cinema-focus select-none',
                     isActive
-                      ? 'text-white bg-white/[0.12] shadow-sm'
-                      : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'
+                      ? 'text-white bg-white/[0.1] shadow-sm'
+                      : 'text-slate-300 hover:text-white hover:bg-white/[0.05]'
                   )}
                 >
                   {getNavIcon(link.id)}
                   <span>{link.label}</span>
-                  {link.badge && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-sm">
-                      {link.badge}
-                    </span>
+                  {isWatchTogether && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
                   )}
                   {isActive && (
                     <motion.div
                       layoutId="activeNavIndicator"
-                      className="absolute bottom-0 inset-x-2 h-0.5 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full"
+                      className="absolute bottom-0 inset-x-3 h-0.5 bg-gradient-to-r from-cyan-400 to-sky-500 rounded-full"
                     />
                   )}
                 </Link>
@@ -371,11 +370,7 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
                     {getNavIcon(link.id)}
                     <span>{link.label}</span>
                   </div>
-                  {link.badge && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white">
-                      {link.badge}
-                    </span>
-                  )}
+                  
                 </Link>
               ))}
 
