@@ -17,6 +17,8 @@ export interface MediaCarouselProps {
   savedIds?: string[];
   onToggleSave?: (item: MediaItem) => void;
   onPlay?: (item: MediaItem | ContinueWatchingItem) => void;
+  onOpenDetails?: (item: MediaItem) => void;
+  showRank?: boolean;
   action?: React.ReactNode;
   className?: string;
 }
@@ -30,6 +32,8 @@ export const MediaCarousel: React.FC<MediaCarouselProps> = ({
   savedIds = [],
   onToggleSave,
   onPlay,
+  onOpenDetails,
+  showRank = false,
   action,
   className,
 }) => {
@@ -109,7 +113,7 @@ export const MediaCarousel: React.FC<MediaCarouselProps> = ({
           className="flex items-stretch gap-3 sm:gap-4 overflow-x-auto scroll-smooth px-4 sm:px-8 lg:px-12 no-scrollbar py-2"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
-          {items.map((item) => {
+          {items.map((item, index) => {
             if (isContinue) {
               return (
                 <div
@@ -128,8 +132,10 @@ export const MediaCarousel: React.FC<MediaCarouselProps> = ({
               <div
                 key={item.id}
                 className={cn(
-                  'shrink-0',
-                  isBackdrop
+                  'shrink-0 transition-all',
+                  showRank
+                    ? 'w-[190px] sm:w-[220px] md:w-[240px]'
+                    : isBackdrop
                     ? 'w-[240px] sm:w-[280px] md:w-[320px]'
                     : 'w-[140px] sm:w-[170px] md:w-[190px] lg:w-[210px]'
                 )}
@@ -139,7 +145,9 @@ export const MediaCarousel: React.FC<MediaCarouselProps> = ({
                   aspectRatio={isBackdrop ? 'backdrop' : 'poster'}
                   isSaved={savedIds.includes(item.id)}
                   onToggleSave={onToggleSave}
-                  onPlay={onPlay}
+                  onPlay={onPlay as any}
+                  onOpenDetails={onOpenDetails}
+                  rank={showRank ? index + 1 : undefined}
                 />
               </div>
             );

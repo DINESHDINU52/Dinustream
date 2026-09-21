@@ -1,12 +1,15 @@
+'use client';
+
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { useScrollPosition } from '@/hooks/useScrollPosition';
 import { ProfileSwitcher } from '@/components/profiles/ProfileSwitcher';
 import { Badge } from '@/components/ui/Badge';
 import { Logo } from '@/components/ui/Logo';
 import { IconButton } from '@/components/ui/IconButton';
 import { NAV_LINKS } from '@/lib/constants';
-import { Search, Bell, Menu, X, Check, Tv, LogOut } from 'lucide-react';
+import { Search, Bell, Menu, X, Check, Tv, LogOut, Film, Sparkles, Zap, Bookmark, ShieldCheck, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { SearchOverlay } from '@/components/search/SearchOverlay';
@@ -36,13 +39,39 @@ export interface CinemaNavbarProps {
 }
 
 export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => {
+  const router = useRouter();
+  const pathname = usePathname();
   const { isScrolled } = useScrollPosition();
   const { isTVMode, toggleTVMode } = useTVNavigation();
-  const { logout, isLoggingOut } = useActiveProfile();
+  const { profile, logout } = useActiveProfile();
+  
+  const [activeTab, setActiveTab] = useState<string>('home');
   const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+
+  // Update active tab on scroll when on home page
+  useEffect(() => {
+    if (pathname !== '/') return;
+
+    const sections = ['movies', 'series', 'new-movies', 'my-list'];
+    const handleScroll = () => {
+      const scrollPos = window.scrollY + 200;
+      let currentSection = 'home';
+
+      for (const sectionId of sections) {
+        const el = document.getElementById(sectionId);
+        if (el && el.offsetTop <= scrollPos) {
+          currentSection = sectionId;
+        }
+      }
+      setActiveTab(currentSection);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [pathname]);
 
   // Global Keyboard Shortcuts (Cmd+K, Ctrl+K, /) and Custom Event Listener
   useEffect(() => {
@@ -68,6 +97,48 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
     };
   }, [isSearchOverlayOpen]);
 
+  const handleNavClick = (e: React.MouseEvent, href: string) => {
+    if (href.startsWith('/#')) {
+      const targetId = href.replace('/#', '');
+      if (pathname === '/') {
+        e.preventDefault();
+        const el = document.getElementById(targetId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          setActiveTab(targetId);
+        }
+      } else {
+        // Will route to /#id
+      }
+    } else if (href === '/') {
+      if (pathname === '/') {
+        e.preventDefault();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setActiveTab('home');
+      }
+    }
+    setIsMobileMenuOpen(false);
+  };
+
+  const getNavIcon = (id: string) => {
+    switch (id) {
+      case 'nav-home':
+        return <Home className="w-4 h-4 text-slate-400 group-hover:text-white" />;
+      case 'nav-movies':
+        return <Film className="w-4 h-4 text-slate-400 group-hover:text-white" />;
+      case 'nav-series':
+        return <Tv className="w-4 h-4 text-slate-400 group-hover:text-white" />;
+      case 'nav-new-movies':
+        return <Sparkles className="w-4 h-4 text-amber-400 group-hover:text-amber-300" />;
+      case 'nav-watch-together':
+        return <Zap className="w-4 h-4 text-sky-400 group-hover:text-sky-300" />;
+      case 'nav-my-list':
+        return <Bookmark className="w-4 h-4 text-slate-400 group-hover:text-white" />;
+      default:
+        return null;
+    }
+  };
+
   const unreadCount = notifications.filter((n) => n.unread).length;
 
   const markAllRead = () => {
@@ -79,44 +150,63 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
       className={cn(
         'fixed top-0 inset-x-0 z-40 transition-all duration-300 px-4 sm:px-8 lg:px-12',
         isScrolled
-          ? 'py-3.5 bg-[#06080d]/92 backdrop-blur-xl border-b border-slate-400/[0.08] shadow-[0_4px_24px_rgba(0,0,0,0.7)]'
-          : 'py-5 bg-gradient-to-b from-[#06080d]/90 via-[#06080d]/40 to-transparent'
+          ? 'py-3 bg-[#050811]/94 backdrop-blur-2xl border-b border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.8)]'
+          : 'py-4.5 bg-gradient-to-b from-[#050811]/95 via-[#050811]/45 to-transparent'
       )}
     >
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         {/* Left: Brand Logo & Desktop Nav Links */}
-        <div className="flex items-center gap-6 lg:gap-10">
-          <Logo size="md" />
+        <div className="flex items-center gap-6 lg:gap-8">
+          <Link href="/" className="cinema-focus rounded-lg">
+            <Logo size="md" />
+          </Link>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-1">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.id}
-                href={link.href}
-                id={link.id}
-                className="px-3 py-1.5 rounded-md text-sm font-medium text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors cinema-focus"
-              >
-                <span>{link.label}</span>
-                {link.badge && (
-                  <Badge variant="sync" size="sm" className="ml-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    {link.badge}
-                  </Badge>
-                )}
-              </Link>
-            ))}
+          {/* Desktop Navigation Links — Hotstar Style */}
+          <nav className="hidden lg:flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/[0.05]">
+            {NAV_LINKS.map((link) => {
+              const targetId = link.href.startsWith('/#') ? link.href.replace('/#', '') : (link.href === '/' ? 'home' : link.id);
+              const isActive = (pathname === '/' && activeTab === targetId) || (pathname === link.href);
+
+              return (
+                <Link
+                  key={link.id}
+                  href={link.href}
+                  id={link.id}
+                  onClick={(e) => handleNavClick(e, link.href)}
+                  className={cn(
+                    'group relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all cinema-focus',
+                    isActive
+                      ? 'text-white bg-white/[0.12] shadow-sm'
+                      : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'
+                  )}
+                >
+                  {getNavIcon(link.id)}
+                  <span>{link.label}</span>
+                  {link.badge && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-sm">
+                      {link.badge}
+                    </span>
+                  )}
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeNavIndicator"
+                      className="absolute bottom-0 inset-x-2 h-0.5 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full"
+                    />
+                  )}
+                </Link>
+              );
+            })}
           </nav>
         </div>
 
-        {/* Right Utility: Search, Notifications, Profile, Mobile Menu */}
+        {/* Right Utility: Search, Admin, TV Mode, Notifications, Profile, Mobile Menu */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Global Search Button Trigger */}
           <button
             id="nav-search-btn"
             type="button"
             onClick={() => setIsSearchOverlayOpen(true)}
-            className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] text-slate-300 hover:text-white transition-all text-xs group focus:outline-none focus:ring-1 focus:ring-sky-500/50"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] hover:border-white/[0.15] text-slate-300 hover:text-white transition-all text-xs group focus:outline-none focus:ring-1 focus:ring-sky-500/50"
             aria-label="Search DinuStream (⌘K)"
           >
             <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-400 transition-colors" />
@@ -128,27 +218,34 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
             </kbd>
           </button>
 
+          {/* Admin Studio Quick Trigger */}
+          <Link
+            href="/admin"
+            title="Cinema Admin Studio"
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-medium text-slate-300 hover:text-white transition-all"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+            <span>Admin</span>
+          </Link>
+
           {/* 10-Foot TV Mode Toggle */}
           <button
             id="nav-tv-mode-btn"
             type="button"
             onClick={toggleTVMode}
             className={cn(
-              'hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all cinema-focus',
+              'hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-all cinema-focus',
               isTVMode
                 ? 'bg-sky-500/20 border-sky-400/60 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.4)]'
                 : 'bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.08]'
             )}
-            title={isTVMode ? 'Exit 10-Foot TV Mode' : 'Switch to 10-Foot TV Mode (Large typography & D-pad focus)'}
+            title="Toggle TV Leanback Mode"
           >
-            <Tv className={cn('w-3.5 h-3.5', isTVMode ? 'text-sky-400 animate-pulse' : 'text-slate-400')} />
-            <span>TV Mode</span>
-            {isTVMode && (
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_6px_#38bdf8]" />
-            )}
+            <Tv className="w-3.5 h-3.5" />
+            <span>{isTVMode ? 'TV Mode ON' : 'TV Mode'}</span>
           </button>
 
-          {/* Notifications Trigger & Popover */}
+          {/* Notifications Dropdown */}
           <div className="relative">
             <IconButton
               variant="ghost"
@@ -156,66 +253,59 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
               label="Notifications"
               icon={
                 <div className="relative">
-                  <Bell className="w-4 h-4 text-slate-300" />
+                  <Bell className="w-4 h-4 text-slate-400 hover:text-white transition-colors" />
                   {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-sky-400 ring-2 ring-[#06080d]" />
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-[#050811]" />
                   )}
                 </div>
               }
-              onClick={() => setIsNotifOpen(!isNotifOpen)}
+              onClick={() => setIsNotifOpen((prev) => !prev)}
             />
 
             <AnimatePresence>
               {isNotifOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setIsNotifOpen(false)}
-                  />
-                  <motion.div
-                    initial={{ opacity: 0, y: 6, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 6, scale: 0.98 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute right-0 mt-2 w-80 rounded-xl bg-[#090e17]/95 backdrop-blur-xl border border-slate-400/[0.14] shadow-2xl z-50 p-2 overflow-hidden"
-                  >
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
-                      <span className="text-xs font-semibold text-white">Notifications</span>
-                      {unreadCount > 0 && (
-                        <button
-                          onClick={markAllRead}
-                          className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1"
-                        >
-                          <Check className="w-3 h-3" />
-                          <span>Mark all read</span>
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="py-1 max-h-72 overflow-y-auto divide-y divide-white/[0.04]">
-                      {notifications.map((notif) => (
-                        <div
-                          key={notif.id}
-                          className={`p-2.5 rounded-lg text-left transition-colors ${
-                            notif.unread ? 'bg-white/[0.04]' : 'opacity-75'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium text-white">
-                              {notif.title}
-                            </span>
-                            <span className="text-[10px] font-mono text-slate-500">
-                              {notif.time}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed font-light">
-                            {notif.message}
-                          </p>
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-2 w-80 rounded-2xl bg-[#090e1a]/95 backdrop-blur-2xl border border-white/[0.1] shadow-2xl p-4 space-y-3 z-50"
+                >
+                  <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
+                    <span className="text-xs font-bold text-white tracking-wide uppercase">
+                      Cinema Feed
+                    </span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllRead}
+                        className="text-[11px] text-sky-400 hover:text-sky-300 font-medium"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        className={cn(
+                          'p-2.5 rounded-xl border text-xs space-y-1 transition-all',
+                          n.unread
+                            ? 'bg-sky-500/[0.08] border-sky-500/30 text-slate-200'
+                            : 'bg-white/[0.02] border-white/[0.05] text-slate-400'
+                        )}
+                      >
+                        <div className="flex items-center justify-between font-semibold text-white">
+                          <span>{n.title}</span>
+                          <span className="text-[10px] text-slate-500">{n.time}</span>
                         </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                </>
+                        <p className="line-clamp-2 leading-relaxed text-[11px] font-light">
+                          {n.message}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
               )}
             </AnimatePresence>
           </div>
@@ -250,7 +340,7 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2 }}
-            className="lg:hidden border-t border-white/[0.06] bg-[#06080d]/95 backdrop-blur-xl mt-3 py-4 px-4 rounded-xl shadow-2xl space-y-3 overflow-hidden"
+            className="lg:hidden border-t border-white/[0.08] bg-[#050811]/98 backdrop-blur-2xl mt-3 py-4 px-4 rounded-2xl shadow-2xl space-y-3 overflow-hidden"
           >
             {/* Mobile Search Button */}
             <button
@@ -260,11 +350,11 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
                 setIsMobileMenuOpen(false);
                 setIsSearchOverlayOpen(true);
               }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-slate-200 bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.08] transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium text-slate-200 bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.08] transition-colors"
             >
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-sky-400" />
-                <span>Search DinuStream</span>
+                <span>Search Cinema Vault</span>
               </div>
               <kbd className="text-[10px] font-mono text-slate-400 bg-white/[0.08] px-1.5 py-0.5 rounded">⌘K</kbd>
             </button>
@@ -274,24 +364,36 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
                 <Link
                   key={link.id}
                   href={link.href}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="px-3 py-2 rounded-md text-sm font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] flex items-center justify-between"
+                  onClick={(e) => handleNavClick(e, link.href)}
+                  className="px-3 py-2.5 rounded-xl text-sm font-medium text-slate-200 hover:text-white hover:bg-white/[0.08] flex items-center justify-between"
                 >
-                  <span>{link.label}</span>
+                  <div className="flex items-center gap-2.5">
+                    {getNavIcon(link.id)}
+                    <span>{link.label}</span>
+                  </div>
                   {link.badge && (
-                    <Badge variant="sync" size="sm">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white">
                       {link.badge}
-                    </Badge>
+                    </span>
                   )}
                 </Link>
               ))}
+
+              <Link
+                href="/admin"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-3 py-2.5 rounded-xl text-sm font-medium text-sky-300 hover:bg-sky-500/10 flex items-center gap-2.5"
+              >
+                <ShieldCheck className="w-4 h-4 text-sky-400" />
+                <span>Admin Operations Studio</span>
+              </Link>
             </nav>
 
             <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
               <span className="font-mono text-[10px] uppercase">Private Cinema Suite</span>
               <div className="flex items-center gap-1.5 text-emerald-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Sync Ready</span>
+                <span>Dolby Stream Connected</span>
               </div>
             </div>
           </motion.div>

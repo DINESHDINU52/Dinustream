@@ -84,6 +84,35 @@ class MediaService {
   /**
    * Fetch hero item for the cinematic hero banner
    */
+    /**
+   * Fetch featured items for the multi-slide Hotstar hero carousel
+   */
+  async getFeaturedItems(limit = 6): Promise<MediaItem[]> {
+    try {
+      const [movies, series, recent] = await Promise.all([
+        this.getMovies(20),
+        this.getSeries(10),
+        this.getRecentlyAdded(15),
+      ]);
+
+      const itemsMap = new Map<string, MediaItem>();
+
+      // Prioritize items with backdrops or strong overviews
+      const candidates = [...series, ...movies, ...recent];
+      for (const item of candidates) {
+        if (!itemsMap.has(item.id)) {
+          itemsMap.set(item.id, item);
+        }
+        if (itemsMap.size >= limit) break;
+      }
+
+      return Array.from(itemsMap.values());
+    } catch (err) {
+      console.error('[MediaService] getFeaturedItems failed:', err);
+      return [];
+    }
+  }
+
   async getHeroItem(): Promise<MediaItem | null> {
     try {
       // Pick first movie from Jellyfin or first recently added
