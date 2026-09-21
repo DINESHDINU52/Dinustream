@@ -4,21 +4,14 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { PROFILES } from '@/lib/constants';
-import { UserProfileId } from '@/types/cinema';
 import { Avatar } from '@/components/ui/Avatar';
-import { Check, ChevronDown, Sliders, ShieldCheck } from 'lucide-react';
+import { ChevronDown, Sliders, ShieldCheck, LogOut, ArrowRight, UserCheck } from 'lucide-react';
 import { ProfileSettingsModal } from './ProfileSettingsModal';
 
 export const ProfileSwitcher: React.FC = () => {
-  const { profile, profileId, switchProfile, companionProfile } = useActiveProfile();
+  const { profile, logout, isLoggingOut, isCurrentOnline } = useActiveProfile();
   const [isOpen, setIsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-  const handleSelect = (id: UserProfileId) => {
-    switchProfile(id);
-    setIsOpen(false);
-  };
 
   return (
     <div className="relative">
@@ -26,10 +19,10 @@ export const ProfileSwitcher: React.FC = () => {
         whileTap={{ scale: 0.98 }}
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full bg-[#0d1420]/80 hover:bg-[#141e30] border border-slate-400/[0.12] transition-colors cinema-focus"
-        aria-label="Switch Profile"
+        aria-label="Profile Menu"
         id="profile-switcher-btn"
       >
-        <Avatar profile={profile} size="sm" />
+        <Avatar profile={profile} size="sm" isOnline={isCurrentOnline} />
 
         <div className="text-left hidden sm:block">
           <p className="text-xs font-medium text-slate-200 leading-none">{profile.name}</p>
@@ -57,48 +50,25 @@ export const ProfileSwitcher: React.FC = () => {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 6, scale: 0.98 }}
               transition={{ duration: 0.15, ease: 'easeOut' }}
-              className="absolute right-0 mt-2 w-64 rounded-xl bg-[#0a0f18]/95 backdrop-blur-xl border border-slate-400/[0.14] p-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.85)] z-50 overflow-hidden"
+              className="absolute right-0 mt-2 w-72 rounded-2xl bg-[#0a0f18]/95 backdrop-blur-2xl border border-slate-700/50 p-3 shadow-[0_16px_48px_rgba(0,0,0,0.85)] z-50 overflow-hidden"
             >
-              <div className="px-3 py-2 border-b border-white/[0.06] mb-1">
-                <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">
-                  Private Screening Room
-                </p>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Exclusive access for Dinu & Kanmani
-                </p>
+              {/* Active Profile Info Card */}
+              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.04] border border-white/[0.06] mb-2.5">
+                <Avatar profile={profile} size="md" isOnline={isCurrentOnline} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-white truncate">{profile.name}</p>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    {profile.title || (profile.isGuest ? 'Cinema Guest' : 'VIP Member')}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[9px] text-emerald-400 font-medium">Session Active</span>
+                  </div>
+                </div>
               </div>
 
-              {(Object.keys(PROFILES) as UserProfileId[]).map((key) => {
-                const item = PROFILES[key];
-                const isActive = profileId === key;
-
-                return (
-                  <button
-                    key={key}
-                    onClick={() => handleSelect(key)}
-                    className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition-all ${
-                      isActive
-                        ? 'bg-white/[0.08] text-white'
-                        : 'text-slate-300 hover:bg-white/[0.04] hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Avatar profile={item} size="sm" />
-                      <div>
-                        <span className="text-xs font-medium block text-slate-100">
-                          {item.name}
-                        </span>
-                        <span className="text-[11px] text-slate-400 block font-light">
-                          {item.favoriteGenre}
-                        </span>
-                      </div>
-                    </div>
-                    {isActive && <Check className="w-3.5 h-3.5 text-slate-200" />}
-                  </button>
-                );
-              })}
-
-              <div className="mt-1 pt-2 border-t border-white/[0.06] px-1 space-y-1">
+              {/* Navigation Links */}
+              <div className="space-y-1">
                 {profile.id === 'dinu' && (
                   <Link
                     href="/admin"
@@ -110,7 +80,7 @@ export const ProfileSwitcher: React.FC = () => {
                       <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
                       Operations & Admin
                     </span>
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">
                       Terminal
                     </span>
                   </Link>
@@ -125,15 +95,34 @@ export const ProfileSwitcher: React.FC = () => {
                   className="w-full flex items-center justify-between p-2 rounded-lg text-left text-slate-300 hover:bg-white/[0.06] hover:text-white transition-all text-xs font-medium"
                 >
                   <span className="flex items-center gap-2">
-                    <Sliders className="w-3.5 h-3.5 text-sky-400" />
-                    Profile & Cinema Settings
+                    <Sliders className="w-3.5 h-3.5 text-slate-400" />
+                    Profile & Audio Settings
                   </span>
                 </button>
+              </div>
 
-                <div className="px-2 py-1 text-[11px] text-slate-400 flex items-center justify-between">
-                  <span>Companion:</span>
-                  <span className="text-slate-200 font-medium">{companionProfile.name} (Online)</span>
-                </div>
+              {/* Enforced Logout & Profile Switch Notice */}
+              <div className="mt-2 pt-2 border-t border-white/[0.06]">
+                <p className="text-[10px] text-slate-500 px-1 mb-2 leading-relaxed">
+                  Profile switching is secured on the login screen.
+                </p>
+
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    logout();
+                  }}
+                  disabled={isLoggingOut}
+                  id="profile-logout-btn"
+                  className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-all disabled:opacity-50"
+                >
+                  {isLoggingOut ? (
+                    <div className="w-3.5 h-3.5 border-2 border-rose-400/30 border-t-rose-400 rounded-full animate-spin" />
+                  ) : (
+                    <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                  )}
+                  <span>Switch Profile (Log Out)</span>
+                </button>
               </div>
             </motion.div>
           </>

@@ -1,3 +1,4 @@
+import { UserProfileId } from './cinema';
 export type SyncPlaybackEventType =
   | 'PLAY'
   | 'PAUSE'
@@ -20,7 +21,7 @@ export type ParticipantPresence =
   | 'Offline';
 
 export interface SyncParticipantState {
-  id: 'dinu' | 'kanmani';
+  id: UserProfileId;
   name: string;
   avatarUrl: string;
   presence: ParticipantPresence;
@@ -31,7 +32,7 @@ export interface SyncParticipantState {
 export interface SyncActionNotification {
   id: string;
   type: SyncPlaybackEventType;
-  sender: 'dinu' | 'kanmani';
+  sender: UserProfileId;
   senderName: string;
   text: string;
   timestamp: number;
@@ -45,12 +46,9 @@ export interface SyncPlaybackSession {
   playbackState: 'PLAYING' | 'PAUSED' | 'BUFFERING';
   position: number; // seconds
   timestamp: number; // epoch ms when position was recorded
-  controller: 'dinu' | 'kanmani';
+  controller: UserProfileId;
   sequence: number; // monotonically increasing sequence number
-  participants: {
-    dinu: SyncParticipantState;
-    kanmani: SyncParticipantState;
-  };
+  participants: Record<string, SyncParticipantState>;
   lastNotification?: SyncActionNotification;
 }
 
@@ -61,7 +59,7 @@ export interface SyncEventPayload {
   episodeId?: string;
   position: number;
   playbackState: 'PLAYING' | 'PAUSED' | 'BUFFERING';
-  controller: 'dinu' | 'kanmani';
+  controller: UserProfileId;
   sequence: number;
   timestamp: number;
   message?: string;

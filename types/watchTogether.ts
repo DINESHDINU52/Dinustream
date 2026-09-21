@@ -1,4 +1,4 @@
-import { MediaItem, MediaBadge } from './cinema';
+import { MediaItem, MediaBadge, UserProfileId } from './cinema';
 
 export type WatchGroupState =
   | 'CREATED'
@@ -10,7 +10,7 @@ export type WatchGroupState =
   | 'ENDED';
 
 export interface WatchGroupParticipant {
-  id: 'dinu' | 'kanmani';
+  id: UserProfileId;
   name: string;
   avatarUrl: string;
   isHost: boolean;
@@ -36,7 +36,7 @@ export type QuickReactionEmoji = '❤️' | '😂' | '😭' | '😱' | '🔥' | 
 export interface FloatingReactionEvent {
   id: string;
   emoji: QuickReactionEmoji;
-  senderId: 'dinu' | 'kanmani';
+  senderId: UserProfileId;
   senderName: string;
   timestamp: number;
   xOffsetPercent: number;
@@ -50,7 +50,7 @@ export interface QueuedMovie {
   posterUrl: string;
   backdropUrl?: string;
   badges: MediaBadge[];
-  addedBy: 'dinu' | 'kanmani';
+  addedBy: UserProfileId;
   addedByName: string;
   addedAt: number;
 }
@@ -59,7 +59,7 @@ export interface WatchGroup {
   id: string;
   name: string;
   state: WatchGroupState;
-  hostId: 'dinu' | 'kanmani';
+  hostId: UserProfileId;
   participants: WatchGroupParticipant[];
   selectedMovie: MediaItem | null;
   queue: QueuedMovie[];

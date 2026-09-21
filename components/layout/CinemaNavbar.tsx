@@ -6,11 +6,12 @@ import { Badge } from '@/components/ui/Badge';
 import { Logo } from '@/components/ui/Logo';
 import { IconButton } from '@/components/ui/IconButton';
 import { NAV_LINKS } from '@/lib/constants';
-import { Search, Bell, Menu, X, Check, Tv } from 'lucide-react';
+import { Search, Bell, Menu, X, Check, Tv, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { SearchOverlay } from '@/components/search/SearchOverlay';
 import { useTVNavigation } from '@/hooks/useTVNavigation';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 export interface CinemaNotification {
   id: string;
@@ -37,6 +38,7 @@ export interface CinemaNavbarProps {
 export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => {
   const { isScrolled } = useScrollPosition();
   const { isTVMode, toggleTVMode } = useTVNavigation();
+  const { logout, isLoggingOut } = useActiveProfile();
   const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

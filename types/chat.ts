@@ -1,12 +1,13 @@
+import { UserProfileId } from './cinema';
 export interface ChatReaction {
   emoji: string;
-  users: Array<'dinu' | 'kanmani'>;
+  users: UserProfileId[];
   count: number;
 }
 
 export interface ChatReplyTo {
   id: string;
-  senderId: 'dinu' | 'kanmani';
+  senderId: UserProfileId;
   senderName: string;
   text: string;
 }
@@ -14,7 +15,7 @@ export interface ChatReplyTo {
 export interface ChatMessage {
   id: string;
   groupId: string;
-  senderId: 'dinu' | 'kanmani';
+  senderId: UserProfileId;
   senderName: string;
   senderAvatar: string;
   text: string;
@@ -25,10 +26,7 @@ export interface ChatMessage {
   isOptimistic?: boolean;
 }
 
-export interface TypingState {
-  dinu: boolean;
-  kanmani: boolean;
-}
+export type TypingState = Record<string, boolean>;
 
 export type ParticipantPresence =
   | 'Online'
@@ -37,7 +35,4 @@ export type ParticipantPresence =
   | 'Buffering'
   | 'Offline';
 
-export interface PresenceState {
-  dinu: ParticipantPresence;
-  kanmani: ParticipantPresence;
-}
+export type PresenceState = Record<string, ParticipantPresence>;

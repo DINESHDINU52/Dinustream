@@ -1,5 +1,7 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import React, { useState } from 'react';
 import { useWatchTogether } from '@/hooks/useWatchTogether';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -7,10 +9,10 @@ import { WatchGroupLobby } from './WatchGroupLobby';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 import { Button } from '@/components/ui/Button';
 import { Sparkles, Heart, Lock } from 'lucide-react';
-import Image from 'next/image';
+import { Avatar } from '@/components/ui/Avatar';
 
 export function WatchGroup() {
-  const { profile, switchProfile } = useActiveProfile();
+  const { profile, allProfiles, switchProfile } = useActiveProfile();
   const {
     group,
     createGroup,
@@ -26,7 +28,7 @@ export function WatchGroup() {
   } = useWatchTogether();
 
   const [groupNameInput, setGroupNameInput] = useState('Movie Night ❤️');
-  const [selectedHost, setSelectedHost] = useState<'dinu' | 'kanmani'>('dinu');
+  const [selectedHost, setSelectedHost] = useState<UserProfileId>('dinu');
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +85,7 @@ export function WatchGroup() {
                   }`}
                 >
                   <div className="w-8 h-8 rounded-full overflow-hidden border border-sky-400/60 flex-shrink-0">
-                    <Image src="/avatars/dinu.png" alt="Dinu" width={32} height={32} />
+                    
                   </div>
                   <div className="text-left">
                     <p className="text-sm font-semibold text-white">Dinu</p>
@@ -101,7 +103,7 @@ export function WatchGroup() {
                   }`}
                 >
                   <div className="w-8 h-8 rounded-full overflow-hidden border border-purple-400/60 flex-shrink-0">
-                    <Image src="/avatars/kanmani.png" alt="Kanmani" width={32} height={32} />
+                    
                   </div>
                   <div className="text-left">
                     <p className="text-sm font-semibold text-white">Kanmani</p>
@@ -139,7 +141,7 @@ export function WatchGroup() {
       onPlayNext={playNext}
       onToggleReady={toggleParticipantReady}
       onStartSyncAndPlay={startSyncAndPlay}
-      onSwitchProfile={(id) => switchProfile(id)}
+      onSwitchProfile={(id) => switchProfile()}
       onResetGroup={resetGroup}
     />
   );

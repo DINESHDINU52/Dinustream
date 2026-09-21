@@ -1,7 +1,10 @@
-import { MediaItem } from '@/types/cinema';
+import { UserProfileId, MediaItem } from '@/types/cinema';
 import { WatchGroup, QueuedMovie } from '@/types/watchTogether';
 import { getSyncStatus, syncMovie } from '@/lib/api/syncManager';
 import { createSyncPlayGroup } from '@/lib/api/syncPlay';
+import { PROFILES } from '@/lib/constants';
+import { firestore } from '@/lib/firebase/config';
+import { doc, setDoc, onSnapshot, getDoc, Unsubscribe } from 'firebase/firestore';
 
 const STORAGE_KEY = 'dinustream_active_watch_group';
 const EVENT_KEY = 'dinustream_watch_group_update';
@@ -18,7 +21,7 @@ function getInitialGroup(): WatchGroup {
       {
         id: 'dinu',
         name: 'Dinu',
-        avatarUrl: '/avatars/dinu.png',
+        avatarUrl: '/avatars/dinu.svg',
         isHost: true,
         isOnline: true,
         isReady: true,
@@ -29,13 +32,13 @@ function getInitialGroup(): WatchGroup {
       {
         id: 'kanmani',
         name: 'Kanmani',
-        avatarUrl: '/avatars/kanmani.png',
+        avatarUrl: '/avatars/kanmani.svg',
         isHost: false,
         isOnline: false,
         isReady: false,
         playbackPositionSeconds: 0,
         syncLatencyMs: 18,
-        statusText: 'Offline',
+        statusText: 'Connected',
       },
     ],
     selectedMovie: null,
@@ -60,17 +63,14 @@ class WatchTogetherService {
   private group: WatchGroup | null = null;
   private listeners: Set<(group: WatchGroup | null) => void> = new Set();
   private syncPollInterval: NodeJS.Timeout | null = null;
+  private firestoreUnsub: Unsubscribe | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         try {
-          const parsed = JSON.parse(stored);
-          if (!parsed.queue || parsed.queue.length === 0 || !parsed.queue[0]?.movieId) {
-            parsed.queue = [...INITIAL_WATCH_QUEUE];
-          }
-          this.group = parsed;
+          this.group = JSON.parse(stored);
         } catch {
           this.group = getInitialGroup();
         }
@@ -79,40 +79,73 @@ class WatchTogetherService {
         this.save();
       }
 
+      if (this.group?.id) {
+        this.subscribeToFirestoreRoom(this.group.id);
+      }
+
       window.addEventListener('storage', (e) => {
         if (e.key === STORAGE_KEY && e.newValue) {
           try {
             this.group = JSON.parse(e.newValue);
             this.notify();
-          } catch {
-            // ignore
-          }
+          } catch {}
         }
       });
-
-      window.addEventListener(EVENT_KEY, ((e: CustomEvent<WatchGroup>) => {
-        if (e.detail) {
-          this.group = e.detail;
-          this.notify();
-        }
-      }) as EventListener);
     }
   }
 
-  private save() {
-    if (typeof window !== 'undefined') {
-      if (this.group) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.group));
-        window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: this.group }));
-      } else {
-        localStorage.removeItem(STORAGE_KEY);
-      }
+  private subscribeToFirestoreRoom(roomId: string) {
+    if (!firestore || typeof window === 'undefined') return;
+    if (this.firestoreUnsub) {
+      this.firestoreUnsub();
+      this.firestoreUnsub = null;
     }
+
+    try {
+      const docRef = doc(firestore, 'dinustream_watch_groups', roomId);
+      this.firestoreUnsub = onSnapshot(docRef, (snap) => {
+        if (snap.exists()) {
+          const cloudGroup = snap.data() as WatchGroup;
+          if (cloudGroup && cloudGroup.id === roomId) {
+            this.group = cloudGroup;
+            this.saveLocal();
+            this.notify();
+          }
+        }
+      });
+    } catch (err) {
+      console.warn('[WatchTogether] Firestore room subscribe error:', err);
+    }
+  }
+
+  private saveLocal() {
+    if (typeof window !== 'undefined') {
+      try {
+        if (this.group) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(this.group));
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+        window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: this.group }));
+      } catch {}
+    }
+  }
+
+  private save(syncToCloud: boolean = true) {
+    this.saveLocal();
+
+    if (syncToCloud && firestore && this.group) {
+      try {
+        const docRef = doc(firestore, 'dinustream_watch_groups', this.group.id);
+        setDoc(docRef, this.group, { merge: true }).catch(() => {});
+      } catch {}
+    }
+
     this.notify();
   }
 
   private notify() {
-    this.listeners.forEach((fn) => fn(this.group));
+    this.listeners.forEach((listener) => listener(this.group));
   }
 
   subscribe(callback: (group: WatchGroup | null) => void): () => void {
@@ -127,11 +160,18 @@ class WatchTogetherService {
     return this.group;
   }
 
-  async createGroup(name: string = 'Movie Night ❤️', hostId: 'dinu' | 'kanmani' = 'dinu'): Promise<WatchGroup> {
-    const syncPlay = await createSyncPlayGroup(name);
+  async createGroup(name: string, hostId: UserProfileId): Promise<WatchGroup> {
+    const syncPlay = await createSyncPlayGroup(name).catch(() => ({ GroupId: `sync-${Date.now()}` }));
+    const groupId = `group-${Date.now()}`;
+
+    const hostProfile = PROFILES[hostId] || {
+      id: hostId,
+      name: hostId,
+      avatarUrl: '/avatars/guest.svg',
+    };
+
     const newGroup: WatchGroup = {
-      ...getInitialGroup(),
-      id: `group-${Date.now()}`,
+      id: groupId,
       name,
       hostId,
       state: 'CREATED',
@@ -139,111 +179,98 @@ class WatchTogetherService {
       jellyfinSyncPlayGroupId: syncPlay.GroupId,
       participants: [
         {
-          id: 'dinu',
-          name: 'Dinu',
-          avatarUrl: '/avatars/dinu.png',
-          isHost: hostId === 'dinu',
+          id: hostId,
+          name: hostProfile.name || String(hostId),
+          avatarUrl: hostProfile.avatarUrl || '/avatars/guest.svg',
+          isHost: true,
           isOnline: true,
           isReady: true,
           playbackPositionSeconds: 0,
           syncLatencyMs: 14,
-          statusText: hostId === 'dinu' ? 'Host • Screening Room' : 'Connected',
-        },
-        {
-          id: 'kanmani',
-          name: 'Kanmani',
-          avatarUrl: '/avatars/kanmani.png',
-          isHost: hostId === 'kanmani',
-          isOnline: true,
-          isReady: true,
-          playbackPositionSeconds: 0,
-          syncLatencyMs: 19,
-          statusText: hostId === 'kanmani' ? 'Host • Screening Room' : 'Connected',
+          statusText: 'Host • Screening Room',
         },
       ],
+      selectedMovie: null,
+      queue: [],
+      syncProgress: {
+        state: 'ready',
+        percent: 100,
+        transferredBytes: 42949672960,
+        totalBytes: 42949672960,
+        speed: '120 MB/s',
+        eta: '0s',
+        currentStep: 'Oracle SSD',
+      },
+      currentPositionSeconds: 0,
+      isPlaying: false,
     };
 
     this.group = newGroup;
     this.save();
+    this.subscribeToFirestoreRoom(groupId);
     return newGroup;
+  }
+
+  joinGroup(participantId: UserProfileId) {
+    if (!this.group) return;
+    const existing = this.group.participants.find((p) => p.id === participantId);
+    if (!existing) {
+      const pProfile = PROFILES[participantId] || {
+        id: participantId,
+        name: participantId,
+        avatarUrl: '/avatars/guest.svg',
+      };
+      this.group.participants.push({
+        id: participantId,
+        name: pProfile.name || String(participantId),
+        avatarUrl: pProfile.avatarUrl || '/avatars/guest.svg',
+        isHost: false,
+        isOnline: true,
+        isReady: false,
+        playbackPositionSeconds: 0,
+        syncLatencyMs: 16,
+        statusText: 'Connected',
+      });
+      this.save();
+    }
   }
 
   selectMovie(movie: MediaItem) {
     if (!this.group) return;
     this.group.selectedMovie = movie;
     this.group.state = 'WAITING';
-    this.group.syncProgress = {
-      state: 'not_cached',
-      percent: 0,
-      speed: '0 MB/s',
-      eta: '--',
-      currentStep: 'Google Drive',
-    };
     this.save();
-
-    // Check actual cache status
-    this.checkMovieCache(movie.id);
   }
 
-  async checkMovieCache(movieId: string) {
+  addToQueue(movie: MediaItem, addedBy: UserProfileId) {
     if (!this.group) return;
-    try {
-      const res = await getSyncStatus(`${movieId}.mkv`);
-      if (res.state === 'ready') {
-        this.group.syncProgress = {
-          state: 'ready',
-          percent: 100,
-          speed: '0 MB/s',
-          eta: '0s',
-          currentStep: 'Oracle SSD',
-        };
-        this.group.state = 'READY';
-        this.save();
-      }
-    } catch {
-      // Fallback state
+    const newQueueItem: QueuedMovie = {
+      id: `queue-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      movieId: movie.id,
+      title: movie.title,
+      posterUrl: movie.posterUrl,
+      backdropUrl: movie.backdropUrl,
+      runtime: movie.runtime,
+      addedBy,
+      addedByName: PROFILES[addedBy]?.name || String(addedBy),
+      badges: movie.badges || ['4K UHD', 'Dolby Atmos'],
+      addedAt: Date.now(),
+    };
+    this.group.queue = [...this.group.queue, newQueueItem];
+    if (!this.group.selectedMovie) {
+      this.group.selectedMovie = movie;
     }
+    this.save();
   }
 
-  addToQueue(movie: MediaItem, addedBy: 'dinu' | 'kanmani' = 'dinu') {
+  removeFromQueue(queueId: string) {
     if (!this.group) return;
-    const exists = this.group.queue.some((m) => m.movieId === movie.id);
-    if (!exists) {
-      const newItem: QueuedMovie = {
-        id: `queue-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        movieId: movie.id,
-        title: movie.title,
-        runtime: movie.runtime || '2h 10m',
-        posterUrl: movie.posterUrl,
-        backdropUrl: movie.backdropUrl,
-        badges: movie.badges || ['Dolby Atmos', '4K UHD'],
-        addedBy,
-        addedByName: addedBy === 'dinu' ? 'Dinu' : 'Kanmani',
-        addedAt: Date.now(),
-      };
-      this.group.queue.push(newItem);
-      this.save();
-    }
-  }
-
-  removeFromQueue(queueIdOrMovieId: string) {
-    if (!this.group) return;
-    this.group.queue = this.group.queue.filter(
-      (m) => m.id !== queueIdOrMovieId && m.movieId !== queueIdOrMovieId
-    );
+    this.group.queue = this.group.queue.filter((item) => item.id !== queueId);
     this.save();
   }
 
   reorderQueue(fromIndex: number, toIndex: number) {
     if (!this.group) return;
-    if (
-      fromIndex < 0 ||
-      fromIndex >= this.group.queue.length ||
-      toIndex < 0 ||
-      toIndex >= this.group.queue.length
-    ) {
-      return;
-    }
     const updated = [...this.group.queue];
     const [moved] = updated.splice(fromIndex, 1);
     updated.splice(toIndex, 0, moved);
@@ -265,24 +292,60 @@ class WatchTogetherService {
     const foundMovie: MediaItem = {
       id: nextItem.movieId,
       title: nextItem.title,
-      overview: 'Synchronized cinema feature for Dinu & Kanmani.',
+      overview: 'Synchronized cinema feature.',
       type: 'movie',
       backdropUrl: nextItem.backdropUrl || nextItem.posterUrl,
       posterUrl: nextItem.posterUrl,
       releaseYear: 2024,
       rating: 'U/A',
       runtime: nextItem.runtime,
-      genres: ['Action', 'Drama'],
-      badges: nextItem.badges,
+      genres: ['Cinema'],
+      badges: ['4K UHD', 'Dolby Atmos'],
     };
 
-    this.selectMovie(foundMovie);
+    this.group.selectedMovie = foundMovie;
     this.save();
-    if (onLaunch && this.group) {
-      onLaunch(nextItem.movieId, this.group.id);
+
+    if (onLaunch) {
+      onLaunch(foundMovie.id, this.group.id);
     }
   }
 
+  toggleParticipantReady(participantId: UserProfileId) {
+    if (!this.group) return;
+    this.group.participants = this.group.participants.map((p) => {
+      if (p.id === participantId) {
+        return {
+          ...p,
+          isReady: !p.isReady,
+          statusText: !p.isReady ? 'Ready to Watch' : 'Preparing',
+        };
+      }
+      return p;
+    });
+    this.save();
+  }
+
+  async startSyncAndPlay(onReadyToLaunch: (movieId: string, groupId: string) => void) {
+    if (!this.group || !this.group.selectedMovie) return;
+    const movie = this.group.selectedMovie;
+    const filename = `${movie.id}.mkv`;
+
+    // 1. Mark ready and launch
+    this.group.syncProgress = {
+      state: 'ready',
+      percent: 100,
+      speed: '120 MB/s',
+      eta: '0s',
+      currentStep: 'Oracle SSD',
+    };
+    this.group.state = 'PLAYING';
+    this.save();
+
+    onReadyToLaunch(movie.id, this.group.id);
+  }
+
+  
   prepareNextQueuedMovie(): QueuedMovie | null {
     if (!this.group || this.group.queue.length === 0) return null;
     const nextItem = this.group.queue[0];
@@ -291,16 +354,15 @@ class WatchTogetherService {
     const foundMovie: MediaItem = {
       id: nextItem.movieId,
       title: nextItem.title,
-      overview: 'Synchronized cinema feature for Dinu & Kanmani.',
+      overview: 'Synchronized cinema feature.',
       type: 'movie',
       backdropUrl: nextItem.backdropUrl || nextItem.posterUrl,
       posterUrl: nextItem.posterUrl,
       releaseYear: 2024,
       rating: 'U/A',
       runtime: nextItem.runtime,
-      matchScore: 99,
-      genres: ['Action', 'Drama'],
-      badges: nextItem.badges as import('@/types/cinema').MediaBadge[],
+      genres: ['Cinema'],
+      badges: ['4K UHD', 'Dolby Atmos'],
     };
 
     this.group.selectedMovie = foundMovie;
@@ -309,15 +371,7 @@ class WatchTogetherService {
     return nextItem;
   }
 
-  toggleParticipantReady(participantId: 'dinu' | 'kanmani') {
-    if (!this.group) return;
-    this.group.participants = this.group.participants.map((p) =>
-      p.id === participantId ? { ...p, isReady: !p.isReady } : p
-    );
-    this.save();
-  }
-
-  switchHost(newHostId: 'dinu' | 'kanmani') {
+  switchHost(newHostId: UserProfileId) {
     if (!this.group) return;
     this.group.hostId = newHostId;
     this.group.participants = this.group.participants.map((p) => ({
@@ -326,103 +380,6 @@ class WatchTogetherService {
       statusText: p.id === newHostId ? 'Host • Screening Room' : 'Connected',
     }));
     this.save();
-  }
-
-  /**
-   * ⚡ SYNC & PLAY
-   * Checks whether the movie is locally cached on Oracle SSD.
-   * If not cached:
-   *   Google Drive → Oracle SSD → Ready
-   * Once ready:
-   *   Both participants enter synchronized playback.
-   */
-  async startSyncAndPlay(onReadyToLaunch: (movieId: string, groupId: string) => void) {
-    if (!this.group || !this.group.selectedMovie) return;
-    const movie = this.group.selectedMovie;
-    const filename = `${movie.id}.mkv`;
-
-    // 1. Check if already cached
-    const initialStatus = await getSyncStatus(filename).catch(() => ({ state: 'not_cached' as const }));
-
-    if (initialStatus.state === 'ready') {
-      this.group.syncProgress = {
-        state: 'ready',
-        percent: 100,
-        speed: '120 MB/s',
-        eta: '0s',
-        currentStep: 'Oracle SSD',
-      };
-      this.group.state = 'READY';
-      this.save();
-
-      setTimeout(() => {
-        if (this.group) {
-          this.group.state = 'PLAYING';
-          this.save();
-          onReadyToLaunch(movie.id, this.group.id);
-        }
-      }, 600);
-      return;
-    }
-
-    // 2. Movie is not cached: Start Google Drive -> Oracle SSD pipeline
-    this.group.state = 'SYNCING';
-    this.group.syncProgress = {
-      state: 'starting',
-      percent: 5,
-      speed: '45 MB/s',
-      eta: '35s',
-      currentStep: 'Google Drive',
-    };
-    this.save();
-
-    await syncMovie({ movieId: movie.id, filename, title: movie.title }).catch(() => {});
-
-    // Poll or step through Google Drive -> Oracle SSD -> Ready pipeline
-    let currentStepIndex = 0;
-    const steps: Array<{ step: 'Google Drive' | 'Oracle SSD' | 'Ready'; percent: number; speed: string; eta: string }> = [
-      { step: 'Google Drive', percent: 25, speed: '68 MB/s', eta: '24s' },
-      { step: 'Google Drive', percent: 55, speed: '94 MB/s', eta: '12s' },
-      { step: 'Oracle SSD', percent: 80, speed: '115 MB/s', eta: '5s' },
-      { step: 'Oracle SSD', percent: 95, speed: '130 MB/s', eta: '1s' },
-      { step: 'Ready', percent: 100, speed: '140 MB/s', eta: '0s' },
-    ];
-
-    if (this.syncPollInterval) clearInterval(this.syncPollInterval);
-
-    this.syncPollInterval = setInterval(() => {
-      if (!this.group) {
-        if (this.syncPollInterval) clearInterval(this.syncPollInterval);
-        return;
-      }
-
-      if (currentStepIndex < steps.length) {
-        const s = steps[currentStepIndex];
-        this.group.syncProgress = {
-          state: s.step === 'Ready' ? 'ready' : 'syncing',
-          percent: s.percent,
-          speed: s.speed,
-          eta: s.eta,
-          currentStep: s.step,
-        };
-        currentStepIndex++;
-        this.save();
-
-        if (s.step === 'Ready') {
-          if (this.syncPollInterval) clearInterval(this.syncPollInterval);
-          this.group.state = 'READY';
-          this.save();
-
-          setTimeout(() => {
-            if (this.group && this.group.selectedMovie) {
-              this.group.state = 'PLAYING';
-              this.save();
-              onReadyToLaunch(movie.id, this.group.id);
-            }
-          }, 800);
-        }
-      }
-    }, 750);
   }
 
   updatePlaybackState(position: number, isPlaying: boolean) {
@@ -434,6 +391,10 @@ class WatchTogetherService {
   }
 
   resetGroup() {
+    if (this.syncPollInterval) {
+      clearInterval(this.syncPollInterval);
+      this.syncPollInterval = null;
+    }
     this.group = getInitialGroup();
     this.save();
   }

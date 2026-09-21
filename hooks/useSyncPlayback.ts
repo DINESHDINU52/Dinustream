@@ -1,5 +1,7 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { SyncPlaybackEngine, SyncEngineCallbacks } from '@/lib/sync/syncPlaybackEngine';
 import {
@@ -16,12 +18,12 @@ interface UseSyncPlaybackOptions {
   mediaId: string;
   episodeId?: string;
   enabled?: boolean;
-  onRemotePlay?: (sender: 'dinu' | 'kanmani', sequence: number) => void;
-  onRemotePause?: (sender: 'dinu' | 'kanmani', sequence: number) => void;
-  onRemoteSeek?: (position: number, sender: 'dinu' | 'kanmani', sequence: number) => void;
-  onRemoteSkipSegment?: (type: 'INTRO' | 'RECAP' | 'OUTRO', targetSeconds: number, sender: 'dinu' | 'kanmani') => void;
-  onRemoteNextEpisode?: (sender: 'dinu' | 'kanmani') => void;
-  onRemotePrevEpisode?: (sender: 'dinu' | 'kanmani') => void;
+  onRemotePlay?: (sender: UserProfileId, sequence: number) => void;
+  onRemotePause?: (sender: UserProfileId, sequence: number) => void;
+  onRemoteSeek?: (position: number, sender: UserProfileId, sequence: number) => void;
+  onRemoteSkipSegment?: (type: 'INTRO' | 'RECAP' | 'OUTRO', targetSeconds: number, sender: UserProfileId) => void;
+  onRemoteNextEpisode?: (sender: UserProfileId) => void;
+  onRemotePrevEpisode?: (sender: UserProfileId) => void;
   onDriftCorrectRate?: (rate: number) => void;
 }
 

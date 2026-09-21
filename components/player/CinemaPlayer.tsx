@@ -1,5 +1,7 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';

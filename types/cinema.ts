@@ -1,4 +1,4 @@
-export type UserProfileId = 'dinu' | 'kanmani';
+export type UserProfileId = 'dinu' | 'kanmani' | 'guest' | string;
 
 export interface UserProfile {
   id: UserProfileId;
@@ -10,6 +10,9 @@ export interface UserProfile {
   favoriteGenre: string;
   isOnline: boolean;
   statusMessage?: string;
+  isGuest?: boolean;
+  pinProtected?: boolean;
+  lastSeen?: number;
 }
 
 export type MediaBadge =

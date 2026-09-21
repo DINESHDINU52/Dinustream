@@ -1,5 +1,7 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { WatchGroup } from '@/types/watchTogether';
@@ -23,16 +25,16 @@ import Image from 'next/image';
 
 interface WatchGroupLobbyProps {
   group: WatchGroup;
-  currentUserId: 'dinu' | 'kanmani';
+  currentUserId: UserProfileId;
   onSelectMovie: (movie: MediaItem) => void;
   onAddToQueue: (movie: MediaItem) => void;
   onRemoveFromQueue: (movieId: string) => void;
   onReorderQueue?: (fromIndex: number, toIndex: number) => void;
   onClearQueue?: () => void;
   onPlayNext?: (onLaunch?: (movieId: string, groupId: string) => void) => void;
-  onToggleReady: (participantId: 'dinu' | 'kanmani') => void;
+  onToggleReady: (participantId: UserProfileId) => void;
   onStartSyncAndPlay: (onLaunch: (movieId: string, groupId: string) => void) => void;
-  onSwitchProfile: (profileId: 'dinu' | 'kanmani') => void;
+  onSwitchProfile: (profileId: UserProfileId) => void;
   onResetGroup: () => void;
 }
 

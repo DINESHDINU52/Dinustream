@@ -1,5 +1,7 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import React from 'react';
 import { motion } from 'framer-motion';
 import { WatchGroupParticipant } from '@/types/watchTogether';
@@ -10,9 +12,9 @@ import Image from 'next/image';
 
 interface ParticipantListProps {
   participants: WatchGroupParticipant[];
-  currentUserId: 'dinu' | 'kanmani';
-  onToggleReady?: (id: 'dinu' | 'kanmani') => void;
-  onMakeHost?: (id: 'dinu' | 'kanmani') => void;
+  currentUserId: UserProfileId;
+  onToggleReady?: (id: UserProfileId) => void;
+  onMakeHost?: (id: UserProfileId) => void;
 }
 
 export function ParticipantList({

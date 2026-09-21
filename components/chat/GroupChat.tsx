@@ -1,5 +1,7 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChatMessage as ChatMessageType, ChatReplyTo, TypingState, PresenceState } from '@/types/chat';
@@ -101,7 +103,7 @@ export function GroupChat({
     await firebaseChat.setTyping(groupId, profile.id, isTyping);
   };
 
-  const otherUserId: 'dinu' | 'kanmani' = profile.id === 'dinu' ? 'kanmani' : 'dinu';
+  const otherUserId: UserProfileId = profile.id === 'dinu' ? 'kanmani' : 'dinu';
   const otherUserName = otherUserId === 'dinu' ? 'Dinu' : 'Kanmani';
   const isOtherUserTyping = typing[otherUserId];
 

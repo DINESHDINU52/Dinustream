@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Home, Search, Users, Bookmark } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { ProfileSettingsModal } from '@/components/profiles/ProfileSettingsModal';
 import { cn } from '@/lib/utils';
 
 export interface MobileBottomNavProps {

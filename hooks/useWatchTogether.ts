@@ -1,5 +1,7 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import { useState, useEffect, useCallback } from 'react';
 import { WatchGroup } from '@/types/watchTogether';
 import { watchTogetherService } from '@/lib/services/watchTogetherService';
@@ -15,16 +17,16 @@ export function useWatchTogether() {
     return () => unsubscribe();
   }, []);
 
-  const createGroup = useCallback((name?: string, hostId?: 'dinu' | 'kanmani') => {
-    return watchTogetherService.createGroup(name, hostId);
+  const createGroup = useCallback((name?: string, hostId?: UserProfileId) => {
+    return watchTogetherService.createGroup(name || 'Movie Night ❤️', hostId || 'dinu');
   }, []);
 
   const selectMovie = useCallback((movie: MediaItem) => {
     watchTogetherService.selectMovie(movie);
   }, []);
 
-  const addToQueue = useCallback((movie: MediaItem, addedBy?: 'dinu' | 'kanmani') => {
-    watchTogetherService.addToQueue(movie, addedBy);
+  const addToQueue = useCallback((movie: MediaItem, addedBy?: UserProfileId) => {
+    watchTogetherService.addToQueue(movie, addedBy || 'dinu');
   }, []);
 
   const removeFromQueue = useCallback((queueIdOrMovieId: string) => {
@@ -47,12 +49,12 @@ export function useWatchTogether() {
     return watchTogetherService.prepareNextQueuedMovie();
   }, []);
 
-  const toggleParticipantReady = useCallback((participantId: 'dinu' | 'kanmani') => {
-    watchTogetherService.toggleParticipantReady(participantId);
+  const toggleParticipantReady = useCallback((participantId: UserProfileId) => {
+    if (participantId) watchTogetherService.toggleParticipantReady(participantId);
   }, []);
 
-  const switchHost = useCallback((newHostId: 'dinu' | 'kanmani') => {
-    watchTogetherService.switchHost(newHostId);
+  const switchHost = useCallback((newHostId: UserProfileId) => {
+    if (newHostId) watchTogetherService.switchHost(newHostId);
   }, []);
 
   const startSyncAndPlay = useCallback(

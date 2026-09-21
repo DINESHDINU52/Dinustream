@@ -1,5 +1,7 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChatMessage as ChatMessageType } from '@/types/chat';
@@ -11,7 +13,7 @@ import { isValidMediaUrl } from '@/lib/security/validation';
 
 interface ChatMessageProps {
   message: ChatMessageType;
-  currentUserId: 'dinu' | 'kanmani';
+  currentUserId: UserProfileId;
   onReply: (message: ChatMessageType) => void;
   onToggleReaction: (messageId: string, emoji: string) => void;
 }

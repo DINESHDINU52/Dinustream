@@ -1,3 +1,4 @@
+import { UserProfileId } from '@/types/cinema';
 import {
   ChatMessage,
   ChatReaction,
@@ -239,7 +240,7 @@ class FirebaseChatService {
     groupId: string,
     messageId: string,
     emoji: string,
-    userId: 'dinu' | 'kanmani'
+    userId: UserProfileId
   ): Promise<void> {
     const messages = this.getStoredMessages(groupId);
     const targetMsg = messages.find((m) => m.id === messageId);
@@ -294,7 +295,7 @@ class FirebaseChatService {
    */
   public async setTyping(
     groupId: string,
-    userId: 'dinu' | 'kanmani',
+    userId: UserProfileId,
     isTyping: boolean
   ): Promise<void> {
     const channel = this.getChannel(groupId);
@@ -343,7 +344,7 @@ class FirebaseChatService {
           collection(firestore, 'watchGroups', groupId, 'typing'),
           (snapshot) => {
             snapshot.docs.forEach((docSnap) => {
-              const uId = docSnap.id as 'dinu' | 'kanmani';
+              const uId = docSnap.id as UserProfileId;
               if (uId === 'dinu' || uId === 'kanmani') {
                 const data = docSnap.data();
                 current[uId] = Boolean(data?.isTyping);
@@ -363,13 +364,13 @@ class FirebaseChatService {
     const handleChannelMessage = (event: MessageEvent) => {
       if (event.data?.type === 'TYPING_UPDATE' && event.data.groupId === groupId) {
         const { userId, isTyping } = event.data;
-        current[userId as 'dinu' | 'kanmani'] = isTyping;
+        current[userId as UserProfileId] = isTyping;
         callback({ ...current });
 
         if (isTyping) {
           if (timeouts[userId]) clearTimeout(timeouts[userId]);
           timeouts[userId] = setTimeout(() => {
-            current[userId as 'dinu' | 'kanmani'] = false;
+            current[userId as UserProfileId] = false;
             callback({ ...current });
           }, 3500);
         }
@@ -394,7 +395,7 @@ class FirebaseChatService {
    */
   public async updatePresence(
     groupId: string,
-    userId: 'dinu' | 'kanmani',
+    userId: UserProfileId,
     status: ParticipantPresence
   ): Promise<void> {
     const channel = this.getChannel(groupId);
@@ -440,7 +441,7 @@ class FirebaseChatService {
           collection(firestore, 'watchGroups', groupId, 'presence'),
           (snapshot) => {
             snapshot.docs.forEach((docSnap) => {
-              const uId = docSnap.id as 'dinu' | 'kanmani';
+              const uId = docSnap.id as UserProfileId;
               if (uId === 'dinu' || uId === 'kanmani') {
                 const data = docSnap.data();
                 if (data?.status) {
@@ -464,7 +465,7 @@ class FirebaseChatService {
     const handleChannelMessage = (event: MessageEvent) => {
       if (event.data?.type === 'PRESENCE_UPDATE' && event.data.groupId === groupId) {
         const { userId, status } = event.data;
-        current[userId as 'dinu' | 'kanmani'] = status;
+        current[userId as UserProfileId] = status;
         this.presenceCache.set(groupId, current);
         callback({ ...current });
       }

@@ -1,43 +1,46 @@
+import { UserProfileId } from '@/types/cinema';
 import {
   SyncPlaybackEventType,
   SyncPlaybackSession,
   SyncEventPayload,
   SyncActionNotification,
 } from '@/types/syncPlayback';
-
 import { QuickReactionEmoji } from '@/types/watchTogether';
+import { PROFILES } from '@/lib/constants';
+import { firestore } from '@/lib/firebase/config';
+import { doc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 
 export interface SyncEngineCallbacks {
-  onPlay?: (sender: 'dinu' | 'kanmani', sequence: number) => void;
-  onPause?: (sender: 'dinu' | 'kanmani', sequence: number) => void;
-  onSeek?: (position: number, sender: 'dinu' | 'kanmani', sequence: number) => void;
-  onSkipSegment?: (type: 'INTRO' | 'RECAP' | 'OUTRO', targetSeconds: number, sender: 'dinu' | 'kanmani') => void;
-  onNextEpisode?: (sender: 'dinu' | 'kanmani') => void;
-  onPrevEpisode?: (sender: 'dinu' | 'kanmani') => void;
+  onPlay?: (sender: UserProfileId, sequence: number) => void;
+  onPause?: (sender: UserProfileId, sequence: number) => void;
+  onSeek?: (position: number, sender: UserProfileId, sequence: number) => void;
+  onSkipSegment?: (type: 'INTRO' | 'RECAP' | 'OUTRO', targetSeconds: number, sender: UserProfileId) => void;
+  onNextEpisode?: (sender: UserProfileId) => void;
+  onPrevEpisode?: (sender: UserProfileId) => void;
   onDriftCorrectRate?: (targetRate: number) => void;
   onNotification?: (notification: SyncActionNotification) => void;
   onSessionUpdate?: (session: SyncPlaybackSession) => void;
-  onReaction?: (emoji: QuickReactionEmoji, sender: 'dinu' | 'kanmani', senderName: string) => void;
+  onReaction?: (emoji: QuickReactionEmoji, sender: UserProfileId, senderName: string) => void;
 }
 
 export class SyncPlaybackEngine {
   private groupId: string;
   private mediaId: string;
-  private localUserId: 'dinu' | 'kanmani';
+  private localUserId: UserProfileId;
   private callbacks: SyncEngineCallbacks;
   private channel: BroadcastChannel | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private presenceTimer: NodeJS.Timeout | null = null;
-  private driftCheckTimer: NodeJS.Timeout | null = null;
   private storageKey: string;
   private isDestroyed = false;
+  private unsubscribeFirestore: Unsubscribe | null = null;
 
   private session: SyncPlaybackSession;
 
   constructor(
     groupId: string,
     mediaId: string,
-    localUserId: 'dinu' | 'kanmani',
+    localUserId: UserProfileId,
     callbacks: SyncEngineCallbacks,
     groupName: string = 'Movie Night ❤️'
   ) {
@@ -46,6 +49,12 @@ export class SyncPlaybackEngine {
     this.localUserId = localUserId;
     this.callbacks = callbacks;
     this.storageKey = `dinustream_sync_session_${groupId}`;
+
+    const userProfile = PROFILES[localUserId] || {
+      id: localUserId,
+      name: localUserId,
+      avatarUrl: '/avatars/guest.svg',
+    };
 
     // Initialize session state
     const initialSession: SyncPlaybackSession = {
@@ -58,19 +67,11 @@ export class SyncPlaybackEngine {
       controller: localUserId,
       sequence: 1,
       participants: {
-        dinu: {
-          id: 'dinu',
-          name: 'Dinu',
-          avatarUrl: '/avatars/dinu.png',
-          presence: localUserId === 'dinu' ? 'Watching' : 'Online',
-          lastSeen: Date.now(),
-          position: 0,
-        },
-        kanmani: {
-          id: 'kanmani',
-          name: 'Kanmani',
-          avatarUrl: '/avatars/kanmani.png',
-          presence: localUserId === 'kanmani' ? 'Watching' : 'Online',
+        [localUserId]: {
+          id: localUserId,
+          name: userProfile.name || String(localUserId),
+          avatarUrl: userProfile.avatarUrl || '/avatars/guest.svg',
+          presence: 'Watching',
           lastSeen: Date.now(),
           position: 0,
         },
@@ -88,10 +89,16 @@ export class SyncPlaybackEngine {
             initialSession.position = parsed.position || 0;
             initialSession.playbackState = parsed.playbackState || 'PAUSED';
             initialSession.groupName = parsed.groupName || groupName;
+            if (parsed.participants) {
+              initialSession.participants = {
+                ...initialSession.participants,
+                ...parsed.participants,
+              };
+            }
           }
         }
       } catch {
-        // Fall back to initialSession
+        // Fall back
       }
     }
 
@@ -100,35 +107,52 @@ export class SyncPlaybackEngine {
   }
 
   private initNetworking() {
-    if (typeof window === 'undefined') return;
+    if (typeof window !== 'undefined') {
+      // 1. BroadcastChannel for zero-latency local / same-machine sync
+      try {
+        this.channel = new BroadcastChannel(`dinustream_sync_${this.groupId}`);
+        this.channel.onmessage = (event) => {
+          this.handleIncomingPayload(event.data);
+        };
+      } catch {
+        // Fallback
+      }
 
-    // 1. BroadcastChannel for instant real-time sync across tabs/windows
-    try {
-      this.channel = new BroadcastChannel(`dinustream_sync_${this.groupId}`);
-      this.channel.onmessage = (event) => {
-        this.handleIncomingPayload(event.data);
-      };
-    } catch {
-      // Fallback to storage event
+      // 2. Storage event listener fallback
+      window.addEventListener('storage', this.handleStorageEvent);
+
+      // 3. Firestore Real-Time cross-device synchronization
+      if (firestore) {
+        try {
+          const docRef = doc(firestore, 'dinustream_sync_rooms', this.groupId);
+          this.unsubscribeFirestore = onSnapshot(docRef, (snap) => {
+            if (snap.exists()) {
+              const data = snap.data() as SyncEventPayload;
+              if (data && data.controller !== this.localUserId) {
+                this.handleIncomingPayload(data);
+              }
+            }
+          });
+        } catch (err) {
+          console.warn('[SyncEngine] Firestore listener failed; using local real-time mesh:', err);
+        }
+      }
+
+      // 4. Heartbeat interval
+      this.heartbeatTimer = setInterval(() => {
+        this.sendHeartbeat();
+      }, 3000);
+
+      // 5. Presence checker (mark stale participants offline)
+      this.presenceTimer = setInterval(() => {
+        this.checkPresenceLiveness();
+      }, 5000);
+
+      // Announce JOIN event
+      this.broadcastEvent('JOIN', this.session.position, this.session.playbackState, {
+        customMessage: `${this.getLocalUserName()} connected`,
+      });
     }
-
-    // 2. Storage event listener fallback
-    window.addEventListener('storage', this.handleStorageEvent);
-
-    // 3. Heartbeat interval
-    this.heartbeatTimer = setInterval(() => {
-      this.sendHeartbeat();
-    }, 2000);
-
-    // 4. Presence checker (mark stale participants offline)
-    this.presenceTimer = setInterval(() => {
-      this.checkPresenceLiveness();
-    }, 4000);
-
-    // Announce JOIN event
-    this.broadcastEvent('JOIN', this.session.position, this.session.playbackState, {
-      customMessage: `${this.getLocalUserName()} joined`,
-    });
   }
 
   private handleStorageEvent = (e: StorageEvent) => {
@@ -136,24 +160,31 @@ export class SyncPlaybackEngine {
       try {
         const payload: SyncEventPayload = JSON.parse(e.newValue);
         this.handleIncomingPayload(payload);
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
   };
 
   private handleIncomingPayload(payload: SyncEventPayload) {
     if (!payload || payload.groupId !== this.groupId) return;
     if (payload.controller === this.localUserId && payload.type !== 'HEARTBEAT') {
-      // Echo from own client, ignore
       return;
     }
 
     const sender = payload.controller;
-    const senderName = sender === 'dinu' ? 'Dinu' : 'Kanmani';
+    const senderName = this.getUserName(sender);
 
-    // Update participant presence & position
-    if (this.session.participants[sender]) {
+    // Update participant presence & position dynamically
+    if (!this.session.participants[sender]) {
+      const pProfile = PROFILES[sender];
+      this.session.participants[sender] = {
+        id: sender,
+        name: senderName,
+        avatarUrl: pProfile?.avatarUrl || '/avatars/guest.svg',
+        presence: payload.playbackState === 'PLAYING' ? 'Watching' : 'Paused',
+        lastSeen: Date.now(),
+        position: payload.position,
+      };
+    } else {
       this.session.participants[sender].lastSeen = Date.now();
       this.session.participants[sender].position = payload.position;
       this.session.participants[sender].presence =
@@ -164,11 +195,7 @@ export class SyncPlaybackEngine {
           : 'Paused';
     }
 
-    // Process authoritative events with sequence check
-    const isHigherSequence = payload.sequence >= this.session.sequence;
-
     if (payload.type === 'HEARTBEAT') {
-      // Only update presence metadata
       this.callbacks.onSessionUpdate?.({ ...this.session });
       return;
     }
@@ -181,6 +208,8 @@ export class SyncPlaybackEngine {
       );
       return;
     }
+
+    const isHigherSequence = payload.sequence >= this.session.sequence;
 
     // Handle discrete playback actions
     if (isHigherSequence || payload.type === 'SEEK' || payload.type.startsWith('SKIP_')) {
@@ -205,7 +234,7 @@ export class SyncPlaybackEngine {
           break;
 
         case 'SEEK':
-          notificationText = notificationText || `${senderName} seeked`;
+          notificationText = notificationText || `${senderName} seeked playback`;
           this.callbacks.onSeek?.(payload.position, sender, payload.sequence);
           break;
 
@@ -235,13 +264,13 @@ export class SyncPlaybackEngine {
           break;
 
         case 'JOIN':
-          notificationText = `${senderName} joined`;
+          notificationText = `${senderName} connected to room`;
           break;
       }
 
       if (notificationText) {
         const notif: SyncActionNotification = {
-          id: `notif-${Date.now()}-${Math.random()}`,
+          id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           type: payload.type,
           sender,
           senderName,
@@ -257,27 +286,13 @@ export class SyncPlaybackEngine {
     }
   }
 
-  /**
-   * Continuous Drift Correction
-   *
-   * Compares local player currentTime against authoritative session position.
-   * If remote is playing:
-   *   Authoritative Position = remotePosition + (elapsed time since timestamp)
-   *
-   * Drift thresholds:
-   *   < 0.35s  : In-sync. No adjustment needed.
-   *   0.35s - 2.0s : Soft rate adjustment (1.06x or 0.94x). Zero audio stutter!
-   *   > 2.0s   : Hard seek to authoritative timestamp.
-   */
   public performDriftCorrection(localCurrentTime: number) {
     if (this.isDestroyed) return;
     if (this.session.controller === this.localUserId) {
-      // Local client is controller, heartbeat will keep peers in sync
       this.session.position = localCurrentTime;
       return;
     }
 
-    // Calculate authoritative remote position
     let authoritativePos = this.session.position;
     if (this.session.playbackState === 'PLAYING') {
       const elapsedSeconds = (Date.now() - this.session.timestamp) / 1000;
@@ -287,34 +302,26 @@ export class SyncPlaybackEngine {
     const drift = localCurrentTime - authoritativePos;
     const absDrift = Math.abs(drift);
 
-    // 1. In sync (within 350ms window)
     if (absDrift < 0.35) {
       this.callbacks.onDriftCorrectRate?.(1.0);
       return;
     }
 
-    // 2. Soft drift correction (350ms to 2.0s): Smooth playback rate steering
     if (absDrift >= 0.35 && absDrift < 2.0) {
       if (drift < 0) {
-        // Local is lagging behind remote: speed up smoothly to catch up
         this.callbacks.onDriftCorrectRate?.(1.06);
       } else {
-        // Local is running ahead of remote: gently slow down
         this.callbacks.onDriftCorrectRate?.(0.94);
       }
       return;
     }
 
-    // 3. Hard seek (> 2.0s): Discrete re-alignment needed
     if (absDrift >= 2.0) {
       this.callbacks.onDriftCorrectRate?.(1.0);
       this.callbacks.onSeek?.(authoritativePos, this.session.controller, this.session.sequence);
     }
   }
 
-  /**
-   * Broadcast an authoritative event
-   */
   public broadcastEvent(
     type: SyncPlaybackEventType,
     position: number,
@@ -377,22 +384,27 @@ export class SyncPlaybackEngine {
       message,
     };
 
-    // Send through BroadcastChannel
+    // 1. BroadcastChannel (local mesh)
     if (this.channel) {
       try {
         this.channel.postMessage(payload);
-      } catch {
-        // fallback
-      }
+      } catch {}
     }
 
-    // Persist to storage
+    // 2. Firestore real-time cloud write
+    if (firestore) {
+      try {
+        const docRef = doc(firestore, 'dinustream_sync_rooms', this.groupId);
+        setDoc(docRef, payload, { merge: true }).catch(() => {});
+      } catch {}
+    }
+
+    // 3. LocalStorage persistence
     this.persistSession(payload);
 
-    // Trigger local notification if applicable
     if (message && type !== 'HEARTBEAT') {
       const notif: SyncActionNotification = {
-        id: `notif-${Date.now()}-${Math.random()}`,
+        id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         type,
         sender: this.localUserId,
         senderName,
@@ -424,9 +436,14 @@ export class SyncPlaybackEngine {
     if (this.channel) {
       try {
         this.channel.postMessage(payload);
-      } catch {
-        // ignore
-      }
+      } catch {}
+    }
+
+    if (firestore) {
+      try {
+        const docRef = doc(firestore, 'dinustream_sync_rooms', this.groupId);
+        setDoc(docRef, payload, { merge: true }).catch(() => {});
+      } catch {}
     }
 
     this.persistSession(payload);
@@ -450,23 +467,33 @@ export class SyncPlaybackEngine {
     if (this.channel) {
       try {
         this.channel.postMessage(payload);
-      } catch {
-        // ignore
-      }
+      } catch {}
+    }
+
+    if (firestore) {
+      try {
+        const docRef = doc(firestore, 'dinustream_sync_rooms', this.groupId);
+        setDoc(docRef, { ...payload, lastHeartbeat: Date.now() }, { merge: true }).catch(() => {});
+      } catch {}
     }
   }
 
   private checkPresenceLiveness() {
     if (this.isDestroyed) return;
     const now = Date.now();
-    const companionId = this.localUserId === 'dinu' ? 'kanmani' : 'dinu';
-    const companion = this.session.participants[companionId];
+    let changed = false;
 
-    if (companion && now - companion.lastSeen > 6500) {
-      if (companion.presence !== 'Offline') {
-        companion.presence = 'Offline';
-        this.callbacks.onSessionUpdate?.({ ...this.session });
+    Object.values(this.session.participants).forEach((p) => {
+      if (p.id !== this.localUserId && now - p.lastSeen > 8000) {
+        if (p.presence !== 'Offline') {
+          p.presence = 'Offline';
+          changed = true;
+        }
       }
+    });
+
+    if (changed) {
+      this.callbacks.onSessionUpdate?.({ ...this.session });
     }
   }
 
@@ -474,13 +501,15 @@ export class SyncPlaybackEngine {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(latestPayload || this.session));
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   private getLocalUserName(): string {
-    return this.localUserId === 'dinu' ? 'Dinu' : 'Kanmani';
+    return this.getUserName(this.localUserId);
+  }
+
+  private getUserName(id: UserProfileId): string {
+    return PROFILES[id]?.name || String(id);
   }
 
   public getSession(): SyncPlaybackSession {
@@ -493,11 +522,14 @@ export class SyncPlaybackEngine {
       this.channel.close();
       this.channel = null;
     }
+    if (this.unsubscribeFirestore) {
+      this.unsubscribeFirestore();
+      this.unsubscribeFirestore = null;
+    }
     if (typeof window !== 'undefined') {
       window.removeEventListener('storage', this.handleStorageEvent);
     }
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.presenceTimer) clearInterval(this.presenceTimer);
-    if (this.driftCheckTimer) clearInterval(this.driftCheckTimer);
   }
 }

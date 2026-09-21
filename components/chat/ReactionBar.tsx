@@ -1,12 +1,14 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import React from 'react';
 import { ChatReaction } from '@/types/chat';
 import { Smile } from 'lucide-react';
 
 interface ReactionBarProps {
   reactions: Record<string, ChatReaction>;
-  currentUserId: 'dinu' | 'kanmani';
+  currentUserId: UserProfileId;
   onToggleReaction: (emoji: string) => void;
   onOpenEmojiPicker?: () => void;
   className?: string;

@@ -2,9 +2,9 @@ import { UserProfile } from '@/types/cinema';
 
 export const PLATFORM_NAME = 'DinuStream';
 export const PLATFORM_TAGLINE = 'Your Private Cinema';
-export const PLATFORM_VERSION = 'v1.1.0';
+export const PLATFORM_VERSION = 'v1.2.0';
 
-export const PROFILES: Record<'dinu' | 'kanmani', UserProfile> = {
+export const PROFILES: Record<string, UserProfile> = {
   dinu: {
     id: 'dinu',
     name: 'Dinu',
@@ -15,17 +15,34 @@ export const PROFILES: Record<'dinu' | 'kanmani', UserProfile> = {
     favoriteGenre: 'Sci-Fi, IMAX & 4K Epics',
     isOnline: true,
     statusMessage: 'Ready for Dune: Part Two in 4K Atmos',
+    pinProtected: true,
+    isGuest: false,
   },
   kanmani: {
     id: 'kanmani',
     name: 'Kanmani',
-    title: 'Private Screen Royalty',
+    title: 'Screen Royalty',
     avatarUrl: '/avatars/kanmani.svg',
     accentColor: '#f43f5e', // Rose
     glowColor: 'rgba(244, 63, 94, 0.35)',
     favoriteGenre: 'Prestige Drama, Thrillers & Romance',
     isOnline: true,
     statusMessage: 'In synchronized screening room',
+    pinProtected: true,
+    isGuest: false,
+  },
+  guest: {
+    id: 'guest',
+    name: 'Guest 1',
+    title: 'Cinema Guest',
+    avatarUrl: '/avatars/guest.svg',
+    accentColor: '#10b981', // Emerald
+    glowColor: 'rgba(16, 185, 129, 0.35)',
+    favoriteGenre: 'Blockbusters & Popular Cinema',
+    isOnline: false,
+    statusMessage: 'Visiting private cinema',
+    pinProtected: false,
+    isGuest: true,
   },
 };
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { UserProfileId } from '@/types/cinema';
+
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QueuedMovie } from '@/types/watchTogether';
@@ -19,7 +21,7 @@ import Image from 'next/image';
 interface GroupQueueProps {
   queue: QueuedMovie[];
   isHost?: boolean;
-  currentUserId?: 'dinu' | 'kanmani';
+  currentUserId?: UserProfileId;
   onRemoveFromQueue: (id: string) => void;
   onReorderQueue?: (fromIndex: number, toIndex: number) => void;
   onPlayNext?: () => void;
