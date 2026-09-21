@@ -7,6 +7,21 @@ export interface ProfilePresence {
   lastSeen: number;
 }
 
+/** Heartbeat fires every 10s; three missed beats means the tab is gone. */
+export const PRESENCE_STALE_AFTER_MS = 30_000;
+
+/**
+ * Pure "is this presence record still fresh?" predicate.
+ *
+ * Exported so components that already hold a subscribed presence snapshot can
+ * evaluate it directly instead of calling back into the singleton — which also
+ * keeps the staleness window defined in exactly one place.
+ */
+export function isPresenceOnline(presence?: ProfilePresence | null): boolean {
+  if (!presence) return false;
+  return presence.status === 'online' && Date.now() - presence.lastSeen < PRESENCE_STALE_AFTER_MS;
+}
+
 class PresenceService {
   private presences: Map<string, ProfilePresence> = new Map();
   private listeners: Set<(map: Record<string, ProfilePresence>) => void> = new Set();
@@ -159,10 +174,7 @@ class PresenceService {
   }
 
   isProfileOnline(profileId: string): boolean {
-    const p = this.presences.get(profileId);
-    if (!p) return false;
-    // Considered online if status is 'online' and heartbeat within 30 seconds
-    return p.status === 'online' && Date.now() - p.lastSeen < 30000;
+    return isPresenceOnline(this.presences.get(profileId));
   }
 
   getLastSeenText(profileId: string): string {

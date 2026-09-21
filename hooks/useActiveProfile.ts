@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { UserProfile, UserProfileId, ContinueWatchingItem } from '@/types/cinema';
+import { UserProfile, ContinueWatchingItem } from '@/types/cinema';
 import { UserPreferences, UserProfileData, WatchHistoryItem } from '@/types/profile';
 import { profileService } from '@/lib/services/profileService';
 import { presenceService, ProfilePresence } from '@/lib/services/presenceService';
@@ -58,14 +58,19 @@ export function useActiveProfile() {
     }
   }, [router]);
 
-  // Enforce: Profile switching must only happen on the login screen
-  const switchProfile = useCallback(
-    async (newId?: string) => {
-      // Direct users through the official login screen as required
-      await logout();
-    },
-    [logout]
-  );
+  /**
+   * Switch profile.
+   *
+   * By design this always routes through the login screen: the profile is
+   * carried in an HTTP-only session cookie, so it can only be changed by
+   * re-authenticating. It deliberately takes no target-profile argument —
+   * callers used to pass one (`switchProfile('kanmani')`) and reasonably
+   * expected an in-place swap, when in fact the value was ignored and the
+   * session was ended.
+   */
+  const switchProfile = useCallback(async () => {
+    await logout();
+  }, [logout]);
 
   const updateSettings = useCallback(
     (partial: Partial<UserPreferences>) => {

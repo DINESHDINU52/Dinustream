@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useId, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { IconButton } from '@/components/ui/IconButton';
@@ -19,12 +19,25 @@ export interface ModalProps {
 }
 
 const sizeStyles = {
-  sm: 'max-w-md',
-  md: 'max-w-lg',
-  lg: 'max-w-2xl',
-  xl: 'max-w-4xl',
+  sm: 'sm:max-w-md',
+  md: 'sm:max-w-lg',
+  lg: 'sm:max-w-2xl',
+  xl: 'sm:max-w-4xl',
 };
 
+/**
+ * Modal — centred dialog on tablet/desktop, bottom sheet on phones.
+ *
+ * Layout notes
+ *  - The scroll container is the full-screen wrapper and the panel sits inside
+ *    a `min-h-full` flex row. The previous structure applied `items-center`
+ *    directly to the scrolling element, which is the classic flexbox trap: once
+ *    content is taller than the viewport the overflow is distributed to *both*
+ *    sides and the top of the panel becomes unreachable. The details modal hit
+ *    this on any phone in landscape.
+ *  - The panel itself is a column with a `max-h` and a scrolling body, so the
+ *    header and footer stay pinned and only the content moves.
+ */
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
   onClose,
@@ -36,96 +49,133 @@ export const Modal: React.FC<ModalProps> = ({
   size = 'md',
   className,
 }) => {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
     },
-    [isOpen, onClose]
+    [onClose]
   );
 
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    } else {
-      document.body.style.overflow = '';
-    }
+    if (!isOpen) return;
+
+    /*
+      Restore the previous inline value instead of blanking it. Hard-coding
+      `overflow = ''` on cleanup meant that closing a modal opened from inside
+      the fullscreen player (which also locks body scroll) handed scrolling back
+      to the page underneath the video.
+    */
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus();
+
+    window.addEventListener('keydown', handleKeyDown);
+
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
+      previouslyFocusedRef.current?.focus?.();
     };
   }, [isOpen, handleKeyDown]);
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-          {/* Dim Backdrop */}
+        <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain">
+          {/* Dim backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 bg-[#06080d]/85 backdrop-blur-md -z-10"
+            className="fixed inset-0 bg-[#04070f]/70 backdrop-blur-md"
             onClick={onClose}
           />
 
-          {/* Modal Container */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.98, y: 8 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            role="dialog"
-            aria-modal="true"
-            className={cn(
-              'w-full bg-[#0a0f18]/95 border border-slate-400/[0.14] rounded-xl shadow-[0_24px_64px_rgba(0,0,0,0.95)] overflow-hidden',
-              sizeStyles[size],
-              className
-            )}
-          >
-            {/* Header */}
-            {(title || kicker || description) && (
-              <div className="flex items-start justify-between p-5 sm:p-6 border-b border-white/[0.06]">
-                <div className="space-y-1">
-                  {kicker && (
-                    <p className="text-[10px] font-mono font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      {kicker}
-                    </p>
-                  )}
-                  {title && (
-                    <h3 className="text-lg sm:text-xl font-semibold text-white tracking-tight">
-                      {title}
-                    </h3>
-                  )}
-                  {description && (
-                    <p className="text-xs sm:text-sm text-slate-400 font-light mt-0.5">
-                      {description}
-                    </p>
-                  )}
+          {/* Centring row — `min-h-full` keeps tall panels fully scrollable */}
+          <div className="relative flex min-h-full items-end justify-center p-0 sm:items-center sm:p-6">
+            <motion.div
+              ref={panelRef}
+              tabIndex={-1}
+              initial={{ opacity: 0, scale: 0.98, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 16 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={title ? titleId : undefined}
+              className={cn(
+                // Bottom sheet on phones, floating card from `sm` up.
+                'w-full flex flex-col outline-none',
+                'max-h-[92dvh] sm:max-h-[86dvh]',
+                'glass-strong glass-sheen',
+                // Bottom sheet meets the screen edge on phones, so only the top
+                // rim is drawn; from `sm` up it is a floating card with all four.
+                'glass-sheet-bottom sm:border',
+                'rounded-t-2xl sm:rounded-xl overflow-hidden pb-safe-flush sm:pb-0',
+                sizeStyles[size],
+                className
+              )}
+            >
+              {/* Grab handle — signals the sheet is dismissible on touch */}
+              <span
+                aria-hidden="true"
+                className="sm:hidden mx-auto mt-2.5 mb-0.5 h-1 w-10 shrink-0 rounded-full bg-white/20"
+              />
+
+              {/* Header */}
+              {(title || kicker || description) && (
+                <div className="flex items-start justify-between gap-3 p-4 sm:p-6 border-b border-white/[0.06] shrink-0">
+                  <div className="space-y-1 min-w-0">
+                    {kicker && (
+                      <p className="text-[10px] font-mono font-semibold uppercase tracking-[0.2em] text-slate-400">
+                        {kicker}
+                      </p>
+                    )}
+                    {title && (
+                      <h3
+                        id={titleId}
+                        className="text-base sm:text-xl font-semibold text-white tracking-tight break-words"
+                      >
+                        {title}
+                      </h3>
+                    )}
+                    {description && (
+                      <p className="text-xs sm:text-sm text-slate-400 font-light mt-0.5">
+                        {description}
+                      </p>
+                    )}
+                  </div>
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    label="Close modal"
+                    className="shrink-0 touch-target"
+                    icon={<X className="w-4 h-4 text-slate-400 hover:text-white" />}
+                    onClick={onClose}
+                  />
                 </div>
-                <IconButton
-                  variant="ghost"
-                  size="sm"
-                  label="Close modal"
-                  icon={<X className="w-4 h-4 text-slate-400 hover:text-white" />}
-                  onClick={onClose}
-                />
-              </div>
-            )}
+              )}
 
-            {/* Content Body */}
-            <div className="p-5 sm:p-6 text-sm text-slate-300">{children}</div>
-
-            {/* Optional Footer */}
-            {footer && (
-              <div className="flex items-center justify-end gap-2.5 p-4 sm:p-5 border-t border-white/[0.06] bg-[#070b12]/60">
-                {footer}
+              {/* Scrolling content body */}
+              <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 text-sm text-slate-300">
+                {children}
               </div>
-            )}
-          </motion.div>
+
+              {/* Optional footer */}
+              {footer && (
+                <div className="flex flex-wrap items-center justify-end gap-2.5 p-4 sm:p-5 border-t border-white/[0.06] bg-[#070b12]/60 shrink-0">
+                  {footer}
+                </div>
+              )}
+            </motion.div>
+          </div>
         </div>
       )}
     </AnimatePresence>

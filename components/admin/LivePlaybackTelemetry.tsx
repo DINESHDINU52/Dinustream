@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ActivePlaybackTelemetry } from '@/types/admin';
-import { Users, Film, Radio, Check, Laptop, Tablet, Activity } from 'lucide-react';
+import { Film, Radio } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface LivePlaybackTelemetryProps {

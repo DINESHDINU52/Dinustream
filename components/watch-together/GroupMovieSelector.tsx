@@ -24,19 +24,39 @@ export function GroupMovieSelector({
   const [availableItems, setAvailableItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(false);
 
+  /*
+    Load the selectable catalogue when the sheet opens.
+
+    Deferred by a microtask so the synchronous `setLoading(true)` runs after the
+    effect body rather than inside it (react-hooks/set-state-in-effect: a
+    synchronous setState in an effect forces a cascading render before paint).
+    The `cancelled` flag also stops a slow response from populating the list
+    after the user has already dismissed the sheet.
+  */
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+
+    let cancelled = false;
+
+    void Promise.resolve().then(async () => {
+      if (cancelled) return;
       setLoading(true);
-      Promise.all([
-        mediaService.getMovies(30),
-        mediaService.getSeries(15),
-      ])
-        .then(([movies, series]) => {
-          setAvailableItems([...movies, ...series]);
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    }
+      try {
+        const [movies, series] = await Promise.all([
+          mediaService.getMovies(30),
+          mediaService.getSeries(15),
+        ]);
+        if (!cancelled) setAvailableItems([...movies, ...series]);
+      } catch {
+        // Catalogue stays as-is; the sheet shows its empty state.
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   const filteredItems = useMemo(() => {
@@ -133,9 +153,20 @@ export function GroupMovieSelector({
                   }`}
                 >
                   <div className="relative aspect-[2/3] w-full bg-slate-900">
+                    {/*
+                      Plain <img>: posters are served from the self-hosted
+                      Jellyfin proxy at /api/jellyfin/*, which next/image cannot
+                      optimise without whitelisting a remote pattern for every
+                      deployment. `loading="lazy"` covers the real cost here —
+                      this grid can hold 45 posters.
+                    */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={item.posterUrl}
-                      alt={item.title}
+                      alt=""
+                      aria-hidden="true"
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
                     />
                     {isCurrent && (

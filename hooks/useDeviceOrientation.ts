@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { isFullscreenActive, lockOrientation, requestFullscreen } from '@/lib/dom/fullscreen';
 
 export interface DeviceOrientationState {
   isPortrait: boolean;
@@ -65,53 +66,25 @@ export function useDeviceOrientation(): DeviceOrientationState {
     };
   }, []);
 
-  const requestFullscreenLandscape = useCallback(async (element?: HTMLElement | null): Promise<boolean> => {
-    try {
-      const target = (element || document.documentElement) as any;
-      const doc = document as any;
-      const isAlreadyFullscreen = Boolean(
-        doc.fullscreenElement ||
-        doc.webkitFullscreenElement ||
-        doc.mozFullScreenElement ||
-        doc.msFullscreenElement
-      );
+  /**
+   * Enter fullscreen and, where the platform allows it, lock to landscape.
+   *
+   * Both steps now go through lib/dom/fullscreen, which centralises the
+   * vendor-prefixed API surface (this function used to reimplement it with
+   * `any` casts). Orientation lock failure is non-fatal: desktop browsers and
+   * iOS Safari always reject it, so fullscreen alone is still a success.
+   */
+  const requestFullscreenLandscape = useCallback(
+    async (element?: HTMLElement | null): Promise<boolean> => {
+      const target = element || document.documentElement;
 
-      if (!isAlreadyFullscreen) {
-        if (target.requestFullscreen) {
-          await target.requestFullscreen();
-        } else if (target.webkitRequestFullscreen) {
-          await target.webkitRequestFullscreen();
-        } else if (target.mozRequestFullScreen) {
-          await target.mozRequestFullScreen();
-        } else if (target.msRequestFullscreen) {
-          await target.msRequestFullscreen();
-        } else {
-          // iOS Safari fallback: target the inner video element
-          const video = target.querySelector?.('video') || (target.tagName === 'VIDEO' ? target : null);
-          if (video && video.webkitEnterFullscreen) {
-            video.webkitEnterFullscreen();
-          }
-        }
-      }
+      const entered = isFullscreenActive() ? true : await requestFullscreen(target);
+      await lockOrientation('landscape');
 
-      // Try locking screen orientation to landscape where supported
-      if ('screen' in window && 'orientation' in window.screen) {
-        const screenOrientation = window.screen.orientation as ScreenOrientation & {
-          lock?: (orientation: string) => Promise<void>;
-        };
-        if (typeof screenOrientation.lock === 'function') {
-          try {
-            await screenOrientation.lock('landscape');
-          } catch {
-            // Screen orientation lock might be restricted or rejected; gracefully ignore
-          }
-        }
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
+      return entered;
+    },
+    []
+  );
 
   return {
     isPortrait: orientation === 'portrait',

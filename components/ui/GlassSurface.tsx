@@ -10,12 +10,14 @@ export interface GlassSurfaceProps extends React.HTMLAttributes<HTMLDivElement> 
   glow?: 'gold' | 'dinu' | 'kanmani' | 'none';
 }
 
+/* Shared liquid-glass utilities from styles/cinema.css §4 — see GlassPanel for
+   why the previous per-variant `backdrop-blur` stacks looked grey. */
 const variantMap: Record<GlassSurfaceVariant, string> = {
-  panel: 'bg-[#0b101a]/75 backdrop-blur-md border border-slate-400/[0.1] shadow-[0_8px_32px_rgba(0,0,0,0.5)]',
-  card: 'bg-[#0d1320]/60 backdrop-blur-sm border border-slate-300/[0.08] hover:border-slate-300/[0.2] transition-colors',
-  navbar: 'bg-[#06080d]/85 backdrop-blur-xl border-b border-slate-400/[0.08]',
-  modal: 'bg-[#0a0f18]/95 backdrop-blur-xl border border-slate-400/[0.15] shadow-[0_24px_64px_rgba(0,0,0,0.9)]',
-  pill: 'bg-white/[0.06] hover:bg-white/[0.1] backdrop-blur-md border border-white/10 transition-colors',
+  panel: 'glass',
+  card: 'glass-subtle hover:border-white/[0.16] transition-colors',
+  navbar: 'glass-strong glass-bar-bottom-edge rounded-none',
+  modal: 'glass-strong glass-sheen',
+  pill: 'glass-subtle hover:bg-white/[0.1] transition-colors',
 };
 
 export const GlassSurface: React.FC<GlassSurfaceProps> = ({

@@ -1,18 +1,16 @@
 'use client';
 
-import { UserProfileId } from '@/types/cinema';
-
 import React, { useState } from 'react';
+import { UserProfileId } from '@/types/cinema';
 import { useWatchTogether } from '@/hooks/useWatchTogether';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { WatchGroupLobby } from './WatchGroupLobby';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 import { Button } from '@/components/ui/Button';
 import { Sparkles, Heart, Lock } from 'lucide-react';
-import { Avatar } from '@/components/ui/Avatar';
 
 export function WatchGroup() {
-  const { profile, allProfiles, switchProfile } = useActiveProfile();
+  const { profile, switchProfile } = useActiveProfile();
   const {
     group,
     createGroup,
@@ -141,7 +139,7 @@ export function WatchGroup() {
       onPlayNext={playNext}
       onToggleReady={toggleParticipantReady}
       onStartSyncAndPlay={startSyncAndPlay}
-      onSwitchProfile={(id) => switchProfile()}
+      onSwitchProfile={() => switchProfile()}
       onResetGroup={resetGroup}
     />
   );

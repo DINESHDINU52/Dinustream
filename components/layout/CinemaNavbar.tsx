@@ -1,20 +1,18 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useScrollPosition } from '@/hooks/useScrollPosition';
 import { ProfileSwitcher } from '@/components/profiles/ProfileSwitcher';
-import { Badge } from '@/components/ui/Badge';
 import { Logo } from '@/components/ui/Logo';
 import { IconButton } from '@/components/ui/IconButton';
 import { NAV_LINKS } from '@/lib/constants';
-import { Search, Bell, Menu, X, Check, Tv, LogOut, Film, Sparkles, Zap, Bookmark, ShieldCheck, Home } from 'lucide-react';
+import { Search, Bell, Menu, X, Tv, Film, Sparkles, Zap, Bookmark, ShieldCheck, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { SearchOverlay } from '@/components/search/SearchOverlay';
 import { useTVNavigation } from '@/hooks/useTVNavigation';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 export interface CinemaNotification {
   id: string;
@@ -34,33 +32,48 @@ const INITIAL_NOTIFICATIONS: CinemaNotification[] = [
   },
 ];
 
-export interface CinemaNavbarProps {
-  onSearchQuery?: (query: string) => void;
-}
+/** Home-page section ids the scroll spy tracks, in document order. */
+const SPY_SECTIONS = ['movies', 'series', 'new-movies', 'my-list'] as const;
 
-export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => {
-  const router = useRouter();
+export const CinemaNavbar: React.FC = () => {
   const pathname = usePathname();
   const { isScrolled } = useScrollPosition();
   const { isTVMode, toggleTVMode } = useTVNavigation();
-  const { profile, logout } = useActiveProfile();
-  
+
   const [activeTab, setActiveTab] = useState<string>('home');
   const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
-  // Update active tab on scroll when on home page
+  /*
+    The drawer's open state is stored as *the route it was opened on* instead of
+    a plain boolean. Deriving `isMobileMenuOpen` from the current pathname means
+    the drawer closes by itself on any navigation — including browser
+    back/forward — without an effect that writes state during a render pass.
+  */
+  const [menuOpenPath, setMenuOpenPath] = useState<string | null>(null);
+  const isMobileMenuOpen = menuOpenPath === pathname;
+
+  const closeMobileMenu = () => setMenuOpenPath(null);
+  const toggleMobileMenu = () => setMenuOpenPath(isMobileMenuOpen ? null : pathname);
+
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  /*
+    Scroll spy for the home page's section anchors.
+
+    Nothing is reset when leaving `/` because `activeTab` is only ever consulted
+    alongside a `pathname === '/'` check below — writing state here just to clear
+    it would be a cascading render for no visible benefit.
+  */
   useEffect(() => {
     if (pathname !== '/') return;
 
-    const sections = ['movies', 'series', 'new-movies', 'my-list'];
     const handleScroll = () => {
       const scrollPos = window.scrollY + 200;
       let currentSection = 'home';
 
-      for (const sectionId of sections) {
+      for (const sectionId of SPY_SECTIONS) {
         const el = document.getElementById(sectionId);
         if (el && el.offsetTop <= scrollPos) {
           currentSection = sectionId;
@@ -73,15 +86,56 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
     return () => window.removeEventListener('scroll', handleScroll);
   }, [pathname]);
 
-  // Global Keyboard Shortcuts (Cmd+K, Ctrl+K, /) and Custom Event Listener
+  /*
+    The notification popover previously had no dismissal path other than
+    re-tapping the bell, so on touch devices it stayed pinned over the content.
+    Outside-click and Escape now close it.
+  */
   useEffect(() => {
+    if (!isNotifOpen) return;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setIsNotifOpen(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsNotifOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isNotifOpen]);
+
+  // Global keyboard shortcuts (Cmd/Ctrl+K, `/`) and the cross-component open event
+  useEffect(() => {
+    const isTypingTarget = (el: EventTarget | null) => {
+      const node = el as HTMLElement | null;
+      if (!node) return false;
+      return (
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName) ||
+        node.isContentEditable === true
+      );
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsSearchOverlayOpen((prev) => !prev);
+        return;
       }
-      const activeTag = (document.activeElement as HTMLElement)?.tagName;
-      if (!isSearchOverlayOpen && e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) {
+      /*
+        `document.activeElement` was used here, which is wrong for the `/`
+        shortcut: while typing inside the search overlay the active element is
+        the input, but any other focusable host (a content-editable chat
+        composer) was not covered. Checking the event target is both correct
+        and cheaper.
+      */
+      if (e.key === '/' && !isTypingTarget(e.target)) {
         e.preventDefault();
         setIsSearchOverlayOpen(true);
       }
@@ -95,7 +149,7 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('dinustream-open-search', handleOpenSearchEvent);
     };
-  }, [isSearchOverlayOpen]);
+  }, []);
 
   const handleNavClick = (e: React.MouseEvent, href: string) => {
     if (href.startsWith('/#')) {
@@ -107,17 +161,13 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
           el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           setActiveTab(targetId);
         }
-      } else {
-        // Will route to /#id
       }
-    } else if (href === '/') {
-      if (pathname === '/') {
-        e.preventDefault();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        setActiveTab('home');
-      }
+    } else if (href === '/' && pathname === '/') {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setActiveTab('home');
     }
-    setIsMobileMenuOpen(false);
+    closeMobileMenu();
   };
 
   const getNavIcon = (id: string) => {
@@ -148,24 +198,44 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
   return (
     <header
       className={cn(
-        'fixed top-0 inset-x-0 z-40 transition-all duration-300 px-4 sm:px-8 lg:px-12',
+        /*
+          Fixed, flush to the top edge, and the same height in both states.
+
+          `cinema-navbar-pad` supplies symmetric padding with the iOS safe-area
+          inset added on top (see styles/cinema.css §7 for why the previous
+          `py-3 + pt-safe-flush` pairing collapsed the top padding to zero).
+
+          Only the *surface* changes on scroll, not the geometry. Previously the
+          padding shrank from `py-4` to `py-2.5` at the same moment the
+          background appeared, so the bar visibly jolted and resized the instant
+          you touched the wheel.
+        */
+        'fixed top-0 inset-x-0 z-40 px-4 sm:px-6 lg:px-12 cinema-navbar-pad',
+        'transition-[background-color,box-shadow,border-color] duration-300',
         isScrolled
-          ? 'py-2.5 bg-[#030611]/92 backdrop-blur-2xl border-b border-white/[0.06] shadow-[0_8px_32px_rgba(0,0,0,0.9)]'
-          : 'py-4 bg-gradient-to-b from-[#030611]/95 via-[#030611]/40 to-transparent'
+          ? 'glass-strong glass-bar-bottom-edge'
+          : 'glass-subtle glass-bar-bottom-edge glass-bar-seamless'
       )}
     >
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-        {/* Left: Brand Logo & Desktop Nav Links */}
-        <div className="flex items-center gap-6 lg:gap-8">
-          <Link href="/" className="cinema-focus rounded-lg">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
+        {/* Left: brand logo & desktop nav links */}
+        <div className="flex items-center gap-4 lg:gap-8 min-w-0">
+          <Link href="/" className="cinema-focus rounded-lg shrink-0">
             <Logo size="md" />
           </Link>
 
-          {/* Desktop Navigation Links — Ultra Luxury Cinema */}
-          <nav className="hidden lg:flex items-center gap-1 bg-white/[0.03] px-2 py-1 rounded-2xl border border-white/[0.06] backdrop-blur-xl">
+          {/* Inline navigation — desktop only (>= lg), mirrored by the bottom bar below lg */}
+          <nav
+            aria-label="Primary"
+            className="hidden lg:flex items-center gap-1 bg-white/[0.03] px-2 py-1 rounded-2xl border border-white/[0.06] backdrop-blur-xl"
+          >
             {NAV_LINKS.map((link) => {
-              const targetId = link.href.startsWith('/#') ? link.href.replace('/#', '') : (link.href === '/' ? 'home' : link.id);
-              const isActive = (pathname === '/' && activeTab === targetId) || (pathname === link.href);
+              const targetId = link.href.startsWith('/#')
+                ? link.href.replace('/#', '')
+                : link.href === '/'
+                ? 'home'
+                : link.id;
+              const isActive = (pathname === '/' && activeTab === targetId) || pathname === link.href;
               const isWatchTogether = link.id === 'nav-watch-together';
 
               return (
@@ -174,6 +244,7 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
                   href={link.href}
                   id={link.id}
                   onClick={(e) => handleNavClick(e, link.href)}
+                  aria-current={isActive ? 'page' : undefined}
                   className={cn(
                     'group relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium tracking-wide whitespace-nowrap transition-all cinema-focus select-none',
                     isActive
@@ -198,40 +269,42 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
           </nav>
         </div>
 
-        {/* Right Utility: Search, Admin, TV Mode, Notifications, Profile, Mobile Menu */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Global Search Button Trigger */}
+        {/* Right utilities: search, admin, TV mode, notifications, profile, hamburger */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Global search trigger */}
           <button
             id="nav-search-btn"
             type="button"
             onClick={() => setIsSearchOverlayOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] hover:border-white/[0.15] text-slate-300 hover:text-white transition-all text-xs group focus:outline-none focus:ring-1 focus:ring-sky-500/50"
-            aria-label="Search DinuStream (⌘K)"
+            className="flex items-center gap-2 px-2.5 sm:px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] hover:border-white/[0.15] text-slate-300 hover:text-white transition-all text-xs group focus:outline-none focus:ring-1 focus:ring-sky-500/50 touch-target"
+            aria-label="Search DinuStream"
           >
-            <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-400 transition-colors" />
-            <span className="hidden sm:inline font-normal text-slate-400 group-hover:text-slate-200 transition-colors">
+            <Search className="w-4 h-4 text-slate-400 group-hover:text-sky-400 transition-colors" />
+            <span className="hidden md:inline font-normal text-slate-400 group-hover:text-slate-200 transition-colors">
               Search...
             </span>
-            <kbd className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono text-slate-400 bg-white/[0.06] border border-white/[0.1] px-1.5 py-0.5 rounded shadow-sm">
+            {/* The ⌘K hint is meaningless without a physical keyboard. */}
+            <kbd className="hidden lg:inline-flex items-center gap-0.5 text-[10px] font-mono text-slate-400 bg-white/[0.06] border border-white/[0.1] px-1.5 py-0.5 rounded shadow-sm">
               <span className="text-[9px]">⌘</span>K
             </kbd>
           </button>
 
-          {/* Admin Studio Quick Trigger */}
+          {/* Admin studio shortcut */}
           <Link
             href="/admin"
             title="Cinema Admin Studio"
             className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-medium text-slate-300 hover:text-white transition-all"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
-            <span>Admin</span>
+            <span className="hidden md:inline">Admin</span>
           </Link>
 
-          {/* 10-Foot TV Mode Toggle */}
+          {/* 10-foot TV mode toggle */}
           <button
             id="nav-tv-mode-btn"
             type="button"
             onClick={toggleTVMode}
+            aria-pressed={isTVMode}
             className={cn(
               'hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-all cinema-focus',
               isTVMode
@@ -241,22 +314,24 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
             title="Toggle TV Leanback Mode"
           >
             <Tv className="w-3.5 h-3.5" />
-            <span>{isTVMode ? 'TV Mode ON' : 'TV Mode'}</span>
+            <span className="hidden lg:inline">{isTVMode ? 'TV Mode ON' : 'TV Mode'}</span>
           </button>
 
-          {/* Notifications Dropdown */}
-          <div className="relative">
+          {/* Notifications */}
+          <div className="relative" ref={notifRef}>
             <IconButton
               variant="ghost"
               size="sm"
               label="Notifications"
+              aria-expanded={isNotifOpen}
+              className="touch-target"
               icon={
-                <div className="relative">
+                <span className="relative">
                   <Bell className="w-4 h-4 text-slate-400 hover:text-white transition-colors" />
                   {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-[#050811]" />
                   )}
-                </div>
+                </span>
               }
               onClick={() => setIsNotifOpen((prev) => !prev)}
             />
@@ -268,7 +343,14 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 8, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2 w-80 rounded-2xl bg-[#090e1a]/95 backdrop-blur-2xl border border-white/[0.1] shadow-2xl p-4 space-y-3 z-50"
+                  role="dialog"
+                  aria-label="Cinema feed"
+                  /*
+                    `w-80` alone overflowed the right edge on 320–360px devices.
+                    Clamping to the viewport width minus the shell gutters keeps
+                    it on screen at every size.
+                  */
+                  className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl glass-strong glass-sheen p-4 space-y-3 z-50"
                 >
                   <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
                     <span className="text-xs font-bold text-white tracking-wide uppercase">
@@ -294,9 +376,9 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
                             : 'bg-white/[0.02] border-white/[0.05] text-slate-400'
                         )}
                       >
-                        <div className="flex items-center justify-between font-semibold text-white">
-                          <span>{n.title}</span>
-                          <span className="text-[10px] text-slate-500">{n.time}</span>
+                        <div className="flex items-center justify-between gap-2 font-semibold text-white">
+                          <span className="min-w-0 truncate">{n.title}</span>
+                          <span className="text-[10px] text-slate-500 shrink-0">{n.time}</span>
                         </div>
                         <p className="line-clamp-2 leading-relaxed text-[11px] font-light">
                           {n.message}
@@ -309,15 +391,17 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
             </AnimatePresence>
           </div>
 
-          {/* Profile Switcher */}
+          {/* Profile switcher */}
           <ProfileSwitcher />
 
-          {/* Mobile Menu Hamburger */}
+          {/* Mobile / tablet hamburger */}
           <div className="lg:hidden">
             <IconButton
               variant="ghost"
               size="sm"
-              label="Toggle navigation menu"
+              label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              aria-expanded={isMobileMenuOpen}
+              className="touch-target"
               icon={
                 isMobileMenuOpen ? (
                   <X className="w-5 h-5 text-white" />
@@ -325,13 +409,13 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
                   <Menu className="w-5 h-5 text-slate-300" />
                 )
               }
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              onClick={toggleMobileMenu}
             />
           </div>
         </div>
       </div>
 
-      {/* Mobile Drawer Navigation Menu */}
+      {/* Mobile / tablet drawer navigation */}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <motion.div
@@ -339,67 +423,71 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2 }}
-            className="lg:hidden border-t border-white/[0.08] bg-[#050811]/98 backdrop-blur-2xl mt-3 py-4 px-4 rounded-2xl shadow-2xl space-y-3 overflow-hidden"
+            className="lg:hidden overflow-hidden"
           >
-            {/* Mobile Search Button */}
-            <button
-              id="nav-mobile-search-btn"
-              type="button"
-              onClick={() => {
-                setIsMobileMenuOpen(false);
-                setIsSearchOverlayOpen(true);
-              }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium text-slate-200 bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.08] transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <Search className="w-4 h-4 text-sky-400" />
-                <span>Search Cinema Vault</span>
-              </div>
-              <kbd className="text-[10px] font-mono text-slate-400 bg-white/[0.08] px-1.5 py-0.5 rounded">⌘K</kbd>
-            </button>
+            {/*
+              The drawer is nested inside a fixed header, so it cannot grow past
+              the viewport: in landscape on a phone the full link list plus the
+              admin row is taller than the screen and the bottom entries became
+              unreachable. Capping the height and scrolling internally fixes it.
+            */}
+            <div className="mt-3 max-h-[calc(100dvh-8rem)] overflow-y-auto overscroll-contain glass-strong py-4 px-4 rounded-2xl space-y-3">
+              {/* Mobile search */}
+              <button
+                id="nav-mobile-search-btn"
+                type="button"
+                onClick={() => {
+                  closeMobileMenu();
+                  setIsSearchOverlayOpen(true);
+                }}
+                className="w-full flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium text-slate-200 bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.08] transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Search className="w-4 h-4 text-sky-400" />
+                  <span>Search Cinema Vault</span>
+                </span>
+                <kbd className="hidden md:inline text-[10px] font-mono text-slate-400 bg-white/[0.08] px-1.5 py-0.5 rounded">
+                  ⌘K
+                </kbd>
+              </button>
 
-            <nav className="flex flex-col gap-1">
-              {NAV_LINKS.map((link) => (
-                <Link
-                  key={link.id}
-                  href={link.href}
-                  onClick={(e) => handleNavClick(e, link.href)}
-                  className="px-3 py-2.5 rounded-xl text-sm font-medium text-slate-200 hover:text-white hover:bg-white/[0.08] flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2.5">
+              <nav aria-label="Mobile" className="flex flex-col gap-1">
+                {NAV_LINKS.map((link) => (
+                  <Link
+                    key={link.id}
+                    href={link.href}
+                    onClick={(e) => handleNavClick(e, link.href)}
+                    className="px-3 py-3 rounded-xl text-sm font-medium text-slate-200 hover:text-white hover:bg-white/[0.08] flex items-center gap-2.5"
+                  >
                     {getNavIcon(link.id)}
                     <span>{link.label}</span>
-                  </div>
-                  
+                  </Link>
+                ))}
+
+                <Link
+                  href="/admin"
+                  onClick={closeMobileMenu}
+                  className="px-3 py-3 rounded-xl text-sm font-medium text-sky-300 hover:bg-sky-500/10 flex items-center gap-2.5"
+                >
+                  <ShieldCheck className="w-4 h-4 text-sky-400" />
+                  <span>Admin Operations Studio</span>
                 </Link>
-              ))}
+              </nav>
 
-              <Link
-                href="/admin"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="px-3 py-2.5 rounded-xl text-sm font-medium text-sky-300 hover:bg-sky-500/10 flex items-center gap-2.5"
-              >
-                <ShieldCheck className="w-4 h-4 text-sky-400" />
-                <span>Admin Operations Studio</span>
-              </Link>
-            </nav>
-
-            <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
-              <span className="font-mono text-[10px] uppercase">Private Cinema Suite</span>
-              <div className="flex items-center gap-1.5 text-emerald-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Dolby Stream Connected</span>
+              <div className="pt-2 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                <span className="font-mono text-[10px] uppercase">Private Cinema Suite</span>
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Dolby Stream Connected</span>
+                </span>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Global Cinema Search Overlay */}
-      <SearchOverlay
-        isOpen={isSearchOverlayOpen}
-        onClose={() => setIsSearchOverlayOpen(false)}
-      />
+      {/* Global cinema search overlay */}
+      <SearchOverlay isOpen={isSearchOverlayOpen} onClose={() => setIsSearchOverlayOpen(false)} />
     </header>
   );
 };

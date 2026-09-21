@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { SearchCategory, SearchResultItem } from '@/types/search';
+import { motion } from 'framer-motion';
+import { SearchCategory } from '@/types/search';
 import { useGlobalSearch } from '@/hooks/useGlobalSearch';
 import { Badge } from '@/components/ui/Badge';
 import {
@@ -17,7 +17,6 @@ import {
   Sparkles,
   Zap,
   SlidersHorizontal,
-  ChevronDown,
   RotateCcw,
 } from 'lucide-react';
 import Image from 'next/image';

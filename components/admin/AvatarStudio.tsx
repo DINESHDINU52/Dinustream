@@ -7,17 +7,7 @@ import { UserProfile } from '@/types/cinema';
 import { Avatar } from '@/components/ui/Avatar';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 import { Button } from '@/components/ui/Button';
-import {
-  Upload,
-  Sparkles,
-  Check,
-  Image as ImageIcon,
-  User,
-  Film,
-  Camera,
-  Layers,
-  Save,
-} from 'lucide-react';
+import { Upload, Sparkles, Check, Camera, Save } from 'lucide-react';
 
 const PRESET_AVATARS = [
   {

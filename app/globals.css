@@ -2,10 +2,16 @@
 @import "../styles/cinema.css";
 
 :root {
+  /* Kept in sync with --cinema-bg / --cinema-silver-light in styles/cinema.css.
+     These previously disagreed with the hard-coded #050507 on <html>/<body>,
+     which produced a visible seam between the document background and the
+     page shell while scroll-bouncing on iOS. */
   --background: #06080d;
   --foreground: #f8fafc;
 }
 
+/* Expose the cinema palette as Tailwind color utilities (bg-cinema-bg,
+   text-silver-muted, border-cinema-elevated, ...). */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -24,5 +30,9 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* `svh` = "small viewport height", i.e. the height with the mobile browser
+     chrome *visible*. Using `100vh` here made every page a little taller than
+     the visible area on mobile, producing a permanent phantom scroll. */
   min-height: 100vh;
+  min-height: 100svh;
 }

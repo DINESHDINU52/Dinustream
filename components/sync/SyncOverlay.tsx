@@ -4,8 +4,8 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { SyncStatusResponse, getSyncStatus } from '@/lib/api/syncManager';
-import { SyncProgress } from './SyncProgress';
 import { AtmosIntro } from '@/components/player/AtmosIntro';
+import { useDolbyIntroPreference } from '@/hooks/useDolbyIntroPreference';
 import { X, AlertCircle } from 'lucide-react';
 
 export interface SyncOverlayProps {
@@ -28,6 +28,7 @@ export const SyncOverlay: React.FC<SyncOverlayProps> = ({
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
   const isReadyRef = useRef(false);
+  const { isDolbyIntroEnabled, setDolbyIntroEnabled } = useDolbyIntroPreference();
 
   // Poll sync status in background without cutting video playback
   const checkStatus = useCallback(async () => {
@@ -74,8 +75,19 @@ export const SyncOverlay: React.FC<SyncOverlayProps> = ({
         className="fixed inset-0 z-50 bg-black flex flex-col justify-between select-none overflow-hidden"
         id="dinu-sync-overlay"
       >
-        {/* Background Atmos Cinematic Experience */}
+        {/*
+          Atmos prelude while the cache sync runs.
+
+          `autoFullscreen` is off here and no fullscreen toggle is passed: this
+          overlay is already `fixed inset-0`, so it covers the viewport on its
+          own, and requesting OS fullscreen for a transient sync screen would
+          leave the viewer in fullscreen after it dismisses. The prelude's own
+          play/pause, volume and enable/disable settings are still available.
+        */}
         <AtmosIntro
+          autoFullscreen={false}
+          isIntroEnabled={isDolbyIntroEnabled}
+          onSetIntroEnabled={setDolbyIntroEnabled}
           movie={movie}
           syncProgress={
             syncStatus

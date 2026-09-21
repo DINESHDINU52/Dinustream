@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { Avatar } from '@/components/ui/Avatar';
-import { ChevronDown, Sliders, ShieldCheck, LogOut, ArrowRight, UserCheck } from 'lucide-react';
+import { ChevronDown, Sliders, ShieldCheck, LogOut } from 'lucide-react';
 import { ProfileSettingsModal } from './ProfileSettingsModal';
 
 export const ProfileSwitcher: React.FC = () => {

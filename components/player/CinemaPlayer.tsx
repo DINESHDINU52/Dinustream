@@ -1,7 +1,5 @@
 'use client';
 
-import { UserProfileId } from '@/types/cinema';
-
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -30,6 +28,8 @@ import {
   Activity,
   Sparkles,
   ListVideo,
+  Ratio,
+  Check,
   X,
 } from 'lucide-react';
 import { useMediaSegments } from '@/hooks/useMediaSegments';
@@ -41,6 +41,12 @@ import { NextEpisodeOverlay } from './NextEpisodeOverlay';
 import { EpisodeSelectorDrawer } from './EpisodeSelectorDrawer';
 import { AtmosIntro } from './AtmosIntro';
 import { useDolbyIntroPreference } from '@/hooks/useDolbyIntroPreference';
+import { useAspectRatioPreference } from '@/hooks/useAspectRatioPreference';
+import {
+  ASPECT_RATIO_OPTIONS,
+  getAspectRatioOption,
+  getVideoPresentationStyle,
+} from '@/lib/player/aspectRatio';
 import { mediaService } from '@/lib/services/mediaService';
 import { useSyncPlayback } from '@/hooks/useSyncPlayback';
 import { SyncWatchOverlay } from './SyncWatchOverlay';
@@ -53,6 +59,11 @@ import { GroupQueue } from '@/components/watch-together/GroupQueue';
 import { GroupMovieSelector } from '@/components/watch-together/GroupMovieSelector';
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation';
 import { useTVNavigation } from '@/hooks/useTVNavigation';
+import {
+  FULLSCREEN_CHANGE_EVENTS,
+  exitFullscreen,
+  isFullscreenActive,
+} from '@/lib/dom/fullscreen';
 import { MediaSegment } from '@/types/segments';
 import { Season } from '@/types/cinema';
 import { SyncProgressData } from '@/types/sync';
@@ -177,42 +188,20 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     }
   }, [videoError, activeItemId]);
 
-  // Sync fullscreen state with native browser fullscreen changes across all vendors
+  // Keep local state in sync with native fullscreen changes (Esc, system UI, …)
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      const doc = document as any;
-      const isFs = Boolean(
-        doc.fullscreenElement ||
-        doc.webkitFullscreenElement ||
-        doc.mozFullScreenElement ||
-        doc.msFullscreenElement
-      );
-      setIsFullscreen(isFs);
-    };
+    const handleFullscreenChange = () => setIsFullscreen(isFullscreenActive());
 
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+    FULLSCREEN_CHANGE_EVENTS.forEach((evt) =>
+      document.addEventListener(evt, handleFullscreenChange)
+    );
 
     return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+      FULLSCREEN_CHANGE_EVENTS.forEach((evt) =>
+        document.removeEventListener(evt, handleFullscreenChange)
+      );
     };
   }, []);
-
-  // Lock body scroll in Fullscreen or Full Window (Theater) mode to prevent page jumping and duplicate scrollbars
-  useEffect(() => {
-    if (isFullscreen || isTheaterMode) {
-      const prevOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = prevOverflow;
-      };
-    }
-  }, [isFullscreen, isTheaterMode]);
 
   // Mobile double-tap seek detection (Left 35%: -10s, Right 35%: +10s)
   const lastTapRef = useRef<{ time: number; x: number }>({ time: 0, x: 0 });
@@ -239,7 +228,9 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
 
   // UI Visibility States
   const [areControlsVisible, setAreControlsVisible] = useState(true);
-  const [activeMenu, setActiveMenu] = useState<'audio' | 'subtitles' | 'quality' | 'speed' | 'settings' | null>(null);
+  const [activeMenu, setActiveMenu] = useState<
+    'audio' | 'subtitles' | 'quality' | 'speed' | 'settings' | 'aspect' | null
+  >(null);
   const [hoverScrubTime, setHoverScrubTime] = useState<number | null>(null);
   const [hoverPositionX, setHoverPositionX] = useState<number | null>(null);
   const [centerPulseAction, setCenterPulseAction] = useState<'play' | 'pause' | 'rewind' | 'forward' | null>(null);
@@ -418,17 +409,45 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     [activeSegment, skipSegment, isGroupSync, syncPlayback]
   );
 
+  /*
+    Video presentation mode (Fit / Fill / Stretch / Zoom).
+
+    Persisted per device — see useAspectRatioPreference. The resolved inline
+    style is memoised because it is passed to the <video> element on every
+    render and a fresh object would invalidate it needlessly.
+  */
+  const { aspectRatioMode, setAspectRatioMode, cycleAspectRatioMode } = useAspectRatioPreference();
+  const videoPresentationStyle = useMemo(
+    () => getVideoPresentationStyle(aspectRatioMode),
+    [aspectRatioMode]
+  );
+  const activeAspectOption = getAspectRatioOption(aspectRatioMode);
+
   // Dolby Atmos Cinematic Prelude Intro State
   const { isDolbyIntroEnabled, setDolbyIntroEnabled } = useDolbyIntroPreference();
   const [isPlayingDolbyIntro, setIsPlayingDolbyIntro] = useState<boolean>(() => isDolbyIntroEnabled);
 
+  /**
+   * Hand over from the prelude to the feature.
+   *
+   * `setIsTheaterMode(true)` is the important line. The prelude runs edge-to-edge
+   * (see `isImmersive`), so without it the player would snap back to its inline
+   * 16:9 box the instant the clip ended — the feature would start in a small
+   * window right after a full-screen intro. Theater mode is the CSS full-window
+   * presentation, so this holds even when the browser refused native fullscreen;
+   * if native fullscreen *was* granted, `isFullscreen` already covers it and this
+   * is simply redundant.
+   */
   const handleDolbyIntroComplete = useCallback(() => {
     setIsPlayingDolbyIntro(false);
+    setIsTheaterMode(true);
     if (videoRef.current) {
       videoRef.current
         .play()
         .then(() => setIsPlaying(true))
-        .catch(() => {});
+        .catch(() => {
+          /* Autoplay refused — the centre Play button in the controls takes over. */
+        });
     }
   }, []);
 
@@ -440,6 +459,33 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     setIsPlayingDolbyIntro(true);
     setActiveMenu(null);
   }, [setActiveMenu]);
+
+  /**
+   * Whether the player should occupy the entire viewport.
+   *
+   * The Dolby prelude is included unconditionally, and that is what makes it play
+   * "like a movie" without depending on a permission. Native `requestFullscreen`
+   * is only granted while a user gesture is active, and the prelude mounts from a
+   * route load rather than a click — so the OS-level request is usually refused
+   * and cannot be relied on. Treating the prelude as immersive in CSS gives the
+   * same visual result deterministically, and the native request becomes a
+   * best-effort upgrade on top of it rather than the mechanism itself.
+   *
+   * Because `handleDolbyIntroComplete` sets theater mode, the feature inherits
+   * the same full-viewport presentation with no visible transition.
+   */
+  const isImmersive = isFullscreen || isTheaterMode || isPlayingDolbyIntro;
+
+  // Lock body scroll while the player owns the viewport, to stop the page behind
+  // it from jumping and to avoid a second scrollbar.
+  useEffect(() => {
+    if (!isImmersive) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isImmersive]);
 
   // Format Time (HH:MM:SS or MM:SS)
   const formatTime = (seconds: number) => {
@@ -639,32 +685,26 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
 
   const toggleFullscreen = useCallback(async () => {
     if (!playerContainerRef.current) return;
-    const doc = document as any;
-    const isNativeFs = Boolean(
-      doc.fullscreenElement ||
-      doc.webkitFullscreenElement ||
-      doc.mozFullScreenElement ||
-      doc.msFullscreenElement
-    );
 
-    if (!isNativeFs && !isFullscreen) {
-      await requestFullscreenLandscape(playerContainerRef.current);
-      // Ensure full window CSS mode is active even if browser denies OS-level fullscreen
-      setIsFullscreen(true);
+    if (!isFullscreenActive() && !isFullscreen) {
+      const granted = await requestFullscreenLandscape(playerContainerRef.current);
+      /*
+        Only the `fullscreenchange` listener sets `isFullscreen`, so this state
+        now always reflects reality. It previously did `setIsFullscreen(true)`
+        unconditionally, which lied whenever the browser refused (no active
+        gesture, or iOS Safari on iPhone, which only allows fullscreen on a bare
+        <video>): the UI showed an "exit fullscreen" control that then had
+        nothing to exit, and the next toggle was a no-op.
+
+        When the request is refused, fall back to theater mode — the CSS
+        full-window presentation — so the viewer still gets a full-viewport
+        picture, just without the OS chrome being hidden.
+      */
+      if (!granted) setIsTheaterMode(true);
     } else {
-      if (doc.exitFullscreen) {
-        doc.exitFullscreen().catch(() => {});
-      } else if (doc.webkitExitFullscreen) {
-        doc.webkitExitFullscreen();
-      } else if (doc.mozCancelFullScreen) {
-        doc.mozCancelFullScreen();
-      } else if (doc.msExitFullscreen) {
-        doc.msExitFullscreen();
-      }
-      if (videoRef.current && (videoRef.current as any).webkitExitFullscreen) {
-        try { (videoRef.current as any).webkitExitFullscreen(); } catch {}
-      }
+      await exitFullscreen(videoRef.current);
       setIsFullscreen(false);
+      setIsTheaterMode(false);
     }
     onUserActivity();
   }, [requestFullscreenLandscape, onUserActivity, isFullscreen]);
@@ -690,6 +730,14 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
         return;
       }
+
+      /*
+        The Dolby prelude renders on top of the player and binds its own
+        Space/M/F/S handlers. Without this guard both listeners fire for the same
+        keypress: Space would pause the prelude *and* start the feature
+        underneath it, and F would toggle fullscreen twice, cancelling itself out.
+      */
+      if (isPlayingDolbyIntro) return;
 
       switch (e.code) {
         case 'Space':
@@ -744,6 +792,11 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
           e.preventDefault();
           setIsTheaterMode((prev) => !prev);
           break;
+        case 'KeyA':
+          // Cycle Fit → Fill → Stretch → Zoom levels, matching desktop players.
+          e.preventDefault();
+          cycleAspectRatioMode();
+          break;
         case 'KeyP':
           e.preventDefault();
           togglePiP();
@@ -762,7 +815,23 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [togglePlay, seekRelative, toggleMute, toggleFullscreen, handleSkipSegment, activeMenu, isTV, isFullscreen, volume]);
+    /* `isTheaterMode` is in the dependency list because the Escape branch reads
+       it; without it the handler closed over a stale value and Escape could not
+       leave theater mode after the first toggle. */
+  }, [
+    togglePlay,
+    seekRelative,
+    toggleMute,
+    toggleFullscreen,
+    handleSkipSegment,
+    cycleAspectRatioMode,
+    activeMenu,
+    isTV,
+    isFullscreen,
+    isTheaterMode,
+    isPlayingDolbyIntro,
+    volume,
+  ]);
 
   // Timeline scrubber calculation
   const playedPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -793,12 +862,32 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       onTouchEnd={handleTouchEnd}
       onClick={onUserActivity}
       className={cn(
-        'relative bg-black select-none overflow-hidden font-sans transition-all duration-300',
-        (isFullscreen || isTheaterMode)
+        'relative bg-black select-none overflow-hidden font-sans',
+        /*
+          Player frame geometry.
+
+          Inline (not fullscreen) the frame is a true 16:9 box driven by the
+          available width, so it scales correctly on every device instead of
+          three unrelated rules: portrait phones got `aspect-video`, `sm`+ got a
+          fixed `h-[60vh]`, and landscape got `h-[76vh] min-h-[460px]`. Those
+          height-driven sizes meant the frame's own ratio drifted with the window,
+          which on a short or ultrawide window left permanent side bars no
+          presentation mode could remove.
+
+          The `max-h` cap stops the 16:9 box from growing taller than the screen
+          on a narrow window (where width/1.78 can exceed the viewport height) and
+          leaves the title tray below it reachable. `svh` is used rather than `vh`
+          so the mobile browser chrome is accounted for.
+
+          When the cap engages the frame becomes wider than 16:9, so `Fit` will
+          letterbox — that is exactly what the Fill / Zoom modes exist to remove.
+        */
+        isImmersive
           ? 'fixed inset-0 z-[70] w-full h-[100dvh] max-h-none'
-          : isPortrait
-            ? 'w-full aspect-video sm:aspect-auto sm:h-[60vh] max-h-[75vh]'
-            : 'w-full h-[76vh] min-h-[460px] max-h-[820px]',
+          : 'w-full aspect-video max-h-[85svh]',
+        // `transition-all` animated width/height on every resize frame; only the
+        // opacity-ish properties need easing here.
+        'transition-[max-height] duration-300',
         !areControlsVisible && isPlaying ? 'cursor-none' : 'cursor-default',
         isTV && 'tv-player-mode'
       )}
@@ -811,21 +900,31 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         />
       )}
 
-      {/* Video Element */}
+      {/*
+        Video element.
+
+        `object-fit` and the zoom scale come from the selected presentation mode
+        rather than a hard-coded `object-contain`, which is what made black bars
+        unavoidable. The frame is `overflow-hidden`, so cropped modes are clipped
+        to the box instead of bleeding over the controls.
+      */}
       <video
         ref={videoRef}
         src={activeVideoSrc}
         poster={episode ? episode.thumbnailUrl : media.backdropUrl}
         playsInline
         preload="metadata"
-        className="relative z-10 w-full h-full object-contain transform-gpu"
-        style={{ transform: 'translateZ(0)' }}
+        className="relative z-10 w-full h-full transform-gpu"
+        style={videoPresentationStyle}
         onClick={togglePlay}
         onError={handleVideoError}
       />
 
       {/* Mobile Portrait Orientation Prompt */}
-      {isPortrait && isMobile && !isFullscreen && !isTheaterMode && (
+      {/* Suppressed while immersive — including during the prelude, which now
+          covers the viewport and would otherwise show a "Rotate / Fullscreen"
+          hint on top of its own controls. */}
+      {isPortrait && isMobile && !isImmersive && (
         <motion.button
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -952,12 +1051,23 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       {/* Atmos Cinematic Pre-Play & Sync System */}
       <AnimatePresence>
         {isPlayingDolbyIntro && (
+          /*
+            The prelude is handed the player's own fullscreen state and toggle
+            rather than reaching for the Fullscreen API itself — the player owns
+            `playerContainerRef`, and that is the element that has to go
+            fullscreen so the feature is already fullscreen when the prelude
+            hands over.
+          */
           <AtmosIntro
             movie={media}
             syncProgress={syncProgress}
             onReady={handleDolbyIntroComplete}
             onSkip={handleDolbyIntroComplete}
-            mockDurationSeconds={5}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={toggleFullscreen}
+            autoFullscreen
+            isIntroEnabled={isDolbyIntroEnabled}
+            onSetIntroEnabled={setDolbyIntroEnabled}
           />
         )}
       </AnimatePresence>
@@ -1550,6 +1660,22 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
 
                     <div className="pt-1 border-t border-white/[0.06] space-y-1">
                       <p className="text-[10px] font-mono uppercase text-slate-400">Quick Configuration</p>
+
+                      {/* Aspect ratio / zoom */}
+                      <button
+                        onClick={() => setActiveMenu('aspect')}
+                        id="aspect-ratio-setting-btn"
+                        className="w-full text-left py-1 px-1.5 rounded flex items-center justify-between gap-2 text-slate-300 hover:text-white hover:bg-white/5"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Ratio className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Aspect Ratio</span>
+                        </span>
+                        <span className="font-mono text-emerald-400 text-[11px]">
+                          {activeAspectOption.short}
+                        </span>
+                      </button>
+
                       <button
                         onClick={() => setActiveMenu('quality')}
                         className="w-full text-left py-1 px-1.5 rounded flex items-center justify-between text-slate-300 hover:text-white hover:bg-white/5"
@@ -1572,6 +1698,72 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                         <span className="font-mono text-slate-400 text-[11px]">{playbackSpeed}x</span>
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {/*
+                  Aspect ratio submenu.
+
+                  Anchored bottom-right like every other player popover, and
+                  width-clamped to the viewport so it stays fully on screen on a
+                  phone in landscape, where the frame is only ~360px tall.
+                */}
+                {activeMenu === 'aspect' && (
+                  <div
+                    style={{ bottom: 'calc(100% + 12px)' }}
+                    role="menu"
+                    aria-label="Aspect ratio"
+                    className="absolute right-0 w-64 max-w-[calc(100vw-2rem)] max-h-[60svh] overflow-y-auto overscroll-contain p-3 rounded-xl glass-strong z-50 text-xs space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-white/[0.08]">
+                      <span className="flex items-center gap-1.5 font-semibold text-white">
+                        <Ratio className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Aspect Ratio</span>
+                      </span>
+                      <button
+                        onClick={() => setActiveMenu('settings')}
+                        aria-label="Back to settings"
+                        className="text-[10px] font-mono text-slate-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-white/10"
+                      >
+                        Back
+                      </button>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      {ASPECT_RATIO_OPTIONS.map((option) => {
+                        const isActive = option.id === aspectRatioMode;
+                        return (
+                          <button
+                            key={option.id}
+                            role="menuitemradio"
+                            aria-checked={isActive}
+                            onClick={() => {
+                              setAspectRatioMode(option.id);
+                              onUserActivity();
+                            }}
+                            className={cn(
+                              'w-full text-left px-2 py-1.5 rounded-lg transition-colors',
+                              isActive
+                                ? 'bg-sky-500/20 text-white border border-sky-500/30'
+                                : 'text-slate-300 hover:text-white hover:bg-white/[0.07] border border-transparent'
+                            )}
+                          >
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="font-medium">{option.label}</span>
+                              {isActive && <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />}
+                            </span>
+                            <span className="block text-[10px] leading-snug text-slate-400 mt-0.5">
+                              {option.description}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <p className="pt-1.5 border-t border-white/[0.06] text-[10px] text-slate-500">
+                      Saved for this device. Shortcut:{' '}
+                      <kbd className="font-mono text-slate-400">A</kbd> cycles modes.
+                    </p>
                   </div>
                 )}
               </div>
