@@ -150,8 +150,8 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
       className={cn(
         'fixed top-0 inset-x-0 z-40 transition-all duration-300 px-4 sm:px-8 lg:px-12',
         isScrolled
-          ? 'py-3 bg-[#050811]/94 backdrop-blur-2xl border-b border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.8)]'
-          : 'py-4.5 bg-gradient-to-b from-[#050811]/95 via-[#050811]/45 to-transparent'
+          ? 'py-2.5 bg-[#030611]/92 backdrop-blur-2xl border-b border-white/[0.06] shadow-[0_8px_32px_rgba(0,0,0,0.9)]'
+          : 'py-4 bg-gradient-to-b from-[#030611]/95 via-[#030611]/40 to-transparent'
       )}
     >
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
@@ -161,7 +161,7 @@ export const CinemaNavbar: React.FC<CinemaNavbarProps> = ({ onSearchQuery }) => 
             <Logo size="md" />
           </Link>
 
-          {/* Desktop Navigation Links — Hotstar Style */}
+          {/* Desktop Navigation Links — Ultra Luxury Cinema */}
           <nav className="hidden lg:flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/[0.05]">
             {NAV_LINKS.map((link) => {
               const targetId = link.href.startsWith('/#') ? link.href.replace('/#', '') : (link.href === '/' ? 'home' : link.id);

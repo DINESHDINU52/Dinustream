@@ -103,7 +103,7 @@ export default function CinemaHomePage() {
     return myList.map((id) => allMediaMap.get(id)).filter(Boolean) as MediaItem[];
   }, [myList, allMediaMap]);
 
-  // Hotstar Top 10 Ranked items: Top 10 across movies & series
+  // DinuStream Top 10 Ranked items: Top 10 across movies & series
   const top10Items = useMemo(() => {
     const combined = [...series, ...movies];
     const unique = new Map<string, MediaItem>();
@@ -251,7 +251,7 @@ export default function CinemaHomePage() {
         </div>
       ) : (
         <div className="space-y-8 sm:space-y-12 md:space-y-14 pb-20">
-          {/* 1. Hotstar Multi-Slide Featured Hero Carousel */}
+          {/* 1. DinuStream Multi-Slide Featured Hero Carousel */}
           {featuredItems.length > 0 ? (
             <HeroCarousel
               items={featuredItems}
@@ -279,29 +279,29 @@ export default function CinemaHomePage() {
             </div>
           )}
 
-          {/* Hotstar Quick Category Navigation Bar */}
+          {/* Luxury Cinema Category Navigation Bar */}
           <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 -mt-4 sm:-mt-6 relative z-20">
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2">
               <button
                 onClick={() => handleCategoryClick('all')}
                 className={cn(
-                  'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5',
+                  'px-4 py-2 rounded-full text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5 backdrop-blur-xl',
                   activeCategory === 'all'
-                    ? 'bg-white text-slate-950 shadow-lg shadow-white/15'
-                    : 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white border border-white/[0.08]'
+                    ? 'bg-white text-slate-950 shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                    : 'bg-white/[0.04] hover:bg-white/[0.1] text-slate-300 hover:text-white border border-white/[0.08]'
                 )}
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
                 <span>All Vault</span>
               </button>
 
               <button
                 onClick={() => handleCategoryClick('top10', 'top-10')}
                 className={cn(
-                  'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5',
+                  'px-4 py-2 rounded-full text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5 backdrop-blur-xl',
                   activeCategory === 'top10'
-                    ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-lg'
-                    : 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white border border-white/[0.08]'
+                    ? 'bg-white text-slate-950 shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                    : 'bg-white/[0.04] hover:bg-white/[0.1] text-slate-300 hover:text-white border border-white/[0.08]'
                 )}
               >
                 <Flame className="w-3.5 h-3.5 text-amber-400" />
@@ -311,36 +311,36 @@ export default function CinemaHomePage() {
               <button
                 onClick={() => handleCategoryClick('movies', 'movies')}
                 className={cn(
-                  'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5',
+                  'px-4 py-2 rounded-full text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5 backdrop-blur-xl',
                   activeCategory === 'movies'
-                    ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/25'
-                    : 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white border border-white/[0.08]'
+                    ? 'bg-white text-slate-950 shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                    : 'bg-white/[0.04] hover:bg-white/[0.1] text-slate-300 hover:text-white border border-white/[0.08]'
                 )}
               >
-                <Film className="w-3.5 h-3.5" />
+                <Film className="w-3.5 h-3.5 text-sky-400" />
                 <span>Feature Movies ({movies.length})</span>
               </button>
 
               <button
                 onClick={() => handleCategoryClick('series', 'series')}
                 className={cn(
-                  'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5',
+                  'px-4 py-2 rounded-full text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5 backdrop-blur-xl',
                   activeCategory === 'series'
-                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
-                    : 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white border border-white/[0.08]'
+                    ? 'bg-white text-slate-950 shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                    : 'bg-white/[0.04] hover:bg-white/[0.1] text-slate-300 hover:text-white border border-white/[0.08]'
                 )}
               >
-                <Tv className="w-3.5 h-3.5" />
+                <Tv className="w-3.5 h-3.5 text-rose-400" />
                 <span>TV Series ({series.length})</span>
               </button>
 
               <button
                 onClick={() => handleCategoryClick('new', 'new-movies')}
                 className={cn(
-                  'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5',
+                  'px-4 py-2 rounded-full text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5 backdrop-blur-xl',
                   activeCategory === 'new'
-                    ? 'bg-amber-500 text-white shadow-lg'
-                    : 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white border border-white/[0.08]'
+                    ? 'bg-white text-slate-950 shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                    : 'bg-white/[0.04] hover:bg-white/[0.1] text-slate-300 hover:text-white border border-white/[0.08]'
                 )}
               >
                 <Star className="w-3.5 h-3.5 text-amber-300" />
@@ -350,26 +350,26 @@ export default function CinemaHomePage() {
               <button
                 onClick={() => handleCategoryClick('atmos', 'dolby-vault')}
                 className={cn(
-                  'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5',
+                  'px-4 py-2 rounded-full text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5 backdrop-blur-xl',
                   activeCategory === 'atmos'
-                    ? 'bg-indigo-600 text-white shadow-lg'
-                    : 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white border border-white/[0.08]'
+                    ? 'bg-white text-slate-950 shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                    : 'bg-white/[0.04] hover:bg-white/[0.1] text-slate-300 hover:text-white border border-white/[0.08]'
                 )}
               >
-                <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                <Zap className="w-3.5 h-3.5 text-cyan-400" />
                 <span>Dolby Atmos Vault</span>
               </button>
 
               <button
                 onClick={() => handleCategoryClick('mylist', 'my-list')}
                 className={cn(
-                  'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5',
+                  'px-4 py-2 rounded-full text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus flex items-center gap-1.5 backdrop-blur-xl',
                   activeCategory === 'mylist'
-                    ? 'bg-emerald-600 text-white shadow-lg'
-                    : 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white border border-white/[0.08]'
+                    ? 'bg-white text-slate-950 shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                    : 'bg-white/[0.04] hover:bg-white/[0.1] text-slate-300 hover:text-white border border-white/[0.08]'
                 )}
               >
-                <Bookmark className="w-3.5 h-3.5" />
+                <Bookmark className="w-3.5 h-3.5 text-emerald-400" />
                 <span>My Watchlist ({myList.length})</span>
               </button>
             </div>
@@ -431,7 +431,7 @@ export default function CinemaHomePage() {
             </div>
           )}
 
-          {/* 3. Hotstar Top 10 in Dinustream */}
+          {/* 3. DinuStream Top 10 in Dinustream */}
           {top10Items.length > 0 && (
             <div id="top-10">
               <MediaCarousel
@@ -460,7 +460,7 @@ export default function CinemaHomePage() {
             <div id="new-movies">
               <MediaCarousel
                 title="Newly Added Movies"
-                kicker="Hotstar Premieres"
+                kicker="Cinema Premieres"
                 subtitle="Fresh cinematic releases and remastered theatrical masters just added to the vault."
                 items={newlyAddedMovies}
                 type="poster"

@@ -85,7 +85,7 @@ class MediaService {
    * Fetch hero item for the cinematic hero banner
    */
     /**
-   * Fetch featured items for the multi-slide Hotstar hero carousel
+   * Fetch featured items for the multi-slide DinuStream hero carousel
    */
   async getFeaturedItems(limit = 6): Promise<MediaItem[]> {
     try {
