@@ -30,6 +30,8 @@ import {
   ListVideo,
   Ratio,
   Check,
+  AlertTriangle,
+  Loader2,
   X,
 } from 'lucide-react';
 import { useMediaSegments } from '@/hooks/useMediaSegments';
@@ -42,12 +44,13 @@ import { EpisodeSelectorDrawer } from './EpisodeSelectorDrawer';
 import { AtmosIntro } from './AtmosIntro';
 import { useDolbyIntroPreference } from '@/hooks/useDolbyIntroPreference';
 import { useAspectRatioPreference } from '@/hooks/useAspectRatioPreference';
+import { useHlsPlayer, AUTO_QUALITY_ID } from '@/hooks/useHlsPlayer';
+import { usePlaybackSession, SUBTITLES_OFF } from '@/hooks/usePlaybackSession';
 import {
   ASPECT_RATIO_OPTIONS,
   getAspectRatioOption,
   getVideoPresentationStyle,
 } from '@/lib/player/aspectRatio';
-import { mediaService } from '@/lib/services/mediaService';
 import { useSyncPlayback } from '@/hooks/useSyncPlayback';
 import { SyncWatchOverlay } from './SyncWatchOverlay';
 import { FloatingReactionOverlay } from './FloatingReactionOverlay';
@@ -118,75 +121,178 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [bufferedEnd, setBufferedEnd] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [quality, setQuality] = useState(isMobile ? '1080p (FHD)' : '4K (2160p)');
-  const [selectedAudioStreamIndex, setSelectedAudioStreamIndex] = useState<string | null>(null);
-  const [audioTrack, setAudioTrack] = useState('Dolby Atmos (TrueHD 7.1)');
-  const [subtitle, setSubtitle] = useState('Off');
-  const [availableAudioTracks, setAvailableAudioTracks] = useState<Array<{ id: string; label: string }>>([
-    { id: '1', label: 'Dolby Atmos (TrueHD 7.1)' },
-    { id: '2', label: 'Dolby Digital Plus 5.1' },
-    { id: '3', label: 'French Stereo' },
-  ]);
-  const [availableSubtitleTracks, setAvailableSubtitleTracks] = useState<Array<{ id: string; label: string }>>([
-    { id: 'off', label: 'Off' },
-    { id: '1', label: 'English [CC]' },
-    { id: '2', label: 'Spanish' },
-    { id: '3', label: 'French' },
-  ]);
+  /*
+    Track lists and the quality ladder are no longer stored here.
+
+    They used to be seeded with hard-coded placeholders ("Dolby Atmos (TrueHD
+    7.1)", "English [CC]", "4K (2160p)") that were shown before — and often
+    instead of — the real thing, and selecting from them changed a label and
+    nothing else. They now come from `usePlaybackSession` (audio + subtitles,
+    negotiated with the server) and `useHlsPlayer` (real HLS variant levels).
+  */
   const hasResumedRef = useRef(false);
-
-  // Load live Jellyfin audio & subtitle tracks on media change
-  useEffect(() => {
-    mediaService.getAudioTracks(media.id).then((tracks) => {
-      if (tracks && tracks.length > 0) {
-        setAvailableAudioTracks(tracks);
-      }
-    }).catch(() => {});
-
-    mediaService.getSubtitleTracks(media.id).then((subs) => {
-      if (subs && subs.length > 0) {
-        setAvailableSubtitleTracks(subs);
-      }
-    }).catch(() => {});
-
-    mediaService.getResumePosition(media.id).then((resumeSeconds) => {
-      if (!hasResumedRef.current && resumeSeconds > 10) {
-        hasResumedRef.current = true;
-        setCurrentTime(resumeSeconds);
-        if (videoRef.current) {
-          videoRef.current.currentTime = resumeSeconds;
-        }
-      }
-    }).catch(() => {});
-  }, [media.id]);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isPiPActive, setIsPiPActive] = useState(false);
 
-  // Dynamic Stream Source with audio track selection and mobile optimization
   const activeItemId = episode?.id || media?.id;
-  const jellyfinStreamUrl = useMemo(() => {
-    if (!activeItemId) return '';
-    const params = new URLSearchParams();
-    if (selectedAudioStreamIndex && selectedAudioStreamIndex !== 'default') {
-      params.set('audioStreamIndex', selectedAudioStreamIndex);
-    }
-    if (isMobile) {
-      params.set('maxHeight', '1080');
-    }
-    const qs = params.toString();
-    return `/api/jellyfin/videos/${encodeURIComponent(activeItemId)}/stream${qs ? `?${qs}` : ''}`;
-  }, [activeItemId, selectedAudioStreamIndex, isMobile]);
-  const activeVideoSrc = episode?.videoUrl || media?.videoUrl || jellyfinStreamUrl;
-  const [videoError, setVideoError] = useState(false);
+  /** A curated item may ship its own URL, bypassing Jellyfin negotiation. */
+  const externalUrl = episode?.videoUrl || media?.videoUrl;
 
+  /*
+    Stream negotiation, track lists, resume position and progress reporting.
+
+    This replaces a hand-built `/videos/{id}/stream?Static=true` URL. That URL
+    pinned playback to direct play of the original file, so there was no bitrate
+    ladder (the quality menu could only ever be a label), no way to switch audio
+    (Static makes Jellyfin ignore AudioStreamIndex), and nothing at all played
+    when the container was one browsers cannot demux — which is every MKV.
+  */
+  const session = usePlaybackSession({ itemId: activeItemId, externalUrl });
+
+  const activeVideoSrc = externalUrl || session.source?.url || '';
+  const playbackMethod: 'hls' | 'direct' = externalUrl
+    ? 'direct'
+    : (session.source?.method ?? 'direct');
+
+  /*
+    Playback failure, tagged with the source it belongs to.
+
+    Storing the URL alongside the message lets the error be *derived* away when a
+    new source is negotiated, instead of clearing it from an effect — which the
+    React compiler flags as a cascading render, and which would also briefly show
+    a stale error against a fresh stream.
+  */
+  const [errorState, setErrorState] = useState<{ src: string; message: string } | null>(null);
+  const playbackError = errorState?.src === activeVideoSrc ? errorState.message : null;
+
+  const setPlaybackError = useCallback(
+    (message: string | null) => {
+      setErrorState(message ? { src: activeVideoSrc, message } : null);
+    },
+    [activeVideoSrc]
+  );
+
+  const handleFatalPlaybackError = useCallback(
+    (message: string) => {
+      console.warn('[CinemaPlayer] Fatal playback error:', message);
+      setPlaybackError(message);
+    },
+    [setPlaybackError]
+  );
+
+  /* Adaptive engine + the real quality ladder it exposes. */
+  const hlsPlayer = useHlsPlayer({
+    src: activeVideoSrc || null,
+    method: playbackMethod,
+    videoRef,
+    onFatalError: handleFatalPlaybackError,
+  });
+
+  /**
+   * Label for the rung currently on screen.
+   *
+   * Prefers the level ABR actually settled on over the one the viewer picked, so
+   * "Auto" reports what is really being delivered.
+   */
+  const currentQualityLabel = useMemo(() => {
+    if (playbackMethod === 'direct') return 'Direct Play';
+    const activeId =
+      hlsPlayer.activeLevelId >= 0 ? hlsPlayer.activeLevelId : hlsPlayer.selectedLevelId;
+    const level = hlsPlayer.levels.find((l) => l.id === activeId);
+    return level?.label ?? 'Auto';
+  }, [playbackMethod, hlsPlayer.activeLevelId, hlsPlayer.selectedLevelId, hlsPlayer.levels]);
+
+  /**
+   * Remember the current position and playing state so they can be restored
+   * after a re-negotiation.
+   *
+   * Switching audio track or burning in subtitles produces a brand-new transcode
+   * and therefore a new source URL, which resets the element to 0. Capturing the
+   * position first is what makes those switches feel seamless instead of
+   * throwing the viewer back to the opening frame.
+   */
+  const restoreAfterReloadRef = useRef<{ time: number; wasPlaying: boolean } | null>(null);
+
+  const restorePositionAfterReload = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    restoreAfterReloadRef.current = { time: video.currentTime, wasPlaying: !video.paused };
+  }, []);
+
+  /** Summary labels for the settings menu rows. */
+  const activeAudioTrackLabel = useMemo(() => {
+    const selected = session.audioTracks.find((t) => t.index === session.selectedAudioIndex);
+    if (selected) return selected.label;
+    // Before the viewer chooses, Jellyfin plays the file's default track.
+    return session.audioTracks.find((t) => t.isDefault)?.label ?? 'Default';
+  }, [session.audioTracks, session.selectedAudioIndex]);
+
+  const activeSubtitleLabel = useMemo(
+    () =>
+      session.subtitleTracks.find((t) => t.index === session.selectedSubtitleIndex)?.label ?? 'Off',
+    [session.subtitleTracks, session.selectedSubtitleIndex]
+  );
+
+  /*
+    Apply the subtitle selection to the element's TextTrackList.
+
+    The `default` attribute on a <track> is only honoured on initial load, so it
+    cannot express a later change — switching languages mid-playback has to go
+    through `track.mode`. Exactly one track is set to 'showing' and the rest to
+    'disabled'; leaving them 'hidden' instead would keep the browser parsing cues
+    for every language at once.
+
+    Tracks are matched by label because TextTrack has no field for the Jellyfin
+    stream index, and the labels are generated from it a few lines above.
+  */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const target = session.subtitleTracks.find(
+      (t) => t.index === session.selectedSubtitleIndex && t.src
+    );
+
+    const apply = () => {
+      const tracks = video.textTracks;
+      for (let i = 0; i < tracks.length; i += 1) {
+        const track = tracks[i];
+        track.mode = target && track.label === target.label ? 'showing' : 'disabled';
+      }
+    };
+
+    apply();
+
+    /*
+      `<track>` elements are added asynchronously relative to this effect when
+      the source has just changed, so re-apply once the list settles.
+    */
+    video.textTracks.addEventListener?.('addtrack', apply);
+    return () => video.textTracks.removeEventListener?.('addtrack', apply);
+  }, [session.subtitleTracks, session.selectedSubtitleIndex, activeVideoSrc]);
+
+  /**
+   * Native `<video>` error handler.
+   *
+   * Only meaningful for direct play: with hls.js attached, MSE surfaces failures
+   * through the HLS error pipeline instead, and this would fire spuriously
+   * during normal buffer churn.
+   */
   const handleVideoError = useCallback(() => {
-    if (!videoError) {
-      console.warn('[CinemaPlayer] Primary stream playback issue detected on item:', activeItemId);
-      setVideoError(true);
-    }
-  }, [videoError, activeItemId]);
+    if (playbackMethod !== 'direct') return;
+    const code = videoRef.current?.error?.code;
+    const message =
+      code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+        ? 'This file’s format is not supported by your browser and the server could not convert it.'
+        : code === MediaError.MEDIA_ERR_NETWORK
+          ? 'The connection to the media server dropped.'
+          : code === MediaError.MEDIA_ERR_DECODE
+            ? 'The video stream could not be decoded.'
+            : 'Playback failed.';
+    setPlaybackError(message);
+  }, [playbackMethod, setPlaybackError]);
 
   // Keep local state in sync with native fullscreen changes (Esc, system UI, …)
   useEffect(() => {
@@ -353,12 +459,19 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   const [isQueueDrawerOpen, setIsQueueDrawerOpen] = useState(false);
   const [isQueueSelectorOpen, setIsQueueSelectorOpen] = useState(false);
 
-  // Sync active user profile preferences to player state
+  /*
+    Apply profile preferences.
+
+    Only autoplay is carried over now. `defaultAudio`, `defaultSubtitles` and
+    `playbackQuality` were stored as free-text labels ("Dolby Atmos (TrueHD
+    7.1)") and pushed into what were purely cosmetic state variables. Audio and
+    subtitle tracks are per-file Jellyfin stream indices and quality is a per-file
+    HLS ladder, so a saved label cannot be matched to either — honouring it would
+    mean guessing. Restoring those as real preferences needs them stored as a
+    language code plus an on/off flag, which is a separate change.
+  */
   useEffect(() => {
     queueMicrotask(() => {
-      if (settings?.defaultAudio) setAudioTrack(settings.defaultAudio);
-      if (settings?.defaultSubtitles) setSubtitle(settings.defaultSubtitles);
-      if (settings?.playbackQuality) setQuality(settings.playbackQuality);
       if (typeof settings?.autoplayNextEpisode === 'boolean') {
         setAutoplayNextEpisode(settings.autoplayNextEpisode);
       }
@@ -538,11 +651,60 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       if (video.buffered.length > 0) {
         setBufferedEnd(video.buffered.end(video.buffered.length - 1));
       }
+      /*
+        Report position to Jellyfin. Internally throttled to one call every 10s,
+        so calling it from `timeupdate` (~4Hz) is safe. This is what makes resume
+        work on another device — nothing used to write this value back.
+      */
+      session.notifyProgress(video.currentTime, video.paused);
+    };
+
+    const handlePlaying = () => {
+      session.notifyStarted(video.currentTime);
+    };
+
+    const handlePause = () => {
+      // Sent immediately rather than on the throttle, so a pause is recorded even
+      // if the viewer closes the tab straight afterwards.
+      session.notifyProgress(video.currentTime, true);
     };
 
     const handleLoadedMetadata = () => {
       if (video.duration && !isNaN(video.duration) && video.duration > 0) {
         setDuration(video.duration);
+      }
+
+      /*
+        Restore after a re-negotiation (audio switch / subtitle burn-in) takes
+        priority over the server resume point: the viewer was mid-playback and is
+        expecting to stay there.
+      */
+      const restore = restoreAfterReloadRef.current;
+      if (restore) {
+        restoreAfterReloadRef.current = null;
+        video.currentTime = restore.time;
+        setCurrentTime(restore.time);
+        if (restore.wasPlaying) void video.play().catch(() => {});
+        return;
+      }
+
+      /*
+        Server-side resume. `session.resumeSeconds` comes from Jellyfin's
+        UserData, so it now reflects where playback stopped on *any* device —
+        previously nothing ever wrote that value, so it was always whatever some
+        other Jellyfin client had left behind.
+
+        The 10s floor avoids "resuming" a few seconds in, and stopping 30s before
+        the end is treated as finished rather than resumed.
+      */
+      if (!hasResumedRef.current && session.resumeSeconds > 10) {
+        const isEffectivelyFinished =
+          video.duration > 0 && session.resumeSeconds > video.duration - 30;
+        hasResumedRef.current = true;
+        if (!isEffectivelyFinished) {
+          video.currentTime = session.resumeSeconds;
+          setCurrentTime(session.resumeSeconds);
+        }
       }
     };
 
@@ -571,43 +733,37 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('ended', handleEnded);
+    video.addEventListener('playing', handlePlaying);
+    video.addEventListener('pause', handlePause);
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('ended', handleEnded);
+      video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('pause', handlePause);
     };
-  }, [onNextEpisode, isGroupSync, groupId, router, addWatchHistory, duration, episode, media]);
+  }, [onNextEpisode, isGroupSync, groupId, router, addWatchHistory, duration, episode, media, session]);
 
-  // Simulated playback time advancement (coexists gracefully with HTML5 video)
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (isPlaying) {
-      interval = setInterval(() => {
-        if (videoRef.current && !videoRef.current.paused && videoRef.current.currentTime > 0) {
-          return;
-        }
-        setCurrentTime((prev) => {
-          if (prev >= duration) {
-            setIsPlaying(false);
-            if (onNextEpisode) {
-              onNextEpisode();
-            } else if (isGroupSync) {
-              const nextMovie = watchTogetherService.prepareNextQueuedMovie();
-              if (nextMovie) {
-                router.push(`/watch/${nextMovie.movieId}?sync=true&group=${groupId || 'group-movie-night'}`);
-              }
-            }
-            return duration;
-          }
-          return prev + 1;
-        });
-      }, 1000 / playbackSpeed);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isPlaying, duration, playbackSpeed, onNextEpisode, isGroupSync, groupId, router]);
+  /*
+    The "simulated playback time advancement" interval that used to live here has
+    been removed.
+
+    It incremented `currentTime` by one second per tick whenever `isPlaying` was
+    true and the video element was not actually advancing — which is precisely the
+    situation when a stream has failed. The consequences were all bad:
+
+      - a dead stream showed a progress bar creeping forward, so a failure looked
+        like playback;
+      - the intro/recap skip detection fired against a position no frame had been
+        decoded at;
+      - on reaching the fake `duration` it auto-advanced to the next episode,
+        which would then also fail, silently walking through a whole season;
+      - progress was written to Continue Watching for video never watched.
+
+    Position now comes exclusively from the element's `timeupdate` event, and a
+    stalled stream surfaces through the error overlay instead of being masked.
+  */
 
   // Pulse animation helper
   const triggerPulse = (action: 'play' | 'pause' | 'rewind' | 'forward') => {
@@ -910,15 +1066,45 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       */}
       <video
         ref={videoRef}
-        src={activeVideoSrc}
+        /*
+          No `src` attribute: the source is attached by `useHlsPlayer`, which
+          either hands the manifest to hls.js via MSE or assigns it directly for
+          native-HLS and direct-play. Setting it here too would start a second,
+          competing download of the same stream.
+        */
         poster={episode ? episode.thumbnailUrl : media.backdropUrl}
         playsInline
         preload="metadata"
+        crossOrigin="anonymous"
         className="relative z-10 w-full h-full transform-gpu"
         style={videoPresentationStyle}
         onClick={togglePlay}
         onError={handleVideoError}
-      />
+      >
+        {/*
+          Subtitle tracks.
+
+          These are the elements that were missing entirely — the subtitle menu
+          read real tracks from Jellyfin and then had nothing to apply them to.
+          Only text-based tracks appear here; bitmap formats have no `src` and are
+          burned in server-side instead.
+
+          `key` includes the source URL so React rebuilds the tracks when the
+          stream is re-negotiated; reusing them across sources leaves stale cues.
+        */}
+        {session.subtitleTracks
+          .filter((track) => Boolean(track.src))
+          .map((track) => (
+            <track
+              key={`${track.index}-${activeVideoSrc}`}
+              kind="subtitles"
+              label={track.label}
+              srcLang={track.language || 'und'}
+              src={track.src}
+              default={session.selectedSubtitleIndex === track.index}
+            />
+          ))}
+      </video>
 
       {/* Mobile Portrait Orientation Prompt */}
       {/* Suppressed while immersive — including during the prelude, which now
@@ -936,6 +1122,69 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
           <RotateCw className="w-3.5 h-3.5 text-sky-400 animate-spin-slow" />
           <span>Rotate / Fullscreen</span>
         </motion.button>
+      )}
+
+      {/*
+        Playback failure surface.
+
+        `videoError` was previously set on error and never rendered anywhere, so a
+        stream that could not play showed a black rectangle with no explanation
+        and no way forward. This reports what happened and offers the two useful
+        recoveries: re-negotiate with the server, or leave.
+      */}
+      {playbackError && !isPlayingDolbyIntro && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/85 px-6">
+          <div className="max-w-md w-full text-center space-y-4 p-6 rounded-2xl glass-strong">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/15 border border-rose-500/30">
+              <AlertTriangle className="h-6 w-6 text-rose-400" />
+            </span>
+            <div className="space-y-1.5">
+              <h3 className="text-base font-semibold text-white">Playback problem</h3>
+              <p className="text-sm text-slate-300 leading-relaxed">{playbackError}</p>
+              {session.resolveError && (
+                <p className="text-[11px] font-mono text-slate-500 break-words">
+                  {session.resolveError}
+                </p>
+              )}
+              {session.source?.transcodeReasons?.length ? (
+                <p className="text-[11px] font-mono text-slate-500">
+                  Server reported: {session.source.transcodeReasons.join(', ')}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-1">
+              <button
+                onClick={() => {
+                  setPlaybackError(null);
+                  restorePositionAfterReload();
+                  session.reload();
+                }}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white text-slate-950 text-sm font-semibold transition-transform active:scale-95 cinema-focus"
+              >
+                Try again
+              </button>
+              <button
+                onClick={() => router.back()}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl glass text-white text-sm font-medium transition-transform active:scale-95 cinema-focus"
+              >
+                Back to catalog
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/*
+        Negotiating / recovering indicator. Distinct from a decode failure: the
+        server may simply still be starting the transcode.
+      */}
+      {(session.isResolving || hlsPlayer.isRecovering) && !playbackError && !isPlayingDolbyIntro && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+          <span className="flex items-center gap-2.5 px-4 py-2.5 rounded-full glass text-xs text-slate-200">
+            <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+            {session.isResolving ? 'Preparing stream…' : 'Reconnecting…'}
+          </span>
+        </div>
       )}
 
       {/* Screen Vignette Overlay */}
@@ -1106,7 +1355,8 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                   <span>{media.releaseYear} • {media.runtime}</span>
                 )}
                 <span className="text-slate-600">•</span>
-                <span className="font-mono text-emerald-400">{quality}</span>
+                {/* Shows the rung actually being played, not a static label. */}
+                <span className="font-mono text-emerald-400">{currentQualityLabel}</span>
               </div>
             </div>
           </div>
@@ -1348,29 +1598,32 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                     className="absolute bottom-full mb-3 right-0 w-60 max-w-[calc(100vw-2rem)] p-2 rounded-xl bg-[#0a0f18]/95 border border-slate-400/[0.18] shadow-2xl backdrop-blur-xl z-50 text-xs space-y-1 overflow-y-auto max-h-60"
                   >
                     <p className="px-2.5 py-1 text-[10px] font-mono uppercase text-slate-400 border-b border-white/[0.06]">
-                      Audio Stream (Spatial / Multi-Channel)
+                      Audio Stream
                     </p>
-                    {availableAudioTracks.map((track) => (
+                    {session.audioTracks.length === 0 && (
+                      <p className="px-2.5 py-2 text-slate-500">No alternate audio tracks.</p>
+                    )}
+                    {/*
+                      Real Jellyfin audio streams. Selecting one re-negotiates the
+                      stream (a different audio track is a different transcode) and
+                      `restorePositionAfterReload` puts the viewer back where they
+                      were. The old handler only relabelled a string and nudged
+                      currentTime, which is why switching audio appeared to do
+                      nothing.
+                    */}
+                    {session.audioTracks.map((track) => (
                       <button
-                        key={track.id}
+                        key={track.index}
                         onClick={() => {
-                          setAudioTrack(track.label);
-                          setSelectedAudioStreamIndex(track.id);
+                          restorePositionAfterReload();
+                          session.selectAudioTrack(track.index);
                           setActiveMenu(null);
-                          if (videoRef.current) {
-                            const resumeTime = videoRef.current.currentTime;
-                            const wasPlaying = !videoRef.current.paused;
-                            setTimeout(() => {
-                              if (videoRef.current) {
-                                videoRef.current.currentTime = resumeTime;
-                                if (wasPlaying) videoRef.current.play().catch(() => {});
-                              }
-                            }, 60);
-                          }
                         }}
                         className={cn(
                           'w-full text-left px-2.5 py-1.5 rounded-md transition-colors',
-                          audioTrack === track.label ? 'bg-white/10 text-white font-medium' : 'text-slate-400 hover:text-white'
+                          session.selectedAudioIndex === track.index
+                            ? 'bg-white/10 text-white font-medium'
+                            : 'text-slate-400 hover:text-white'
                         )}
                       >
                         {track.label}
@@ -1402,21 +1655,47 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                     <p className="px-2.5 py-1 text-[10px] font-mono uppercase text-slate-400 border-b border-white/[0.06]">
                       Subtitles / Closed Captions
                     </p>
-                    {availableSubtitleTracks.map((sub) => (
-                      <button
-                        key={sub.id}
-                        onClick={() => {
-                          setSubtitle(sub.label);
-                          setActiveMenu(null);
-                        }}
-                        className={cn(
-                          'w-full text-left px-2.5 py-1.5 rounded-md transition-colors',
-                          subtitle === sub.label ? 'bg-white/10 text-white font-medium' : 'text-slate-400 hover:text-white'
-                        )}
-                      >
-                        {sub.label}
-                      </button>
-                    ))}
+                    {/*
+                      Backed by real `<track>` elements rendered below the video.
+                      Before this, the list was populated from Jellyfin but there
+                      was no <track> anywhere in the app, so picking a language
+                      did literally nothing.
+                    */}
+                    {session.subtitleTracks.map((sub) => {
+                      const isBurnIn = sub.index !== SUBTITLES_OFF && !sub.src;
+                      return (
+                        <button
+                          key={sub.index}
+                          onClick={() => {
+                            session.selectSubtitle(sub.index);
+                            // Bitmap subtitles (PGS/DVBSUB) have no text to
+                            // extract, so Jellyfin has to burn them into the
+                            // picture — which means a new transcode.
+                            if (isBurnIn) {
+                              restorePositionAfterReload();
+                              session.reload();
+                            }
+                            setActiveMenu(null);
+                          }}
+                          className={cn(
+                            'w-full text-left px-2.5 py-1.5 rounded-md transition-colors flex items-center justify-between gap-2',
+                            session.selectedSubtitleIndex === sub.index
+                              ? 'bg-white/10 text-white font-medium'
+                              : 'text-slate-400 hover:text-white'
+                          )}
+                        >
+                          <span className="truncate">{sub.label}</span>
+                          {isBurnIn && (
+                            <span
+                              title="Image-based subtitles; the server must re-encode to show these"
+                              className="text-[9px] font-mono text-amber-400 shrink-0"
+                            >
+                              BURN-IN
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1441,23 +1720,57 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                     className="absolute bottom-full mb-3 right-0 w-44 p-2 rounded-xl bg-[#0a0f18]/95 border border-slate-400/[0.18] shadow-2xl backdrop-blur-xl z-50 text-xs space-y-1"
                   >
                     <p className="px-2.5 py-1 text-[10px] font-mono uppercase text-slate-400 border-b border-white/[0.06]">
-                      Bitrate Resolution
+                      Quality
                     </p>
-                    {['Auto (4K UHD)', '4K (2160p)', '1080p Full HD', '720p HD'].map((q) => (
-                      <button
-                        key={q}
-                        onClick={() => {
-                          setQuality(q);
-                          setActiveMenu(null);
-                        }}
-                        className={cn(
-                          'w-full text-left px-2.5 py-1.5 rounded-md transition-colors',
-                          quality === q ? 'bg-white/10 text-white font-medium' : 'text-slate-400 hover:text-white'
-                        )}
-                      >
-                        {q}
-                      </button>
-                    ))}
+                    {/*
+                      Real HLS variant levels reported by hls.js after parsing the
+                      master playlist — not the previous hard-coded
+                      ['Auto (4K UHD)', '4K (2160p)', …] list, which never touched
+                      the stream. Empty on Safari/iOS, where playback is handed to
+                      the native player and the ladder is not introspectable; the
+                      note below says so rather than showing a dead menu.
+                    */}
+                    {hlsPlayer.levels.length === 0 ? (
+                      <p className="px-2.5 py-2 text-slate-500 leading-snug">
+                        {playbackMethod === 'hls'
+                          ? 'Managed automatically by your browser.'
+                          : 'Direct play — original quality.'}
+                      </p>
+                    ) : (
+                      hlsPlayer.levels.map((level) => {
+                        const isSelected = hlsPlayer.selectedLevelId === level.id;
+                        const isAutoActive =
+                          level.id === AUTO_QUALITY_ID &&
+                          hlsPlayer.selectedLevelId === AUTO_QUALITY_ID;
+                        const activeLabel =
+                          isAutoActive && hlsPlayer.activeLevelId >= 0
+                            ? hlsPlayer.levels.find((l) => l.id === hlsPlayer.activeLevelId)?.label
+                            : undefined;
+
+                        return (
+                          <button
+                            key={level.id}
+                            onClick={() => {
+                              hlsPlayer.setLevel(level.id);
+                              setActiveMenu(null);
+                            }}
+                            className={cn(
+                              'w-full text-left px-2.5 py-1.5 rounded-md transition-colors flex items-center justify-between gap-2',
+                              isSelected
+                                ? 'bg-white/10 text-white font-medium'
+                                : 'text-slate-400 hover:text-white'
+                            )}
+                          >
+                            <span>{level.label}</span>
+                            {activeLabel && (
+                              <span className="text-[10px] font-mono text-emerald-400">
+                                {activeLabel}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 )}
               </div>
@@ -1681,14 +1994,27 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                         className="w-full text-left py-1 px-1.5 rounded flex items-center justify-between text-slate-300 hover:text-white hover:bg-white/5"
                       >
                         <span>Quality</span>
-                        <span className="font-mono text-emerald-400 text-[11px]">{quality}</span>
+                        <span className="font-mono text-emerald-400 text-[11px]">
+                          {currentQualityLabel}
+                        </span>
                       </button>
                       <button
                         onClick={() => setActiveMenu('audio')}
-                        className="w-full text-left py-1 px-1.5 rounded flex items-center justify-between text-slate-300 hover:text-white hover:bg-white/5"
+                        className="w-full text-left py-1 px-1.5 rounded flex items-center justify-between gap-2 text-slate-300 hover:text-white hover:bg-white/5"
                       >
                         <span>Audio Stream</span>
-                        <span className="font-mono text-slate-400 text-[11px] truncate max-w-[120px]">{audioTrack}</span>
+                        <span className="font-mono text-slate-400 text-[11px] truncate max-w-[130px]">
+                          {activeAudioTrackLabel}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setActiveMenu('subtitles')}
+                        className="w-full text-left py-1 px-1.5 rounded flex items-center justify-between gap-2 text-slate-300 hover:text-white hover:bg-white/5"
+                      >
+                        <span>Subtitles</span>
+                        <span className="font-mono text-slate-400 text-[11px] truncate max-w-[130px]">
+                          {activeSubtitleLabel}
+                        </span>
                       </button>
                       <button
                         onClick={() => setActiveMenu('speed')}

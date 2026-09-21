@@ -187,13 +187,53 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
 }
 
 /**
- * 8. Playback Progress
+ * 8. Playback reporting
+ *
+ * These three calls are what make resume work across devices. Jellyfin stores
+ * `PlaybackPositionTicks` on the item's UserData when it receives them, and that
+ * is the value `getResumePosition` reads back. Without them the server never
+ * learns where the viewer stopped, so "start on the TV, finish on your phone"
+ * cannot work and Continue Watching is stuck in one browser's localStorage.
+ *
+ * All three are fire-and-forget: telemetry must never interrupt playback.
  */
+export interface PlaybackReportOptions {
+  itemId: string;
+  positionTicks: number;
+  isPaused?: boolean;
+  playSessionId?: string;
+  mediaSourceId?: string;
+  audioStreamIndex?: number;
+  subtitleStreamIndex?: number;
+}
+
+/** Call once when playback begins, so Jellyfin opens a session. */
+export async function reportPlaybackStart(options: PlaybackReportOptions): Promise<void> {
+  await fetchJellyfin('/sessions/playing', {
+    method: 'POST',
+    body: JSON.stringify({
+      ItemId: options.itemId,
+      PositionTicks: options.positionTicks,
+      PlaySessionId: options.playSessionId,
+      MediaSourceId: options.mediaSourceId ?? options.itemId,
+      AudioStreamIndex: options.audioStreamIndex,
+      SubtitleStreamIndex: options.subtitleStreamIndex,
+      CanSeek: true,
+      IsPaused: false,
+      PlayMethod: 'Transcode',
+    }),
+  }).catch(() => {
+    // Non-blocking telemetry.
+  });
+}
+
+/** Call periodically and on pause/seek. */
 export async function reportPlaybackProgress(
   itemId: string,
   positionTicks: number,
   isPaused: boolean,
-  playSessionId?: string
+  playSessionId?: string,
+  mediaSourceId?: string
 ): Promise<void> {
   await fetchJellyfin('/sessions/playing/progress', {
     method: 'POST',
@@ -201,6 +241,32 @@ export async function reportPlaybackProgress(
       ItemId: itemId,
       PositionTicks: positionTicks,
       IsPaused: isPaused,
+      PlaySessionId: playSessionId,
+      MediaSourceId: mediaSourceId ?? itemId,
+    }),
+  }).catch(() => {
+    // Non-blocking telemetry
+  });
+}
+
+/**
+ * Call when playback ends or the player unmounts.
+ *
+ * This is the important one operationally: it tells Jellyfin to tear down the
+ * ffmpeg transcoding process. Without it, navigating away leaves the transcode
+ * running on the server until it times out, and a few abandoned sessions will
+ * saturate a small Oracle Cloud instance.
+ */
+export async function reportPlaybackStopped(
+  itemId: string,
+  positionTicks: number,
+  playSessionId?: string
+): Promise<void> {
+  await fetchJellyfin('/sessions/playing/stopped', {
+    method: 'POST',
+    body: JSON.stringify({
+      ItemId: itemId,
+      PositionTicks: positionTicks,
       PlaySessionId: playSessionId,
     }),
   }).catch(() => {

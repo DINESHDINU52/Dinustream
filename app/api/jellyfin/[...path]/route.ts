@@ -36,10 +36,40 @@ export async function GET(
       return NextResponse.json({ error: 'Malformed path parameter' }, { status: 400 });
     }
 
-    const isStream = subPath.startsWith('videos/') && subPath.includes('/stream');
+    /*
+      Classify the request up front.
 
-    // Rate limit non-stream requests
-    if (!isStream) {
+      This used to be a single `isStream` flag matching any videos path
+      containing "/stream", and every such request had `Static=true` forced onto
+      it — which pins Jellyfin to direct-play of the original file. That is why
+      adaptive streaming was impossible and why MKV/HEVC/TrueHD sources could not
+      play in Safari or on iOS at all: the browser was handed a container it
+      cannot demux.
+
+      HLS needs three more shapes to pass through untouched:
+        - the master and variant playlists (*.m3u8)
+        - the media segments (hls1/..., *.ts, *.mp4, *.m4s)
+        - sidecar subtitle tracks (.../Subtitles/.../Stream.vtt)
+    */
+    const isVideoPath = subPath.startsWith('videos/');
+    const lowerPath = subPath.toLowerCase();
+
+    const isHlsManifest = isVideoPath && lowerPath.endsWith('.m3u8');
+    const isHlsSegment =
+      isVideoPath &&
+      (lowerPath.includes('/hls1/') ||
+        lowerPath.endsWith('.ts') ||
+        lowerPath.endsWith('.m4s') ||
+        (lowerPath.endsWith('.mp4') && !lowerPath.includes('/stream')));
+    const isSubtitle = isVideoPath && lowerPath.includes('/subtitles/');
+    const isProgressive = isVideoPath && lowerPath.includes('/stream');
+
+    /** Any binary/text media passthrough: never JSON-parsed, never rate limited. */
+    const isMedia = isHlsManifest || isHlsSegment || isSubtitle || isProgressive;
+
+    // Rate limit metadata requests only. A single HLS playback issues one
+    // segment request every few seconds, which would burn the budget instantly.
+    if (!isMedia) {
       const rateLimit = checkRateLimit(`jellyfin_${clientIp}`, {
         windowMs: 60000,
         maxRequests: 300,
@@ -96,11 +126,22 @@ export async function GET(
     } else if (subPath.startsWith('items/') && !subPath.includes('/')) {
       const itemId = subPath.replace('items/', '');
       jPath = `/Users/${encodeURIComponent(userId)}/Items/${encodeURIComponent(itemId)}`;
-    } else if (isStream) {
-      // /videos/:id/stream
-      const parts = subPath.split('/');
-      const itemId = parts[1];
-      jPath = `/Videos/${encodeURIComponent(itemId)}/stream`;
+    } else if (isVideoPath) {
+      /*
+        Forward the whole remainder verbatim under /Videos.
+
+        This is what makes HLS work without rewriting anything inside the
+        manifests. Jellyfin emits *relative* URLs in master.m3u8 ("main.m3u8?…")
+        and in the variant playlist ("hls1/main/0.mp4?…"), so the browser resolves
+        them against our proxy path and they come straight back here. Mapping the
+        tail through unchanged means every one of them lands on the matching
+        Jellyfin route.
+
+        Already validated against `..`, `\`, `//` and NUL above, so the tail is
+        safe to pass on unencoded — encoding it would destroy the path separators
+        the segment routes depend on.
+      */
+      jPath = `/Videos/${subPath.slice('videos/'.length)}`;
     } else if (subPath === 'system/info') {
       jPath = '/System/Info';
     } else if (subPath === 'search/hints') {
@@ -118,12 +159,21 @@ export async function GET(
 
     if (isImage) {
       forwardHeaders['Accept'] = 'image/*,application/json';
-    } else if (isStream) {
+    } else if (isMedia) {
+      // Range requests must reach Jellyfin for seeking to work on progressive
+      // playback and for byte-range fmp4 segments.
       const range = req.headers.get('range');
       if (range) {
         forwardHeaders['Range'] = range;
       }
-      if (!targetUrl.searchParams.has('Static')) {
+      /*
+        `Static=true` is now applied ONLY to progressive direct-play, and only
+        when the caller has not already made a choice. Forcing it onto a
+        transcode request would make Jellyfin ignore every transcoding
+        parameter — including AudioStreamIndex, which is exactly why audio track
+        switching silently did nothing.
+      */
+      if (isProgressive && !targetUrl.searchParams.has('Static')) {
         targetUrl.searchParams.set('Static', 'true');
       }
     } else {
@@ -157,15 +207,47 @@ export async function GET(
       });
     }
 
-    // Handle video streaming response (with Range support)
-    if (isStream) {
+    /*
+      HLS playlists.
+
+      Read as text rather than streamed so the Content-Type can be asserted:
+      some Jellyfin deployments behind a reverse proxy return `text/plain` for
+      .m3u8, and hls.js refuses to parse a playlist it does not recognise.
+      Playlists are never cached — for a live transcode the variant playlist
+      grows as segments are produced.
+    */
+    if (isHlsManifest) {
+      const playlist = await upstreamRes.text();
+      return new NextResponse(playlist, {
+        status: upstreamRes.status,
+        headers: {
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
+    // Sidecar subtitles, converted to WebVTT by Jellyfin.
+    if (isSubtitle) {
+      const vtt = await upstreamRes.text();
+      return new NextResponse(vtt, {
+        status: upstreamRes.status,
+        headers: {
+          'Content-Type': 'text/vtt; charset=utf-8',
+          // Safe to cache: a given subtitle stream never changes.
+          'Cache-Control': 'private, max-age=3600',
+        },
+      });
+    }
+
+    // Segments and progressive video: stream the body through with Range support.
+    if (isHlsSegment || isProgressive) {
       const responseHeaders = new Headers();
       const passHeaders = [
         'content-type',
         'content-length',
         'content-range',
         'accept-ranges',
-        'cache-control',
       ];
       passHeaders.forEach((h) => {
         const val = upstreamRes.headers.get(h);
@@ -174,6 +256,12 @@ export async function GET(
       if (!responseHeaders.has('accept-ranges')) {
         responseHeaders.set('accept-ranges', 'bytes');
       }
+      /*
+        Deliberately not cached. Segment URLs are scoped to a transcoding
+        session; a cached segment from an abandoned session would be served
+        against a new one and produce a decode error mid-playback.
+      */
+      responseHeaders.set('Cache-Control', 'no-store');
 
       return new NextResponse(upstreamRes.body, {
         status: upstreamRes.status,
