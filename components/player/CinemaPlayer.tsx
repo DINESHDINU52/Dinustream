@@ -2,7 +2,7 @@
 
 import { UserProfileId } from '@/types/cinema';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MediaItem, Episode } from '@/types/cinema';
@@ -95,6 +95,10 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const { isPortrait, isMobile, isTV: isDeviceTV, requestFullscreenLandscape } = useDeviceOrientation();
+  const { isTVMode: isNavTVMode } = useTVNavigation();
+  const isTV = isNavTVMode || isDeviceTV;
+
   // Playback States
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -103,7 +107,8 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [bufferedEnd, setBufferedEnd] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [quality, setQuality] = useState('4K (2160p)');
+  const [quality, setQuality] = useState(isMobile ? '1080p (FHD)' : '4K (2160p)');
+  const [selectedAudioStreamIndex, setSelectedAudioStreamIndex] = useState<string | null>(null);
   const [audioTrack, setAudioTrack] = useState('Dolby Atmos (TrueHD 7.1)');
   const [subtitle, setSubtitle] = useState('Off');
   const [availableAudioTracks, setAvailableAudioTracks] = useState<Array<{ id: string; label: string }>>([
@@ -144,17 +149,24 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     }).catch(() => {});
   }, [media.id]);
 
-  const { isPortrait, isMobile, isTV: isDeviceTV, requestFullscreenLandscape } = useDeviceOrientation();
-  const { isTVMode: isNavTVMode } = useTVNavigation();
-  const isTV = isNavTVMode || isDeviceTV;
-
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isPiPActive, setIsPiPActive] = useState(false);
 
-  // Dynamic Stream Source from real Jellyfin streaming proxy
+  // Dynamic Stream Source with audio track selection and mobile optimization
   const activeItemId = episode?.id || media?.id;
-  const jellyfinStreamUrl = activeItemId ? `/api/jellyfin/videos/${encodeURIComponent(activeItemId)}/stream` : '';
+  const jellyfinStreamUrl = useMemo(() => {
+    if (!activeItemId) return '';
+    const params = new URLSearchParams();
+    if (selectedAudioStreamIndex && selectedAudioStreamIndex !== 'default') {
+      params.set('audioStreamIndex', selectedAudioStreamIndex);
+    }
+    if (isMobile) {
+      params.set('maxHeight', '1080');
+    }
+    const qs = params.toString();
+    return `/api/jellyfin/videos/${encodeURIComponent(activeItemId)}/stream${qs ? `?${qs}` : ''}`;
+  }, [activeItemId, selectedAudioStreamIndex, isMobile]);
   const activeVideoSrc = episode?.videoUrl || media?.videoUrl || jellyfinStreamUrl;
   const [videoError, setVideoError] = useState(false);
 
@@ -165,14 +177,42 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     }
   }, [videoError, activeItemId]);
 
-  // Sync fullscreen state with native browser fullscreen changes
+  // Sync fullscreen state with native browser fullscreen changes across all vendors
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
+      const doc = document as any;
+      const isFs = Boolean(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+      setIsFullscreen(isFs);
     };
+
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
   }, []);
+
+  // Lock body scroll in Fullscreen or Full Window (Theater) mode to prevent page jumping and duplicate scrollbars
+  useEffect(() => {
+    if (isFullscreen || isTheaterMode) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
+    }
+  }, [isFullscreen, isTheaterMode]);
 
   // Mobile double-tap seek detection (Left 35%: -10s, Right 35%: +10s)
   const lastTapRef = useRef<{ time: number; x: number }>({ time: 0, x: 0 });
@@ -599,15 +639,35 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
 
   const toggleFullscreen = useCallback(async () => {
     if (!playerContainerRef.current) return;
-    if (!document.fullscreenElement) {
+    const doc = document as any;
+    const isNativeFs = Boolean(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement
+    );
+
+    if (!isNativeFs && !isFullscreen) {
       await requestFullscreenLandscape(playerContainerRef.current);
+      // Ensure full window CSS mode is active even if browser denies OS-level fullscreen
       setIsFullscreen(true);
     } else {
-      document.exitFullscreen?.().catch(() => {});
+      if (doc.exitFullscreen) {
+        doc.exitFullscreen().catch(() => {});
+      } else if (doc.webkitExitFullscreen) {
+        doc.webkitExitFullscreen();
+      } else if (doc.mozCancelFullScreen) {
+        doc.mozCancelFullScreen();
+      } else if (doc.msExitFullscreen) {
+        doc.msExitFullscreen();
+      }
+      if (videoRef.current && (videoRef.current as any).webkitExitFullscreen) {
+        try { (videoRef.current as any).webkitExitFullscreen(); } catch {}
+      }
       setIsFullscreen(false);
     }
     onUserActivity();
-  }, [requestFullscreenLandscape, onUserActivity]);
+  }, [requestFullscreenLandscape, onUserActivity, isFullscreen]);
 
   const togglePiP = async () => {
     if (!videoRef.current) return;
@@ -691,6 +751,10 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         case 'Escape':
           if (activeMenu) {
             setActiveMenu(null);
+          } else if (isTheaterMode) {
+            setIsTheaterMode(false);
+          } else if (isFullscreen) {
+            toggleFullscreen();
           }
           break;
       }
@@ -730,19 +794,17 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       onClick={onUserActivity}
       className={cn(
         'relative bg-black select-none overflow-hidden font-sans transition-all duration-300',
-        isFullscreen
-          ? 'fixed inset-0 z-50 w-screen h-screen'
+        (isFullscreen || isTheaterMode)
+          ? 'fixed inset-0 z-[70] w-full h-[100dvh] max-h-none'
           : isPortrait
             ? 'w-full aspect-video sm:aspect-auto sm:h-[60vh] max-h-[75vh]'
-            : isTheaterMode
-              ? 'w-full h-screen'
-              : 'w-full h-[76vh] min-h-[460px] max-h-[820px]',
+            : 'w-full h-[76vh] min-h-[460px] max-h-[820px]',
         !areControlsVisible && isPlaying ? 'cursor-none' : 'cursor-default',
         isTV && 'tv-player-mode'
       )}
     >
-      {/* Dynamic Ambient Cinema Backlight Glow */}
-      {ambientGlow && (
+      {/* Dynamic Ambient Cinema Backlight Glow (Disabled on mobile to eliminate GPU lag) */}
+      {ambientGlow && !isMobile && (
         <div
           className="pointer-events-none absolute -inset-10 opacity-35 blur-3xl bg-cover bg-center transition-opacity duration-700"
           style={{ backgroundImage: `url(${episode ? episode.thumbnailUrl : media.backdropUrl})` }}
@@ -755,13 +817,15 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         src={activeVideoSrc}
         poster={episode ? episode.thumbnailUrl : media.backdropUrl}
         playsInline
-        className="relative z-10 w-full h-full object-contain"
+        preload="metadata"
+        className="relative z-10 w-full h-full object-contain transform-gpu"
+        style={{ transform: 'translateZ(0)' }}
         onClick={togglePlay}
         onError={handleVideoError}
       />
 
       {/* Mobile Portrait Orientation Prompt */}
-      {isPortrait && isMobile && !isFullscreen && (
+      {isPortrait && isMobile && !isFullscreen && !isTheaterMode && (
         <motion.button
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1171,17 +1235,28 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                 {activeMenu === 'audio' && (
                   <div
                     style={{ bottom: 'calc(100% + 12px)' }}
-                    className="absolute bottom-full mb-3 right-0 w-60 p-2 rounded-xl bg-[#0a0f18]/95 border border-slate-400/[0.18] shadow-2xl backdrop-blur-xl z-50 text-xs space-y-1"
+                    className="absolute bottom-full mb-3 right-0 w-60 max-w-[calc(100vw-2rem)] p-2 rounded-xl bg-[#0a0f18]/95 border border-slate-400/[0.18] shadow-2xl backdrop-blur-xl z-50 text-xs space-y-1 overflow-y-auto max-h-60"
                   >
                     <p className="px-2.5 py-1 text-[10px] font-mono uppercase text-slate-400 border-b border-white/[0.06]">
-                      Audio Stream (Dolby Atmos)
+                      Audio Stream (Spatial / Multi-Channel)
                     </p>
                     {availableAudioTracks.map((track) => (
                       <button
                         key={track.id}
                         onClick={() => {
                           setAudioTrack(track.label);
+                          setSelectedAudioStreamIndex(track.id);
                           setActiveMenu(null);
+                          if (videoRef.current) {
+                            const resumeTime = videoRef.current.currentTime;
+                            const wasPlaying = !videoRef.current.paused;
+                            setTimeout(() => {
+                              if (videoRef.current) {
+                                videoRef.current.currentTime = resumeTime;
+                                if (wasPlaying) videoRef.current.play().catch(() => {});
+                              }
+                            }, 60);
+                          }
                         }}
                         className={cn(
                           'w-full text-left px-2.5 py-1.5 rounded-md transition-colors',
@@ -1212,7 +1287,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                 {activeMenu === 'subtitles' && (
                   <div
                     style={{ bottom: 'calc(100% + 12px)' }}
-                    className="absolute bottom-full mb-3 right-0 w-52 p-2 rounded-xl bg-[#0a0f18]/95 border border-slate-400/[0.18] shadow-2xl backdrop-blur-xl z-50 text-xs space-y-1"
+                    className="absolute bottom-full mb-3 right-0 w-52 max-w-[calc(100vw-2rem)] p-2 rounded-xl bg-[#0a0f18]/95 border border-slate-400/[0.18] shadow-2xl backdrop-blur-xl z-50 text-xs space-y-1 overflow-y-auto max-h-60"
                   >
                     <p className="px-2.5 py-1 text-[10px] font-mono uppercase text-slate-400 border-b border-white/[0.06]">
                       Subtitles / Closed Captions
@@ -1334,14 +1409,14 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                 <PictureInPicture2 className="w-4 h-4" />
               </button>
 
-              {/* Theater Mode Toggle */}
+              {/* Full Window / Theater Mode Toggle */}
               <button
                 onClick={() => setIsTheaterMode(!isTheaterMode)}
-                aria-label="Theater Mode"
-                title="Theater Mode [T]"
+                aria-label={isTheaterMode ? 'Exit Full Window' : 'Full Window Mode'}
+                title={isTheaterMode ? 'Exit Full Window [T]' : 'Full Window Mode [T]'}
                 className={cn(
-                  'p-2 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors cinema-focus hidden md:block',
-                  isTheaterMode && 'text-sky-400'
+                  'p-2 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors cinema-focus',
+                  isTheaterMode && 'text-sky-400 bg-white/10'
                 )}
               >
                 <Layers className="w-4 h-4" />
@@ -1351,7 +1426,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
               <button
                 onClick={toggleFullscreen}
                 aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-                title="Fullscreen [F]"
+                title={isFullscreen ? 'Exit Fullscreen [F]' : 'Fullscreen [F]'}
                 className="p-2 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors cinema-focus"
               >
                 {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}

@@ -67,10 +67,30 @@ export function useDeviceOrientation(): DeviceOrientationState {
 
   const requestFullscreenLandscape = useCallback(async (element?: HTMLElement | null): Promise<boolean> => {
     try {
-      const target = element || document.documentElement;
-      if (!document.fullscreenElement) {
+      const target = (element || document.documentElement) as any;
+      const doc = document as any;
+      const isAlreadyFullscreen = Boolean(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+
+      if (!isAlreadyFullscreen) {
         if (target.requestFullscreen) {
           await target.requestFullscreen();
+        } else if (target.webkitRequestFullscreen) {
+          await target.webkitRequestFullscreen();
+        } else if (target.mozRequestFullScreen) {
+          await target.mozRequestFullScreen();
+        } else if (target.msRequestFullscreen) {
+          await target.msRequestFullscreen();
+        } else {
+          // iOS Safari fallback: target the inner video element
+          const video = target.querySelector?.('video') || (target.tagName === 'VIDEO' ? target : null);
+          if (video && video.webkitEnterFullscreen) {
+            video.webkitEnterFullscreen();
+          }
         }
       }
 
