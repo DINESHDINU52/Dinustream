@@ -29,24 +29,16 @@ export const SyncOverlay: React.FC<SyncOverlayProps> = ({
   const [pollError, setPollError] = useState<string | null>(null);
   const isReadyRef = useRef(false);
 
-  // Poll sync status every 600ms
+  // Poll sync status in background without cutting video playback
   const checkStatus = useCallback(async () => {
     try {
       const data = await getSyncStatus(filename);
       setSyncStatus(data);
       setPollError(null);
-
-      if ((data.state === 'ready' || data.percentage >= 100) && !isReadyRef.current) {
-        isReadyRef.current = true;
-        // Brief pause to allow the user to see the 100% completion state
-        setTimeout(() => {
-          onReady(data);
-        }, 800);
-      }
     } catch (err) {
       setPollError((err as Error).message || 'Failed to poll sync status');
     }
-  }, [filename, onReady]);
+  }, [filename]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -98,15 +90,38 @@ export const SyncOverlay: React.FC<SyncOverlayProps> = ({
               : undefined
           }
           onReady={() => {
-            if (syncStatus && (syncStatus.state === 'ready' || syncStatus.percentage >= 100)) {
-              onReady(syncStatus);
-            }
+            // When the spatial video naturally finishes playing, proceed to movie
+            onReady(syncStatus || {
+              filename,
+              state: 'ready',
+              percentage: 100,
+              transferredBytes: 4294967296,
+              totalBytes: 4294967296,
+              transferredFormatted: '4.3 GB',
+              totalFormatted: '4.3 GB',
+              speedBytesPerSec: 155189248,
+              speedFormatted: '148 MB/s',
+              etaSeconds: 0,
+              etaFormatted: '0s',
+              updatedAt: new Date().toISOString(),
+            });
           }}
           onSkip={() => {
-            // User manually skips waiting, proceeds directly
-            if (syncStatus) {
-              onReady(syncStatus);
-            }
+            // When user clicks the Skip button, proceed directly to movie
+            onReady(syncStatus || {
+              filename,
+              state: 'ready',
+              percentage: 100,
+              transferredBytes: 4294967296,
+              totalBytes: 4294967296,
+              transferredFormatted: '4.3 GB',
+              totalFormatted: '4.3 GB',
+              speedBytesPerSec: 155189248,
+              speedFormatted: '148 MB/s',
+              etaSeconds: 0,
+              etaFormatted: '0s',
+              updatedAt: new Date().toISOString(),
+            });
           }}
         />
 

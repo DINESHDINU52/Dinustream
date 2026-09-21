@@ -64,22 +64,10 @@ export const AtmosIntro: React.FC<AtmosIntroProps> = ({
       }
     });
 
-    // Safety timeout: ensure intro never takes too long and site never feels laggy
-    const safetyTimeout = setTimeout(() => {
-      if (!isSyncComplete) {
-        setIsSyncComplete(true);
-        setProgressPct(100);
-        setTimeout(() => {
-          handleFinish();
-        }, 300);
-      }
-    }, 7000);
-
     return () => {
       isMounted = false;
-      clearTimeout(safetyTimeout);
     };
-  }, [handleFinish, isSyncComplete]);
+  }, []);
 
   // 2. Drive the sync progress bar seamlessly matching the video playback
   const handleTimeUpdate = () => {
@@ -144,15 +132,16 @@ export const AtmosIntro: React.FC<AtmosIntroProps> = ({
         <div className="absolute inset-0 bg-gradient-to-t from-[#030611]/80 via-transparent to-[#030611]/60" />
       </div>
 
-      {/* Top Header: Clean Minimal Skip Button in Corner */}
-      <div className="relative z-20 px-6 sm:px-10 pt-6 sm:pt-8 flex items-center justify-end">
+      {/* Top Header: Prominent Liquid Glass Skip Button in Corner */}
+      <div className="relative z-30 px-6 sm:px-10 pt-6 sm:pt-8 flex items-center justify-end">
         <button
           onClick={handleFinish}
           id="skip-atmos-intro-btn"
-          className="group flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.15] text-slate-300 hover:text-white text-xs font-medium tracking-wide transition-all backdrop-blur-2xl cinema-focus shadow-lg"
+          className="group flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.12] hover:bg-white/[0.22] border border-white/[0.25] text-white text-xs font-medium tracking-wide transition-all backdrop-blur-3xl cinema-focus shadow-[0_4px_24px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.4)] cursor-pointer select-none active:scale-95"
+          title="Skip Intro to Feature Presentation"
         >
-          <span>Skip</span>
-          <SkipForward className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+          <span>Skip Intro</span>
+          <SkipForward className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 fill-current" />
         </button>
       </div>
 
