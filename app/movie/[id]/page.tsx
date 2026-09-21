@@ -185,14 +185,21 @@ export default function MovieDetailsPage() {
       </Drawer>
 
       <div className="relative min-h-screen pb-20">
-        {/* Back Button */}
-        <div className="absolute top-6 left-4 sm:left-8 z-30">
+        {/* Back Button (Positioned below fixed CinemaNavbar with z-50 for instant clickability) */}
+        <div className="absolute top-20 sm:top-24 left-4 sm:left-8 lg:left-12 z-50">
           <button
-            onClick={() => router.back()}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#080d17]/80 hover:bg-[#121c2f] border border-white/[0.08] text-xs font-medium text-slate-300 hover:text-white backdrop-blur-md transition-all shadow-lg shadow-black/50 cinema-focus"
-            aria-label="Go Back"
+            onClick={() => {
+              if (typeof window !== 'undefined' && window.history.length > 1) {
+                router.back();
+              } else {
+                router.push('/');
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#080d17]/90 hover:bg-[#121c2f] border border-white/[0.15] text-xs font-medium text-slate-200 hover:text-white backdrop-blur-2xl transition-all shadow-[0_4px_24px_rgba(0,0,0,0.7)] cinema-focus cursor-pointer select-none active:scale-95 group"
+            aria-label="Back to Catalog"
+            title="Back to Catalog"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
+            <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
             <span>Back</span>
           </button>
         </div>
