@@ -8,6 +8,7 @@ import { StorageMetricsPanel } from '@/components/admin/StorageMetricsPanel';
 import { CacheManagerTable } from '@/components/admin/CacheManagerTable';
 import { SyncJobsTracker } from '@/components/admin/SyncJobsTracker';
 import { LivePlaybackTelemetry } from '@/components/admin/LivePlaybackTelemetry';
+import { AvatarStudio } from '@/components/admin/AvatarStudio';
 import { adminService } from '@/lib/services/adminService';
 import { AdminTelemetrySummary } from '@/types/admin';
 import { ShieldCheck, RefreshCw, Cpu, Server } from 'lucide-react';

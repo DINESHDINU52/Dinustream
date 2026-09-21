@@ -66,6 +66,9 @@ export interface JellyfinItem {
   SeriesId?: string;
   SeriesName?: string;
   SeasonId?: string;
+  ParentThumbItemId?: string;
+  ParentBackdropItemId?: string;
+  ParentBackdropImageTags?: string[];
   Path?: string;
 }
 
@@ -300,3 +303,16 @@ export async function getResumeItems(limit = 12): Promise<JellyfinItem[]> {
   }
 }
 
+/**
+ * 16. Recently Added Movies
+ */
+export async function getRecentlyAddedMovies(limit = 20): Promise<JellyfinItem[]> {
+  try {
+    const res = await fetchJellyfin<JellyfinItemsResponse>(
+      `/items?includeItemTypes=Movie&sortBy=DateCreated,SortName&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData`
+    );
+    return res.Items || [];
+  } catch {
+    return [];
+  }
+}

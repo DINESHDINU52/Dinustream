@@ -119,6 +119,26 @@ export function adaptJellyfinEpisodeToEpisode(jEpisode: JellyfinItem): Episode {
   const totalMinutes = Math.floor(ticksToSeconds(jEpisode.RunTimeTicks) / 60) || 50;
   const progressMinutes = positionTicks > 0 ? Math.floor(ticksToSeconds(positionTicks) / 60) : undefined;
 
+  // Multi-tier thumbnail fallback strategy:
+  // 1. Episode Primary tag if explicitly present
+  // 2. Parent thumb (season thumbnail)
+  // 3. Parent backdrop (series wide backdrop)
+  // 4. Season or Series Primary poster
+  let thumbnailUrl = '';
+  if (jEpisode.ImageTags && jEpisode.ImageTags.Primary) {
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.Id)}/Images/Primary?tag=${jEpisode.ImageTags.Primary}`;
+  } else if (jEpisode.ParentThumbItemId) {
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentThumbItemId)}/Images/Primary`;
+  } else if (jEpisode.ParentBackdropItemId) {
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentBackdropItemId)}/Images/Backdrop/0`;
+  } else if (jEpisode.SeasonId) {
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.SeasonId)}/Images/Primary`;
+  } else if (jEpisode.SeriesId) {
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.SeriesId)}/Images/Primary`;
+  } else {
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.Id)}/Images/Primary`;
+  }
+
   return {
     id: jEpisode.Id,
     title: jEpisode.Name,
@@ -126,7 +146,7 @@ export function adaptJellyfinEpisodeToEpisode(jEpisode: JellyfinItem): Episode {
     episodeNumber: jEpisode.IndexNumber || 1,
     runtime: ticksToRuntime(jEpisode.RunTimeTicks) || `${totalMinutes}m`,
     overview: jEpisode.Overview || '',
-    thumbnailUrl: `/api/jellyfin/items/${encodeURIComponent(jEpisode.Id)}/Images/Primary`,
+    thumbnailUrl,
     progressMinutes,
     totalMinutes,
   };

@@ -332,6 +332,14 @@ export default function SeriesDetailsPage() {
                       <img
                         src={ep.thumbnailUrl || media.backdropUrl}
                         alt={ep.title}
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (media.backdropUrl && target.src !== media.backdropUrl) {
+                            target.src = media.backdropUrl;
+                          } else if (media.posterUrl && target.src !== media.posterUrl) {
+                            target.src = media.posterUrl;
+                          }
+                        }}
                         className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 filter brightness-90"
                       />
                       <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors" />

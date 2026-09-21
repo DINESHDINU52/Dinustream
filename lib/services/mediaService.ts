@@ -48,6 +48,27 @@ class MediaService {
   /**
    * Fetch recently added media items
    */
+  
+  /**
+   * Fetch newly added movies specifically
+   */
+  async getNewlyAddedMovies(limit = 20): Promise<MediaItem[]> {
+    try {
+      const items = await jellyfinApi.getRecentlyAddedMovies(limit);
+      if (items && items.length > 0) {
+        return items.map(adaptJellyfinItemToMediaItem);
+      }
+      // Fallback: Movies sorted by latest
+      const allMovies = await this.getMovies(limit);
+      if (allMovies && allMovies.length > 0) {
+        return [...allMovies].sort((a, b) => (b.releaseYear || 0) - (a.releaseYear || 0));
+      }
+    } catch (err) {
+      console.error('[MediaService] getNewlyAddedMovies failed:', err);
+    }
+    return [];
+  }
+
   async getRecentlyAdded(limit = 20): Promise<MediaItem[]> {
     try {
       const items = await jellyfinApi.getRecentlyAddedItems(limit);

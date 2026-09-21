@@ -345,6 +345,20 @@ class ProfileService {
     this.syncFromFirestore(newId);
   }
 
+  
+  updateProfileAvatar(id: string, avatarUrl: string) {
+    if (this.store[id]) {
+      this.store[id].profile.avatarUrl = avatarUrl;
+    }
+    if (PROFILES[id]) {
+      PROFILES[id].avatarUrl = avatarUrl;
+    }
+    if (this.guestProfiles[id]) {
+      this.guestProfiles[id].avatarUrl = avatarUrl;
+    }
+    this.save(true);
+  }
+
   updateSettings(id: string, partial: Partial<UserPreferences>) {
     if (!this.store[id]) return;
     this.store[id].settings = {

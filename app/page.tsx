@@ -30,6 +30,8 @@ export default function CinemaHomePage() {
   const [movies, setMovies] = useState<MediaItem[]>([]);
   const [series, setSeries] = useState<MediaItem[]>([]);
   const [recentlyAdded, setRecentlyAdded] = useState<MediaItem[]>([]);
+  const [newlyAddedMovies, setNewlyAddedMovies] = useState<MediaItem[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>('all');
 
   const [toastInfo, setToastInfo] = useState<{ message: string; subtext?: string } | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
@@ -39,17 +41,19 @@ export default function CinemaHomePage() {
     setLoading(true);
     setError(null);
     try {
-      const [hero, moviesData, seriesData, recentData] = await Promise.all([
+      const [hero, moviesData, seriesData, recentData, newMoviesData] = await Promise.all([
         mediaService.getHeroItem(),
         mediaService.getMovies(30),
         mediaService.getSeries(20),
         mediaService.getRecentlyAdded(20),
+        mediaService.getNewlyAddedMovies(20),
       ]);
 
       setHeroMedia(hero);
       setMovies(moviesData);
       setSeries(seriesData);
       setRecentlyAdded(recentData);
+      setNewlyAddedMovies(newMoviesData && newMoviesData.length > 0 ? newMoviesData : (moviesData ? moviesData.slice(0, 10) : []));
     } catch (err) {
       console.error('[CinemaHomePage] Error loading library:', err);
       setError('Unable to load cinema catalog from media server');
@@ -298,6 +302,22 @@ export default function CinemaHomePage() {
               onToggleSave={handleToggleSave}
               onPlay={(item) => handleOpenDetails(item as MediaItem)}
             />
+          )}
+
+          {/* Newly Added Movies */}
+          {newlyAddedMovies.length > 0 && (
+            <div id="new-movies">
+              <MediaCarousel
+                title="Newly Added Movies"
+                kicker="Cinema Premieres"
+                subtitle="Fresh cinematic releases and remastered theatrical masters just added to the vault."
+                items={newlyAddedMovies}
+                type="poster"
+                savedIds={myList}
+                onToggleSave={handleToggleSave}
+                onPlay={(item) => handleOpenDetails(item as MediaItem)}
+              />
+            </div>
           )}
 
           {/* 4. Feature Movies */}
