@@ -84,7 +84,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
   const currentMedia = items[currentIndex] || items[0];
   const isSaved = savedIds.includes(currentMedia.id);
   const isSeries = currentMedia.type === 'series';
-  const hasAtmos = currentMedia.badges?.includes('Dolby Atmos') || currentMedia.audioFormats?.some((a) => a.includes('Atmos'));
+  const hasAtmos = currentMedia.badges?.includes('Spatial Audio') || currentMedia.audioFormats?.some((a) => a.includes('Atmos'));
   const has4K = currentMedia.badges?.includes('4K UHD') || currentMedia.badges?.includes('Dolby Vision') || currentMedia.badges?.includes('HDR10+');
 
   return (
@@ -146,7 +146,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="inline-flex items-center gap-1.5 text-xs font-black tracking-widest uppercase px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 text-white shadow-xl shadow-rose-950/40 border border-white/25">
                 <Sparkles className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
-                <span>{isSeries ? 'DINUSTREAM SPECIAL' : (hasAtmos ? 'DINU DOLBY CINEMA' : 'DINUSTREAM EXCLUSIVE')}</span>
+                <span>{isSeries ? 'DINUSTREAM SPECIAL' : (hasAtmos ? 'DINUSTREAM CINEMA' : 'DINUSTREAM EXCLUSIVE')}</span>
               </span>
 
               <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300 bg-emerald-950/80 backdrop-blur-md px-3 py-1 rounded-full border border-emerald-500/35 shadow-md">

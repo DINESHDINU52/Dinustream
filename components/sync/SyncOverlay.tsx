@@ -121,24 +121,19 @@ export const SyncOverlay: React.FC<SyncOverlayProps> = ({
           </button>
         </div>
 
-        {/* Detailed Live Polling Card overlaid on bottom */}
-        <div className="absolute bottom-6 inset-x-4 sm:inset-x-8 max-w-xl mx-auto z-40">
-          {syncStatus && <SyncProgress status={syncStatus} />}
+        {/* Minimal Group Sync Indicator if in Watch Together mode */}
+        {isGroupMode && (
+          <div className="absolute top-6 left-6 z-50 text-xs font-medium text-cyan-300 bg-white/[0.08] border border-white/[0.15] rounded-full py-1 px-3.5 backdrop-blur-2xl shadow-lg">
+            Group Sync Active
+          </div>
+        )}
 
-          {/* Group Sync Indicator if in Watch Together mode */}
-          {isGroupMode && (
-            <div className="mt-2 text-center text-xs font-mono text-sky-400 bg-sky-950/60 border border-sky-500/30 rounded-xl py-1.5 px-3 backdrop-blur-md">
-              Group Screening Mode: Synchronizing room between Dinu & Kanmani
-            </div>
-          )}
-
-          {pollError && (
-            <div className="mt-2 p-2 rounded-lg bg-rose-950/80 border border-rose-500/30 text-rose-300 text-xs font-mono flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-              <span>{pollError}</span>
-            </div>
-          )}
-        </div>
+        {pollError && (
+          <div className="absolute bottom-6 inset-x-4 max-w-md mx-auto z-40 p-2.5 rounded-full bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs flex items-center justify-center gap-2 backdrop-blur-2xl">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+            <span>{pollError}</span>
+          </div>
+        )}
       </motion.div>
     </AnimatePresence>
   );

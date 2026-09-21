@@ -357,7 +357,7 @@ export default function CinemaHomePage() {
                 )}
               >
                 <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Dolby Atmos Vault</span>
+                <span>Spatial Audio Vault</span>
               </button>
 
               <button
@@ -510,7 +510,7 @@ export default function CinemaHomePage() {
           {atmosItems.length > 0 && (
             <div id="dolby-vault">
               <MediaCarousel
-                title="Dolby Atmos Showcases"
+                title="Spatial Audio Showcases"
                 kicker="Spatial Acoustics"
                 subtitle="Master audio tracks mixed for immersive 7.1.4 multi-channel overhead sound."
                 items={atmosItems}

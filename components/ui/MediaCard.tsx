@@ -56,7 +56,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 
   // DinuStream Special branding
   const isSpecial = media.type === 'series' || (media.genres && (media.genres.includes('Action') || media.genres.includes('Thriller')));
-  const specialBadgeText = media.type === 'series' ? 'DINUSTREAM SPECIAL' : (hasAtmos ? 'DOLBY CINEMA' : 'PREMIUM');
+  const specialBadgeText = media.type === 'series' ? 'DINUSTREAM SPECIAL' : (hasAtmos ? 'PREMIUM' : 'PREMIUM');
 
   const cardContent = (
     <motion.div
