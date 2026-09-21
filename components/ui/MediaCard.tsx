@@ -100,21 +100,21 @@ export const MediaCard: React.FC<MediaCardProps> = ({
               <span>{specialBadgeText}</span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-300 bg-emerald-950/85 backdrop-blur-md px-2 py-0.5 rounded-full border border-emerald-500/30 shadow-sm">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-950/85 backdrop-blur-md px-2 py-0.5 rounded-full border border-emerald-500/30 shadow-sm">
               <Star className="w-2.5 h-2.5 fill-emerald-400" />
               <span>{matchScore}%</span>
             </span>
           )}
 
           {has4K && (
-            <span className="text-[9px] font-mono font-bold text-cyan-300 bg-cyan-950/85 backdrop-blur-md px-1.5 py-0.5 rounded border border-cyan-500/30">
+            <span className="text-[9px] font-bold text-cyan-300 bg-cyan-950/85 backdrop-blur-md px-1.5 py-0.5 rounded border border-cyan-500/30">
               4K
             </span>
           )}
         </div>
 
         {hasAtmos && (
-          <span className="text-[9px] font-mono font-bold tracking-tight text-white bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded border border-white/20 shadow-sm">
+          <span className="text-[9px] font-bold tracking-tight text-white bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded border border-white/20 shadow-sm">
             ATMOS
           </span>
         )}
@@ -129,9 +129,9 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 
         {/* Metadata Line */}
         <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-300 mt-1 drop-shadow-md">
-          <span className="font-mono text-white font-semibold">{media.releaseYear || 2024}</span>
+          <span className="text-white font-semibold">{media.releaseYear || 2024}</span>
           <span className="text-white/30">•</span>
-          <span className="font-mono text-slate-300">{media.runtime || '2h 10m'}</span>
+          <span className="text-slate-300">{media.runtime || '2h 10m'}</span>
           {media.rating && (
             <>
               <span className="text-white/30">•</span>
@@ -220,7 +220,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
       <div className="relative flex items-center group">
         <div className="shrink-0 flex items-center justify-center -mr-3 sm:-mr-4 z-0 pointer-events-none select-none">
           <span
-            className="text-6xl sm:text-7xl md:text-8xl font-black font-mono tracking-tighter leading-none"
+            className="text-6xl sm:text-7xl md:text-8xl font-black tracking-tighter leading-none"
             style={{
               WebkitTextStroke: '2px rgba(255, 255, 255, 0.4)',
               color: 'transparent',

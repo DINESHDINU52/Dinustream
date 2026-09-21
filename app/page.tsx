@@ -280,7 +280,7 @@ export default function CinemaHomePage() {
           )}
 
           {/* Luxury Cinema Category Navigation Bar */}
-          <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 -mt-4 sm:-mt-6 relative z-20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 pt-4 sm:pt-6 relative z-20">
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2">
               <button
                 onClick={() => handleCategoryClick('all')}
