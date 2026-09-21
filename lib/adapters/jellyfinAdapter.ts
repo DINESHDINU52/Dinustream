@@ -26,6 +26,104 @@ export function ticksToSeconds(ticks?: number): number {
   return Math.floor(ticks / 10000000);
 }
 
+/** Human-facing names for the audio codecs Jellyfin reports. */
+const AUDIO_CODEC_LABELS: Record<string, string> = {
+  truehd: 'Dolby TrueHD',
+  eac3: 'Dolby Digital+',
+  ac3: 'Dolby Digital',
+  dts: 'DTS',
+  dtshd: 'DTS-HD',
+  flac: 'FLAC',
+  aac: 'AAC',
+  mp3: 'MP3',
+  opus: 'Opus',
+  vorbis: 'Vorbis',
+  pcm: 'PCM',
+};
+
+/** Channel counts mapped to the layout people recognise. */
+const CHANNEL_LABELS: Record<number, string> = {
+  1: 'Mono',
+  2: 'Stereo',
+  6: '5.1',
+  8: '7.1',
+};
+
+/**
+ * Trim a raw Jellyfin `DisplayTitle` down to something presentable.
+ *
+ * Release groups embed site names, bitrates and "DEFAULT"/"FORCED" flags in the
+ * track title. Everything is split on the ` - ` separator Jellyfin uses and the
+ * noisy segments are dropped; if nothing survives, the caller falls back to the
+ * structured codec/channel fields instead.
+ */
+function sanitiseStreamTitle(raw?: string): string {
+  if (!raw) return '';
+
+  const kept = raw
+    .split(/\s+-\s+/)
+    .map((part) => part.trim())
+    .filter((part) => {
+      if (!part) return false;
+      // URLs / site names smuggled into the track title
+      if (/(https?:\/\/|www\.|\.(com|net|org|cards|to|me|tv)\b)/i.test(part)) return false;
+      // Bitrate and container noise
+      if (/\b\d+\s*kbps\b/i.test(part)) return false;
+      // Jellyfin's own flag suffixes
+      if (/^(default|forced|external|undefined|und)$/i.test(part)) return false;
+      return true;
+    });
+
+  // Keep it to a single short segment — badges are not a place for a sentence.
+  const label = kept[0] ?? '';
+  return label.length > 28 ? '' : label;
+}
+
+/** e.g. `Dolby TrueHD 7.1`, `AAC Stereo`, `English` */
+function formatAudioStreamLabel(stream: {
+  Codec?: string;
+  Channels?: number;
+  ChannelLayout?: string;
+  Language?: string;
+  DisplayTitle?: string;
+  Title?: string;
+}): string {
+  const codec = stream.Codec ? AUDIO_CODEC_LABELS[stream.Codec.toLowerCase()] : undefined;
+  const channels =
+    (stream.Channels ? CHANNEL_LABELS[stream.Channels] : undefined) ??
+    stream.ChannelLayout ??
+    undefined;
+
+  if (codec) return channels ? `${codec} ${channels}` : codec;
+  if (channels) return channels;
+
+  return (
+    sanitiseStreamTitle(stream.DisplayTitle) ||
+    sanitiseStreamTitle(stream.Title) ||
+    stream.Language?.toUpperCase() ||
+    'Audio'
+  );
+}
+
+/** Subtitles are identified by language, which is all a viewer needs. */
+function formatSubtitleStreamLabel(stream: {
+  Language?: string;
+  DisplayTitle?: string;
+  Title?: string;
+}): string {
+  return (
+    stream.Language?.toUpperCase() ||
+    sanitiseStreamTitle(stream.DisplayTitle) ||
+    sanitiseStreamTitle(stream.Title) ||
+    'Subtitles'
+  );
+}
+
+/** Stable de-duplication, preserving first-seen order. */
+function dedupe(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
 /**
  * Adapt a raw Jellyfin Item into the DinuStream MediaItem model
  */
@@ -70,14 +168,28 @@ export function adaptJellyfinItemToMediaItem(jItem: JellyfinItem): MediaItem {
     badges.push('Dolby Atmos');
   }
 
-  // Extract real audio formats & subtitle tracks from Jellyfin stream metadata
-  const audioFormats = jItem.MediaStreams
-    ?.filter((s) => s.Type === 'Audio')
-    .map((s) => s.DisplayTitle || s.Title || (s.Language ? s.Language.toUpperCase() : 'Audio Track')) || [];
+  /*
+    Audio & subtitle track labels.
 
-  const subtitleLanguages = jItem.MediaStreams
-    ?.filter((s) => s.Type === 'Subtitle')
-    .map((s) => s.DisplayTitle || s.Title || (s.Language ? s.Language.toUpperCase() : 'Subtitles')) || [];
+    Jellyfin's `DisplayTitle` is a raw, unbounded string built from the source
+    file — it routinely looks like
+    "WWW.SOMESITE.CARDS - [DD+ 5.1 - 192KBPS] - DOLBY DIGITAL+ - DEFAULT".
+    Surfacing that verbatim put release-group filenames and bitrates straight
+    into the UI as badge text. These now build a short, clean label from the
+    structured fields Jellyfin also provides (codec, channel layout, language)
+    and only fall back to the raw title after sanitising it.
+  */
+  const audioFormats = dedupe(
+    (jItem.MediaStreams ?? [])
+      .filter((s) => s.Type === 'Audio')
+      .map(formatAudioStreamLabel)
+  );
+
+  const subtitleLanguages = dedupe(
+    (jItem.MediaStreams ?? [])
+      .filter((s) => s.Type === 'Subtitle')
+      .map(formatSubtitleStreamLabel)
+  );
 
   // Posters & Backdrops from real Jellyfin proxy
   const backdropUrl = jItem.BackdropImageTags && jItem.BackdropImageTags.length > 0

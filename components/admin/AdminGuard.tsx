@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { ShieldAlert, Lock, KeyRound, ArrowRight, UserCheck } from 'lucide-react';
+import { ShieldAlert, Lock, ArrowRight, UserCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export interface AdminGuardProps {
@@ -19,8 +19,14 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
 
   const isDinu = profile.id === 'dinu';
 
-  const handleQuickSwitch = () => {
-    switchProfile('dinu');
+  /*
+    Switching profiles ends the session and returns to the login screen, because
+    the active profile lives in an HTTP-only cookie (see
+    useActiveProfile.switchProfile). The button copy below says so; it used to
+    promise a one-click "Switch to Dinu & Unlock".
+  */
+  const handleSignInAsDinu = () => {
+    void switchProfile();
   };
 
   const handlePinSubmit = async (e: React.FormEvent) => {
@@ -38,9 +44,14 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
       });
 
       if (res.ok) {
+        /*
+          Unlock in place. This used to also call `switchProfile('dinu')`, which
+          ends the session and redirects to /login — so entering the *correct*
+          Master PIN logged the operator straight out instead of revealing the
+          dashboard, making the PIN bypass completely unusable.
+        */
         setIsPinUnlocked(true);
         setPinError(false);
-        switchProfile('dinu');
       } else {
         const data = await res.json().catch(() => ({}));
         setErrorMessage(data.error || 'Invalid PIN');
@@ -98,17 +109,20 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
           </span>
         </div>
 
-        {/* Action: One-Click Switch to Dinu */}
+        {/* Action: re-authenticate as Dinu on the login screen */}
         <button
           id="btn-admin-switch-dinu"
           type="button"
-          onClick={handleQuickSwitch}
+          onClick={handleSignInAsDinu}
           className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-medium text-xs shadow-[0_0_20px_rgba(56,189,248,0.3)] transition-all flex items-center justify-center gap-2 cinema-focus group"
         >
-          <UserCheck className="w-4 h-4 text-white" />
-          <span>Switch to Dinu & Unlock</span>
-          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+          <UserCheck className="w-4 h-4 text-white shrink-0" />
+          <span>Sign in as Dinu</span>
+          <ArrowRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-1 transition-transform" />
         </button>
+        <p className="mt-2 text-[10px] text-slate-500">
+          Takes you to the profile screen to re-authenticate.
+        </p>
 
         {/* Or PIN Bypass */}
         <div className="mt-6 pt-5 border-t border-white/[0.06]">

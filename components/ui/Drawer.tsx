@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { IconButton } from '@/components/ui/IconButton';
@@ -22,26 +22,32 @@ const positionVariants = {
     initial: { x: '100%' },
     animate: { x: 0 },
     exit: { x: '100%' },
-    panelClass: 'right-0 inset-y-0 border-l',
+    // Side sheets take the full width on phones and cap out from `sm` up.
+    panelClass: 'right-0 inset-y-0 border-l w-full pt-safe-flush pb-safe-flush',
   },
   left: {
     initial: { x: '-100%' },
     animate: { x: 0 },
     exit: { x: '-100%' },
-    panelClass: 'left-0 inset-y-0 border-r',
+    panelClass: 'left-0 inset-y-0 border-r w-full pt-safe-flush pb-safe-flush',
   },
   bottom: {
     initial: { y: '100%' },
     animate: { y: 0 },
     exit: { y: '100%' },
-    panelClass: 'bottom-0 inset-x-0 border-t rounded-t-xl',
+    /*
+      `max-h` is essential here. Without it the sheet grew to its content height
+      and ran straight off the top of the screen, stranding both the header and
+      the close button outside the viewport.
+    */
+    panelClass: 'bottom-0 inset-x-0 glass-sheet-bottom rounded-t-2xl max-h-[85dvh] pb-safe-flush',
   },
 };
 
 const sizeStyles = {
-  sm: 'max-w-sm',
-  md: 'max-w-md',
-  lg: 'max-w-xl',
+  sm: 'sm:max-w-sm',
+  md: 'sm:max-w-md',
+  lg: 'sm:max-w-xl',
 };
 
 export const Drawer: React.FC<DrawerProps> = ({
@@ -54,24 +60,25 @@ export const Drawer: React.FC<DrawerProps> = ({
   size = 'md',
   className,
 }) => {
+  const titleId = useId();
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
     },
-    [isOpen, onClose]
+    [onClose]
   );
 
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    } else {
-      document.body.style.overflow = '';
-    }
+    if (!isOpen) return;
+
+    // Restore the previous value rather than clearing it — see Modal.tsx.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, handleKeyDown]);
@@ -88,34 +95,46 @@ export const Drawer: React.FC<DrawerProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 bg-[#06080d]/80 backdrop-blur-sm"
+            className="fixed inset-0 bg-[#04070f]/70 backdrop-blur-sm"
             onClick={onClose}
           />
 
-          {/* Drawer Panel */}
+          {/* Drawer panel */}
           <motion.div
             initial={pos.initial}
             animate={pos.animate}
             exit={pos.exit}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={title ? titleId : undefined}
             className={cn(
-              'fixed z-50 bg-[#090e17]/95 border-slate-400/[0.12] shadow-2xl flex flex-col',
+              'fixed z-50 glass-strong flex flex-col',
               pos.panelClass,
-              position !== 'bottom' && 'w-full',
               position !== 'bottom' && sizeStyles[size],
               className
             )}
           >
+            {position === 'bottom' && (
+              <span
+                aria-hidden="true"
+                className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-white/20"
+              />
+            )}
+
             {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b border-white/[0.06]">
-              <div>
+            <div className="flex items-start justify-between gap-3 p-4 sm:p-5 border-b border-white/[0.06] shrink-0">
+              <div className="min-w-0">
                 {kicker && (
                   <p className="text-[10px] font-mono font-semibold uppercase tracking-[0.2em] text-slate-400">
                     {kicker}
                   </p>
                 )}
                 {title && (
-                  <h3 className="text-base sm:text-lg font-semibold text-white tracking-tight">
+                  <h3
+                    id={titleId}
+                    className="text-base sm:text-lg font-semibold text-white tracking-tight break-words"
+                  >
                     {title}
                   </h3>
                 )}
@@ -124,13 +143,14 @@ export const Drawer: React.FC<DrawerProps> = ({
                 variant="ghost"
                 size="sm"
                 label="Close drawer"
+                className="shrink-0 touch-target"
                 icon={<X className="w-4 h-4 text-slate-400 hover:text-white" />}
                 onClick={onClose}
               />
             </div>
 
-            {/* Content Body */}
-            <div className="flex-1 overflow-y-auto p-5 text-sm text-slate-300">
+            {/* Content body */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 text-sm text-slate-300">
               {children}
             </div>
           </motion.div>

@@ -1,34 +1,47 @@
-export interface SessionData {
-  profileId: string;
-  name?: string;
-  issuedAt: number;
-  exp: number;
-}
+/**
+ * Node-runtime session token signing and verification.
+ *
+ * `node:crypto` is imported statically rather than pulled in with `require()`
+ * inside each function. The old inline `require('crypto')` calls were both a
+ * lint error (@typescript-eslint/no-require-imports) and a bundling hazard: a
+ * bare `require` is not statically analysable, so the bundler could not tell
+ * this file is Node-only.
+ *
+ * Because of that import, this module must only be imported from Node-runtime
+ * code (route handlers). Edge Middleware should import the payload helpers from
+ * ./session-payload instead.
+ */
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export const SESSION_COOKIE_NAME = 'dinustream_session';
-const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+import {
+  SESSION_DURATION_MS,
+  parseSessionPayload,
+  toBase64Url,
+  type SessionData,
+} from './session-payload';
+
+// Re-exported so existing `@/lib/security/session` imports keep working.
+export {
+  SESSION_COOKIE_NAME,
+  SESSION_DURATION_MS,
+  parseSessionPayload,
+  type SessionData,
+} from './session-payload';
 
 function getSecretKey(): string {
-  return process.env.ADMIN_MASTER_PIN || process.env.SYNC_MANAGER_API_KEY || 'dinustream-cinema-secret-key-prod';
+  return (
+    process.env.ADMIN_MASTER_PIN ||
+    process.env.SYNC_MANAGER_API_KEY ||
+    'dinustream-cinema-secret-key-prod'
+  );
 }
 
-function toBase64Url(str: string): string {
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(str).toString('base64url');
-  }
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function sign(payloadB64: string): string {
+  return createHmac('sha256', getSecretKey()).update(payloadB64).digest('base64url');
 }
 
-function fromBase64Url(b64url: string): string {
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(b64url, 'base64url').toString('utf-8');
-  }
-  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
-  return atob(b64);
-}
-
+/** Issue a signed `<payload>.<signature>` session token. */
 export function createSessionToken(profileId: string, name?: string): string {
-  const secret = getSecretKey();
   const now = Date.now();
   const payload: SessionData = {
     profileId,
@@ -36,47 +49,34 @@ export function createSessionToken(profileId: string, name?: string): string {
     issuedAt: now,
     exp: now + SESSION_DURATION_MS,
   };
-  const jsonStr = JSON.stringify(payload);
-  const payloadB64 = toBase64Url(jsonStr);
 
-  const nodeCrypto = require('crypto');
-  const signature = nodeCrypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');
-  return `${payloadB64}.${signature}`;
+  const payloadB64 = toBase64Url(JSON.stringify(payload));
+  return `${payloadB64}.${sign(payloadB64)}`;
 }
 
-export function parseSessionPayload(token: string): SessionData | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 2) return null;
-    const [payloadB64] = parts;
-    const jsonStr = fromBase64Url(payloadB64);
-    const data: SessionData = JSON.parse(jsonStr);
-    if (!data.exp || Date.now() > data.exp) return null;
-    if (!data.profileId || typeof data.profileId !== 'string') return null;
-    return data;
-  } catch {
-    return null;
-  }
-}
-
+/**
+ * Verify a token's HMAC signature and return its payload, or `null`.
+ *
+ * This is the only function that proves a token was issued by this server;
+ * `parseSessionPayload` alone just decodes whatever the client sent.
+ */
 export function verifySessionToken(token: string): SessionData | null {
   try {
     const parts = token.split('.');
     if (parts.length !== 2) return null;
-    const [payloadB64, signature] = parts;
-    const secret = getSecretKey();
 
-    const nodeCrypto = require('crypto');
-    const expectedSig = nodeCrypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');
+    const [payloadB64, signature] = parts;
+    const expectedSig = sign(payloadB64);
 
     const sigBuffer = Buffer.from(signature);
     const expectedBuffer = Buffer.from(expectedSig);
-    if (sigBuffer.length !== expectedBuffer.length || !nodeCrypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
+    /* Length is compared first because `timingSafeEqual` throws on a length
+       mismatch rather than returning false. */
+    if (sigBuffer.length !== expectedBuffer.length || !timingSafeEqual(sigBuffer, expectedBuffer)) {
       return null;
     }
 
-    const data = parseSessionPayload(token);
-    return data;
+    return parseSessionPayload(token);
   } catch {
     return null;
   }

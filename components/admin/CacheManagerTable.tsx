@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { CachedMedia } from '@/types/admin';
-import { Trash2, Check, Film, Tv, Music, HardDrive, AlertCircle } from 'lucide-react';
+import { Trash2, Check, Film, Tv, Music, HardDrive } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export interface CacheManagerTableProps {

@@ -1,4 +1,4 @@
-import { UserProfileId, ContinueWatchingItem, UserProfile } from '@/types/cinema';
+import { ContinueWatchingItem, UserProfile } from '@/types/cinema';
 import { UserPreferences, UserProfileData, WatchHistoryItem } from '@/types/profile';
 import { PROFILES } from '@/lib/constants';
 import { presenceService } from './presenceService';

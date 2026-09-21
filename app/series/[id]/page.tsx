@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { CinemaShell } from '@/components/layout/CinemaShell';
@@ -9,23 +9,19 @@ import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { Toast } from '@/components/ui/Toast';
 import { Avatar } from '@/components/ui/Avatar';
-import { ProgressBar } from '@/components/ui/ProgressBar';
 import { MediaCard } from '@/components/ui/MediaCard';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
 import { Episode, Season, MediaItem } from '@/types/cinema';
-import { calculatePercentage } from '@/lib/utils';
-import {
-  Play,
-  Zap,
-  Plus,
-  Check,
-  RotateCcw,
-  ArrowLeft,
-  Tv,
-} from 'lucide-react';
+import { calculatePercentage, cn } from '@/lib/utils';
+import { Play, Zap, Plus, Check, ArrowLeft, Tv } from 'lucide-react';
+
+/** Shared horizontal gutters, consistent with the home page rails. */
+const GUTTER = 'px-4 sm:px-8 lg:px-12';
+
+const TOAST_MS = 3500;
 
 export default function SeriesDetailsPage() {
   const params = useParams();
@@ -42,51 +38,69 @@ export default function SeriesDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [toastInfo, setToastInfo] = useState<{ message: string; subtext?: string } | null>(null);
   const [isSyncDrawerOpen, setIsSyncDrawerOpen] = useState(false);
+  const [backdropError, setBackdropError] = useState(false);
 
-  useEffect(() => {
-    if (!id) return;
+  const loadSeries = useCallback(async (seriesId: string) => {
     setLoading(true);
     setError(null);
+    setBackdropError(false);
+    try {
+      const [item, seasonList, allSeries] = await Promise.all([
+        mediaService.getMediaById(seriesId),
+        mediaService.getSeasonsForSeries(seriesId),
+        mediaService.getSeries(10),
+      ]);
 
-    Promise.all([
-      mediaService.getMediaById(id),
-      mediaService.getSeasonsForSeries(id),
-      mediaService.getSeries(10),
-    ])
-      .then(([m, s, allSeries]) => {
-        if (!m) {
-          setError('Series not found in private vault');
-          setLoading(false);
-          return;
-        }
-        setMedia(m);
-        setSeasons(s);
-        if (s.length > 0) {
-          setSelectedSeasonNumber(s[0].seasonNumber);
-        }
+      if (!item) {
+        setError('Series not found in private vault');
+        return;
+      }
 
-        const similar = allSeries
-          .filter((item) => item.id !== m.id)
-          .slice(0, 6);
-        setSimilarSeries(similar);
-      })
-      .catch((err) => {
-        console.error('[SeriesDetailsPage] Failed to fetch series:', err);
-        setError('Unable to load series from media server');
-      })
-      .finally(() => setLoading(false));
-  }, [id]);
+      setMedia(item);
+      setSeasons(seasonList);
+      if (seasonList.length > 0) setSelectedSeasonNumber(seasonList[0].seasonNumber);
+      setSimilarSeries(allSeries.filter((s) => s.id !== item.id).slice(0, 6));
+    } catch (err) {
+      console.error('[SeriesDetailsPage] Failed to fetch series:', err);
+      setError('Unable to load series from media server');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /*
+    Deferred a microtask so the synchronous `setLoading(true)` inside
+    `loadSeries` does not execute in the effect body (react-hooks/
+    set-state-in-effect: it forces a cascading render before first paint).
+  */
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) void loadSeries(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, loadSeries]);
+
+  useEffect(() => {
+    if (!toastInfo) return;
+    const timer = setTimeout(() => setToastInfo(null), TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [toastInfo]);
 
   const isSaved = media ? myList.includes(media.id) : false;
 
-  const activeSeason = useMemo(() => {
-    return seasons.find((s) => s.seasonNumber === selectedSeasonNumber) || seasons[0];
-  }, [seasons, selectedSeasonNumber]);
+  const activeSeason = useMemo(
+    () => seasons.find((s) => s.seasonNumber === selectedSeasonNumber) || seasons[0],
+    [seasons, selectedSeasonNumber]
+  );
 
-  // Find the first unfinished episode or default to episode 1
+  // First partially-watched episode, else the very first episode.
   const resumeEpisode: Episode | undefined = useMemo(() => {
-    for (const s of seasons) {
-      const inProgress = s.episodes.find(
+    for (const season of seasons) {
+      const inProgress = season.episodes.find(
         (e) => (e.progressMinutes || 0) > 0 && (e.progressMinutes || 0) < (e.totalMinutes || 60)
       );
       if (inProgress) return inProgress;
@@ -94,9 +108,23 @@ export default function SeriesDetailsPage() {
     return seasons[0]?.episodes[0];
   }, [seasons]);
 
-  const notify = (message: string, subtext?: string) => {
-    setToastInfo({ message, subtext });
-    setTimeout(() => setToastInfo(null), 3500);
+  const notify = (message: string, subtext?: string) => setToastInfo({ message, subtext });
+
+  /**
+   * Build a watch URL for an episode.
+   *
+   * The watch route resolves the *series* from its path segment and the episode
+   * from the `episode` query param — that is what gives the player its season
+   * list, prev/next navigation, the S:E badge and autoplay-next. This page used
+   * to link straight to `/watch/<episodeId>`, so `getSeasonsForSeries` was
+   * called with an episode id, returned nothing, and every one of those features
+   * silently disappeared.
+   */
+  const episodeHref = (episode: Episode, extra?: string) => {
+    const seriesId = media?.id ?? id;
+    const query = new URLSearchParams({ episode: episode.id });
+    if (extra) query.set(extra, 'true');
+    return `/watch/${seriesId}?${query.toString()}`;
   };
 
   const handleToggleSave = () => {
@@ -111,7 +139,7 @@ export default function SeriesDetailsPage() {
   if (loading) {
     return (
       <CinemaShell>
-        <div className="min-h-[80vh] flex flex-col justify-center items-center gap-4">
+        <div className="min-h-[70svh] flex flex-col justify-center items-center gap-4 px-4 text-center">
           <div className="w-10 h-10 border-2 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
           <p className="text-xs text-slate-400 font-mono tracking-wider uppercase">
             Loading series presentation...
@@ -124,11 +152,11 @@ export default function SeriesDetailsPage() {
   if (error || !media) {
     return (
       <CinemaShell>
-        <div className="max-w-2xl mx-auto px-4 py-24 text-center">
+        <div className="max-w-2xl mx-auto px-4 pt-navbar pb-16 text-center">
           <ErrorState
             title="Series Unavailable"
             message={error || 'This series could not be located.'}
-            onRetry={() => router.push('/')}
+            onRetry={() => (id ? loadSeries(id) : router.push('/'))}
           />
           <div className="mt-6">
             <Button
@@ -144,9 +172,10 @@ export default function SeriesDetailsPage() {
     );
   }
 
+  const backdrop = backdropError ? media.posterUrl : media.backdropUrl || media.posterUrl;
+
   return (
     <CinemaShell>
-      {/* Toast Notification */}
       <Toast
         message={toastInfo?.message || ''}
         subtext={toastInfo?.subtext}
@@ -155,7 +184,7 @@ export default function SeriesDetailsPage() {
         onDismiss={() => setToastInfo(null)}
       />
 
-      {/* Synchronized Watch Room Drawer */}
+      {/* Synchronized watch room drawer */}
       <Drawer
         isOpen={isSyncDrawerOpen}
         onClose={() => setIsSyncDrawerOpen(false)}
@@ -164,11 +193,13 @@ export default function SeriesDetailsPage() {
       >
         <div className="space-y-6">
           <div className="p-4 rounded-xl bg-[#0b101b] border border-slate-700/40 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold text-white">Episodic Sync Ready</span>
-              <Badge variant="sync" size="sm">Auto Skip Enabled</Badge>
+              <Badge variant="sync" size="sm">
+                Auto Skip Enabled
+              </Badge>
             </div>
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               <div className="flex items-center gap-2.5">
                 <Avatar profile={profile} size="sm" />
                 <span className="text-xs text-slate-200">{profile.name} (Host)</span>
@@ -181,7 +212,8 @@ export default function SeriesDetailsPage() {
           </div>
 
           <p className="text-xs text-slate-400 font-light leading-relaxed">
-            Starting synchronized playback will cue the selected episode on all connected companion screens.
+            Starting synchronized playback cues the selected episode on all connected companion
+            screens.
           </p>
 
           {resumeEpisode && (
@@ -191,7 +223,7 @@ export default function SeriesDetailsPage() {
               icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
               onClick={() => {
                 setIsSyncDrawerOpen(false);
-                router.push(`/watch/${resumeEpisode.id}?sync=true`);
+                router.push(episodeHref(resumeEpisode, 'sync'));
               }}
             >
               Stream Ep {resumeEpisode.episodeNumber} in Sync
@@ -200,200 +232,235 @@ export default function SeriesDetailsPage() {
         </div>
       </Drawer>
 
-      <div className="relative min-h-screen pb-24">
-        {/* Back Button (Positioned below fixed CinemaNavbar with z-50 for instant clickability) */}
-        <div className="absolute top-20 sm:top-24 left-4 sm:left-8 lg:left-12 z-50">
+      <div className="relative">
+        {/* Back button */}
+        <div className={cn('absolute top-[calc(var(--cinema-navbar-height)+env(safe-area-inset-top,0px)+0.75rem)] left-0 z-30', GUTTER)}>
           <button
             onClick={() => {
-              if (typeof window !== 'undefined' && window.history.length > 1) {
-                router.back();
-              } else {
-                router.push('/');
-              }
+              if (typeof window !== 'undefined' && window.history.length > 1) router.back();
+              else router.push('/');
             }}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#080d17]/90 hover:bg-[#121c2f] border border-white/[0.15] text-xs font-medium text-slate-200 hover:text-white backdrop-blur-2xl transition-all shadow-[0_4px_24px_rgba(0,0,0,0.7)] cinema-focus cursor-pointer select-none active:scale-95 group"
-            aria-label="Back to Catalog"
-            title="Back to Catalog"
+            className="group flex items-center gap-2 px-4 py-2 rounded-full bg-[#080d17]/90 hover:bg-[#121c2f] border border-white/[0.15] text-xs font-medium text-slate-200 hover:text-white backdrop-blur-2xl transition-all shadow-[0_4px_24px_rgba(0,0,0,0.7)] cinema-focus active:scale-95"
+            aria-label="Back to catalog"
           >
             <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
             <span>Back</span>
           </button>
         </div>
 
-        {/* Hero Backdrop */}
-        <div className="relative w-full h-[60vh] sm:h-[70vh] max-h-[750px] overflow-hidden">
+        {/*
+          Hero. Same fix as the movie page: the title block is in normal flow and
+          pulled up over the backdrop gradient instead of being `absolute
+          bottom-0` inside a fixed-height `overflow-hidden` box, where taller
+          content (badges + title + synopsis + three buttons) was clipped off the
+          top on phones.
+        */}
+        <div className="relative h-[46svh] min-h-[280px] sm:h-[56svh] lg:h-[66svh] lg:max-h-[750px] overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={media.backdropUrl || media.posterUrl}
-            alt={media.title}
-            className="w-full h-full object-cover object-center filter brightness-[0.7]"
+            src={backdrop}
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+            onError={() => setBackdropError(true)}
+            className="absolute inset-0 w-full h-full object-cover object-center"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#05070c] via-[#05070c]/50 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#05070c] via-[#05070c]/40 to-transparent" />
-
-          {/* Hero Overlay */}
-          <div className="absolute bottom-0 left-0 right-0 max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 pb-12 z-20">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="max-w-3xl space-y-4"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="midnight" size="sm">
-                  {media.releaseYear}
-                </Badge>
-                <Badge variant="midnight" size="sm">
-                  {seasons.length} {seasons.length === 1 ? 'Season' : 'Seasons'}
-                </Badge>
-                {media.rating && (
-                  <Badge variant="midnight" size="sm">
-                    {media.rating}
-                  </Badge>
-                )}
-                {media.badges.map((b) => (
-                  <Badge key={b} variant={b === 'Dolby Atmos' ? 'atmos' : 'silver'} size="sm">
-                    {b}
-                  </Badge>
-                ))}
-              </div>
-
-              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-tight">
-                {media.title}
-              </h1>
-
-              <p className="text-sm sm:text-base text-slate-300 font-light leading-relaxed max-w-2xl line-clamp-3 sm:line-clamp-none">
-                {media.overview}
-              </p>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-3 pt-3">
-                {resumeEpisode && (
-                  <Button
-                    variant="silver"
-                    size="md"
-                    icon={<Play className="w-4 h-4 fill-current" />}
-                    onClick={() => router.push(`/watch/${resumeEpisode.id}`)}
-                  >
-                    Play S{resumeEpisode.seasonNumber}:E{resumeEpisode.episodeNumber}
-                  </Button>
-                )}
-
-                <Button
-                  variant="primary"
-                  size="md"
-                  icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
-                  onClick={() => setIsSyncDrawerOpen(true)}
-                >
-                  Watch in Sync
-                </Button>
-
-                <Button
-                  variant="secondary"
-                  size="md"
-                  icon={isSaved ? <Check className="w-4 h-4 text-emerald-400" /> : <Plus className="w-4 h-4" />}
-                  onClick={handleToggleSave}
-                >
-                  {isSaved ? 'In My List' : 'Add to List'}
-                </Button>
-              </div>
-            </motion.div>
-          </div>
+          {/* See the movie detail page: brightness filters dim the whole frame,
+              so contrast is applied only where the copy sits. */}
+          <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-[#05070c] via-[#05070c]/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#05070c]/85 via-[#05070c]/25 to-transparent" />
         </div>
 
-        {/* Seasons & Episodes Browser */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 mt-8 space-y-10">
+        <div className={cn('relative z-20 max-w-7xl mx-auto -mt-24 sm:-mt-32 lg:-mt-44', GUTTER)}>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="max-w-3xl space-y-3 sm:space-y-4"
+          >
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <Badge variant="midnight" size="sm">
+                {media.releaseYear}
+              </Badge>
+              <Badge variant="midnight" size="sm">
+                {seasons.length} {seasons.length === 1 ? 'Season' : 'Seasons'}
+              </Badge>
+              {media.rating && (
+                <Badge variant="midnight" size="sm">
+                  {media.rating}
+                </Badge>
+              )}
+              {media.badges.map((b) => (
+                <Badge
+                  key={b}
+                  variant={b === 'Dolby Atmos' || b === 'Spatial Audio' ? 'atmos' : 'silver'}
+                  size="sm"
+                >
+                  {b}
+                </Badge>
+              ))}
+            </div>
+
+            <h1 className="text-2xl sm:text-4xl lg:text-6xl font-extrabold tracking-tight text-white leading-tight text-on-art-strong">
+              {media.title}
+            </h1>
+
+            <p className="text-sm sm:text-base text-slate-300 font-light leading-relaxed max-w-2xl line-clamp-4 sm:line-clamp-none">
+              {media.overview}
+            </p>
+
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2.5 sm:gap-3 pt-2">
+              {resumeEpisode && (
+                <Button
+                  variant="silver"
+                  size="lg"
+                  icon={<Play className="w-4 h-4 fill-current" />}
+                  onClick={() => router.push(episodeHref(resumeEpisode))}
+                  className="w-full sm:w-auto justify-center"
+                >
+                  Play S{resumeEpisode.seasonNumber}:E{resumeEpisode.episodeNumber}
+                </Button>
+              )}
+
+              <Button
+                variant="primary"
+                size="lg"
+                icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
+                onClick={() => setIsSyncDrawerOpen(true)}
+                className="w-full sm:w-auto justify-center"
+              >
+                Watch in Sync
+              </Button>
+
+              <Button
+                variant="secondary"
+                size="lg"
+                icon={isSaved ? <Check className="w-4 h-4 text-emerald-400" /> : <Plus className="w-4 h-4" />}
+                onClick={handleToggleSave}
+                className="w-full sm:w-auto justify-center"
+              >
+                {isSaved ? 'In My List' : 'Add to List'}
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Seasons & episodes browser */}
+        <div className={cn('max-w-7xl mx-auto mt-10 sm:mt-12 space-y-10', GUTTER)}>
           {seasons.length > 0 ? (
             <div className="space-y-6">
-              {/* Season Selection Tabs */}
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  {seasons.map((s) => (
-                    <button
-                      key={s.seasonNumber}
-                      onClick={() => setSelectedSeasonNumber(s.seasonNumber)}
-                      className={`px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all ${
-                        selectedSeasonNumber === s.seasonNumber
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                          : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/[0.06]'
-                      }`}
-                    >
-                      Season {s.seasonNumber}
-                    </button>
-                  ))}
+              {/* Season tabs — scrollable so a long-running show never overflows */}
+              <div className="flex items-end justify-between gap-4 border-b border-slate-800 pb-4">
+                <div
+                  className="cinema-rail flex items-center gap-2 overflow-x-auto no-scrollbar -mb-px pb-1 min-w-0"
+                  role="tablist"
+                  aria-label="Seasons"
+                >
+                  {seasons.map((s) => {
+                    const isActive = selectedSeasonNumber === s.seasonNumber;
+                    return (
+                      <button
+                        key={s.seasonNumber}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        onClick={() => setSelectedSeasonNumber(s.seasonNumber)}
+                        className={cn(
+                          'shrink-0 px-4 py-2 rounded-xl text-xs font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus',
+                          isActive
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/[0.06]'
+                        )}
+                      >
+                        Season {s.seasonNumber}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <span className="text-xs text-slate-400 hidden sm:block">
+                <span className="text-xs text-slate-400 hidden md:block shrink-0">
                   {activeSeason?.episodes.length || 0} Episodes Available
                 </span>
               </div>
 
-              {/* Episode Grid / Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {activeSeason?.episodes.map((ep) => (
-                  <div
-                    key={ep.id}
-                    onClick={() => router.push(`/watch/${ep.id}`)}
-                    className="group relative cursor-pointer rounded-2xl bg-[#0b101b] hover:bg-[#111928] border border-slate-800 hover:border-cyan-500/40 overflow-hidden transition-all duration-300 flex flex-col justify-between shadow-md"
-                  >
-                    <div className="relative aspect-video w-full overflow-hidden bg-slate-900">
-                      <img
-                        src={ep.thumbnailUrl || media.backdropUrl}
-                        alt={ep.title}
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          if (media.backdropUrl && target.src !== media.backdropUrl) {
-                            target.src = media.backdropUrl;
-                          } else if (media.posterUrl && target.src !== media.posterUrl) {
-                            target.src = media.posterUrl;
-                          }
-                        }}
-                        className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 filter brightness-90"
-                      />
-                      <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors" />
+              {/* Episode cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {activeSeason?.episodes.map((ep) => {
+                  const progressPct =
+                    ep.progressMinutes && ep.totalMinutes
+                      ? calculatePercentage(ep.progressMinutes, ep.totalMinutes)
+                      : 0;
 
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="w-11 h-11 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/30">
-                          <Play className="w-5 h-5 fill-current ml-0.5" />
+                  return (
+                    <button
+                      key={ep.id}
+                      type="button"
+                      onClick={() => router.push(episodeHref(ep))}
+                      /* A real <button> replaces the previous clickable <div>,
+                         which had no keyboard or screen-reader affordance. */
+                      className="group relative text-left cursor-pointer rounded-2xl bg-[#0b101b] hover:bg-[#111928] border border-slate-800 hover:border-cyan-500/40 overflow-hidden transition-all duration-300 flex flex-col shadow-md cinema-focus"
+                      aria-label={`Play episode ${ep.episodeNumber}: ${ep.title}`}
+                    >
+                      <div className="relative aspect-video w-full overflow-hidden bg-slate-900">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={ep.thumbnailUrl || media.backdropUrl || media.posterUrl}
+                          alt=""
+                          aria-hidden="true"
+                          loading="lazy"
+                          decoding="async"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (media.backdropUrl && target.src !== media.backdropUrl) {
+                              target.src = media.backdropUrl;
+                            } else if (media.posterUrl && target.src !== media.posterUrl) {
+                              target.src = media.posterUrl;
+                            }
+                          }}
+                          className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
+                        />
+                        {/* Thumbnails are shown at full brightness; the previous
+                            `brightness-90` plus a flat `bg-black/30` veil made
+                            every episode still look washed out. */}
+                        <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors" />
+
+                        {/* Play affordance: always visible on touch, hover-revealed for pointers */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="w-11 h-11 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/30 opacity-0 group-hover:opacity-100 transition-opacity motion-safe:duration-200 max-[1023px]:opacity-90">
+                            <Play className="w-5 h-5 fill-current ml-0.5" />
+                          </span>
                         </div>
+
+                        {ep.runtime && (
+                          <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur-sm text-[10px] font-mono text-slate-300">
+                            {ep.runtime}
+                          </span>
+                        )}
+
+                        {progressPct > 0 && (
+                          <div className="absolute bottom-0 inset-x-0 h-1 bg-black/60">
+                            <div className="h-full bg-rose-500" style={{ width: `${progressPct}%` }} />
+                          </div>
+                        )}
                       </div>
 
-                      <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur-sm text-[10px] font-mono text-slate-300">
-                        {ep.runtime}
-                      </div>
-
-                      {ep.progressMinutes && ep.totalMinutes && (
-                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/60">
-                          <div
-                            className="h-full bg-rose-500"
-                            style={{
-                              width: `${calculatePercentage(ep.progressMinutes, ep.totalMinutes)}%`,
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-4 space-y-1.5 flex-1 flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                      <div className="p-3.5 sm:p-4 space-y-1.5 flex-1">
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400 font-mono">
                           <span>Episode {ep.episodeNumber}</span>
-                          {ep.progressMinutes ? (
-                            <span className="text-cyan-400">In Progress</span>
-                          ) : null}
+                          {progressPct > 0 && <span className="text-cyan-400">In Progress</span>}
                         </div>
-                        <h4 className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors mt-0.5">
+                        <h4 className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors line-clamp-2">
                           {ep.title}
                         </h4>
+                        {ep.overview && (
+                          <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                            {ep.overview}
+                          </p>
+                        )}
                       </div>
-
-                      {ep.overview && (
-                        <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
-                          {ep.overview}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -403,7 +470,7 @@ export default function SeriesDetailsPage() {
             </div>
           )}
 
-          {/* Similar Series */}
+          {/* Similar series */}
           {similarSeries.length > 0 && (
             <div className="space-y-4 pt-6">
               <SectionHeader
@@ -411,7 +478,7 @@ export default function SeriesDetailsPage() {
                 kicker="Recommended Series"
                 subtitle="High-caliber episodic series for continuous viewing."
               />
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
                 {similarSeries.map((item) => (
                   <MediaCard
                     key={item.id}
@@ -421,7 +488,9 @@ export default function SeriesDetailsPage() {
                     onToggleSave={() => {
                       const added = toggleMyList(item.id);
                       notify(
-                        added ? `Added "${item.title}" to My List` : `Removed "${item.title}" from My List`
+                        added
+                          ? `Added "${item.title}" to My List`
+                          : `Removed "${item.title}" from My List`
                       );
                     }}
                     onPlay={() => router.push(`/series/${item.id}`)}

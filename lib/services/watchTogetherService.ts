@@ -1,10 +1,9 @@
 import { UserProfileId, MediaItem } from '@/types/cinema';
 import { WatchGroup, QueuedMovie } from '@/types/watchTogether';
-import { getSyncStatus, syncMovie } from '@/lib/api/syncManager';
 import { createSyncPlayGroup } from '@/lib/api/syncPlay';
 import { PROFILES } from '@/lib/constants';
 import { firestore } from '@/lib/firebase/config';
-import { doc, setDoc, onSnapshot, getDoc, Unsubscribe } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 
 const STORAGE_KEY = 'dinustream_active_watch_group';
 const EVENT_KEY = 'dinustream_watch_group_update';
@@ -329,7 +328,6 @@ class WatchTogetherService {
   async startSyncAndPlay(onReadyToLaunch: (movieId: string, groupId: string) => void) {
     if (!this.group || !this.group.selectedMovie) return;
     const movie = this.group.selectedMovie;
-    const filename = `${movie.id}.mkv`;
 
     // 1. Mark ready and launch
     this.group.syncProgress = {

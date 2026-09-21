@@ -11,15 +11,19 @@ export interface GlassPanelProps extends React.HTMLAttributes<HTMLDivElement> {
   padding?: 'none' | 'sm' | 'md' | 'lg';
 }
 
+/*
+  Variants map onto the shared liquid-glass utilities in styles/cinema.css §4
+  rather than each re-declaring its own tint, blur radius, border and shadow.
+  Those hand-rolled stacks all used `backdrop-blur` with no `saturate()`, so the
+  colour bleeding through from behind was desaturated — the reason every panel
+  read as flat grey plastic instead of glass.
+*/
 const variantStyles: Record<GlassPanelVariant, string> = {
-  standard:
-    'bg-[#0b101a]/75 backdrop-blur-md border border-slate-400/[0.1] shadow-[0_4px_24px_rgba(0,0,0,0.5)]',
-  subtle:
-    'bg-[#080d15]/50 backdrop-blur-sm border border-slate-400/[0.07]',
-  elevated:
-    'bg-[#0d1320]/85 backdrop-blur-lg border border-slate-300/[0.14] shadow-[0_12px_40px_rgba(0,0,0,0.7)]',
+  standard: 'glass',
+  subtle: 'glass-subtle',
+  elevated: 'glass-strong glass-sheen',
   interactive:
-    'bg-[#0b101a]/75 hover:bg-[#0f1624]/85 backdrop-blur-md border border-slate-400/[0.1] hover:border-slate-300/[0.22] shadow-[0_4px_24px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.7)] transition-all duration-200 cursor-pointer',
+    'glass hover:bg-white/[0.06] hover:border-white/[0.16] transition-colors duration-200 cursor-pointer',
 };
 
 const paddingStyles = {

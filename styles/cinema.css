@@ -1,5 +1,30 @@
-/* DinuStream — Private Cinema Design System Tokens & Aesthetics */
+/* ==========================================================================
+   DinuStream — Private Cinema Design System
+   --------------------------------------------------------------------------
+   This file holds design tokens plus the small set of hand-written utilities
+   that Tailwind does not ship. Everything here is intentionally unlayered so
+   it wins against Tailwind's `@layer utilities` output; because of that, keep
+   selectors narrow and opt-in (class based) rather than targeting bare
+   elements, otherwise Tailwind classes silently stop working.
 
+   Sections
+     1. Design tokens
+     2. Document base / responsive foundation
+     3. Scrollbars
+     4. Texture & sheen helpers
+     5. Focus rings
+     6. Viewport-unit helpers (mobile URL-bar safe)
+     7. Safe-area helpers (notch / home indicator)
+     8. Touch vs. hover capability helpers
+     9. Horizontal carousel helpers
+    10. Keyframe animations
+    11. 10-foot UI / TV mode
+    12. Reduced-motion & accessibility
+   ========================================================================== */
+
+/* ==========================================================================
+   1. Design tokens
+   ========================================================================== */
 :root {
   /* Near-black cinematic background with midnight ink undertones */
   --cinema-bg: #06080d;
@@ -26,28 +51,79 @@
   --cinema-dinu-muted: rgba(56, 189, 248, 0.15);
   --cinema-kanmani-accent: #f43f5e;
   --cinema-kanmani-muted: rgba(244, 63, 94, 0.15);
+
+  /* Layout rhythm — kept as tokens so fixed/sticky chrome can offset itself
+     without every component re-deriving the same magic numbers.
+     `--cinema-navbar-height` excludes the safe-area inset; `.pt-navbar` adds it. */
+  --cinema-navbar-height: 56px;
+  --cinema-mobile-nav-height: 56px;
 }
 
-/* Base Viewport & Typography */
+@media (min-width: 640px) {
+  :root {
+    --cinema-navbar-height: 60px;
+  }
+}
+
+/* ==========================================================================
+   2. Document base / responsive foundation
+   ========================================================================== */
 html,
 body {
   background-color: var(--cinema-bg);
   color: var(--cinema-silver-light);
   color-scheme: dark;
+  /* Horizontal overflow is clipped because several sections use oversized
+     blurred "light spill" decorations that intentionally sit outside the
+     layout box. Without this a phone gets a sideways scrollbar. */
   overflow-x: hidden;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* iOS Safari bumps font sizes when a device rotates to landscape unless this
+     is pinned, which desynchronises the carefully tuned type scale. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
-/* Restrained, Minimal Cinema Scrollbar */
+/* Long unbroken strings (media titles, file names, ids) are a common source of
+   horizontal overflow on narrow screens. */
+h1,
+h2,
+h3,
+h4,
+p,
+span,
+a {
+  overflow-wrap: break-word;
+}
+
+/* Media should never exceed its container on small screens. */
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+/* Kill the 300ms tap delay and the grey tap highlight on mobile WebKit. */
+a,
+button,
+[role='button'] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* ==========================================================================
+   3. Scrollbars
+   ========================================================================== */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #06080d;
+  background: var(--cinema-bg);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -59,12 +135,163 @@ body {
   background: #2d3b55;
 }
 
-/* Delicate Film Texture */
-.cinema-grain {
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.02'/%3E%3C/svg%3E");
+/**
+ * .no-scrollbar — hide a scroll container's scrollbar while keeping it
+ * scrollable. Used by every horizontal media row and the category chip bar.
+ * This class was referenced throughout the app but never defined, so those
+ * rows rendered a visible 5px scrollbar across the poster artwork.
+ */
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
 }
 
-/* Subtle, Understated Silver Sheen */
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* ==========================================================================
+   4. Liquid glass surfaces
+   --------------------------------------------------------------------------
+   These replace the previous film-grain treatment.
+
+   The old `.cinema-grain` / `.cinema-film-grain` classes tiled an SVG
+   fractal-noise bitmap across the page shell and over the entire viewport. That
+   is what made everything look soft and grey: a full-screen semi-transparent
+   noise layer sits on top of every glyph edge and every poster, so text loses
+   its contrast ratio against the background and artwork loses apparent
+   resolution. There is no way to keep a noise overlay and a sharp image at the
+   same time — so the noise is gone.
+
+   What replaces it is real glass: a blurred, *saturated* backdrop plus a 1px
+   hairline and an inset top highlight. Saturation is the part that makes the
+   effect read as glass rather than as a grey wash — it re-saturates the colour
+   bleeding through from behind instead of muting it.
+
+   Usage
+     .glass            default surface (panels, cards)
+     .glass-subtle     lighter blur for dense/nested surfaces
+     .glass-strong     heavy blur for modals, sheets and the scrolled navbar
+     .glass-sheen      adds a diagonal specular highlight (opt-in, decorative)
+     .glass-hairline   border + inset highlight only, no blur or tint
+   ========================================================================== */
+.glass,
+.glass-subtle,
+.glass-strong {
+  position: relative;
+  /* `saturate` before `blur` keeps the colour lift crisp rather than muddy. */
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  background-color: rgba(12, 17, 26, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* Inset highlight along the top edge = the lit rim of a glass pane. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+    0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.glass-subtle {
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  backdrop-filter: saturate(160%) blur(12px);
+  background-color: rgba(12, 17, 26, 0.38);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.glass-strong {
+  -webkit-backdrop-filter: saturate(200%) blur(36px);
+  backdrop-filter: saturate(200%) blur(36px);
+  background-color: rgba(10, 14, 22, 0.72);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 20px 60px rgba(0, 0, 0, 0.55);
+}
+
+/* Border + rim light with no blur — for surfaces that must stay fully opaque. */
+.glass-hairline {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+/*
+  Full-bleed bars (navbar, mobile tab bar) need a hairline on exactly one edge.
+  These modifiers exist because the `border` shorthand above is unlayered CSS
+  and therefore outranks Tailwind's layered `border-t-0` / `border-x-0`
+  utilities — trying to cancel the unwanted edges from the markup silently does
+  nothing and leaves a 1px line across the top of the screen.
+*/
+.glass-bar-bottom-edge {
+  border-width: 0 0 1px;
+}
+
+.glass-bar-top-edge {
+  border-width: 1px 0 0;
+  /* Light the rim from below for a bar anchored to the bottom of the screen. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 -12px 40px rgba(0, 0, 0, 0.5);
+}
+
+/*
+  Resting state of the top bar: keep the glass tint but hide the seam so it reads
+  as part of the hero rather than a separate strip floating above it.
+
+  This has to be a class rather than Tailwind's `border-b-transparent
+  shadow-none`, because the `.glass-*` rules above are unlayered CSS and
+  therefore outrank layered utilities — those two classes would have been parsed,
+  emitted and then silently lost.
+*/
+.glass-bar-seamless {
+  border-bottom-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Sheets that meet a screen edge only round the exposed corners. */
+.glass-sheet-bottom {
+  border-width: 1px 0 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 -20px 60px rgba(0, 0, 0, 0.55);
+}
+
+/* Optional specular streak. Sits above the tint, below the content. */
+.glass-sheen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.11) 0%,
+    rgba(255, 255, 255, 0.03) 28%,
+    transparent 55%
+  );
+}
+
+/*
+  Fallback for browsers without backdrop-filter (and for Firefox with the
+  feature disabled): drop to an opaque tint so text never lands on raw artwork.
+*/
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass,
+  .glass-subtle {
+    background-color: rgba(12, 17, 26, 0.92);
+  }
+
+  .glass-strong {
+    background-color: rgba(10, 14, 22, 0.97);
+  }
+}
+
+/* Subtle, understated silver sheen for display type. */
 .silver-shimmer {
   background: linear-gradient(
     110deg,
@@ -79,7 +306,26 @@ body {
   background-clip: text;
 }
 
-/* Refined TV / Keyboard Focus Ring */
+/* ==========================================================================
+   4b. Legibility over artwork
+   --------------------------------------------------------------------------
+   With the grain gone, text over a backdrop needs a real contrast strategy
+   rather than a stack of huge blurred drop-shadows. A wide soft shadow bleeds
+   into the glyph interiors and is precisely what made the hero copy look fuzzy;
+   a tight, high-opacity shadow keeps the edges crisp.
+   ========================================================================== */
+.text-on-art {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 2px 10px rgba(0, 0, 0, 0.55);
+}
+
+.text-on-art-strong {
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.95), 0 2px 6px rgba(0, 0, 0, 0.8),
+    0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+/* ==========================================================================
+   5. Focus rings
+   ========================================================================== */
 .cinema-focus:focus-visible {
   outline: 2px solid rgba(203, 213, 225, 0.6);
   outline-offset: 3px;
@@ -87,52 +333,40 @@ body {
 }
 
 /* ==========================================================================
-   10-Foot UI / Large TV Mode Optimization
+   6. Viewport-unit helpers (mobile URL-bar safe)
+   --------------------------------------------------------------------------
+   `100vh` on mobile means "viewport height with the browser chrome hidden",
+   so a `100vh` hero is taller than what the user can actually see and pushes
+   its own controls off-screen. These helpers prefer the dynamic/small
+   viewport units and fall back to `vh` on older browsers.
    ========================================================================== */
-[data-tv-mode="true"] {
-  font-size: 18px;
+.h-screen-safe {
+  height: 100vh;
+  height: 100svh;
 }
 
-[data-tv-mode="true"] .cinema-focus:focus-visible,
-[data-tv-mode="true"] button:focus-visible,
-[data-tv-mode="true"] a:focus-visible,
-[data-tv-mode="true"] [role="button"]:focus-visible,
-[data-tv-mode="true"] input:focus-visible {
-  outline: none !important;
-  box-shadow: 0 0 0 4px #38bdf8, 0 0 28px rgba(56, 189, 248, 0.85) !important;
-  transform: scale(1.04);
-  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease;
-  z-index: 40 !important;
+.min-h-screen-safe {
+  min-height: 100vh;
+  min-height: 100svh;
 }
 
-[data-tv-mode="true"] h1 {
-  font-size: 3.25rem !important;
-  line-height: 1.15 !important;
+.h-screen-dynamic {
+  height: 100vh;
+  height: 100dvh;
 }
 
-[data-tv-mode="true"] h2 {
-  font-size: 2.25rem !important;
-  line-height: 1.25 !important;
+.min-h-screen-dynamic {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
-[data-tv-mode="true"] h3 {
-  font-size: 1.75rem !important;
-}
-
-/* TV Remote Friendly Large Buttons */
-[data-tv-mode="true"] button,
-[data-tv-mode="true"] .btn-tv {
-  min-height: 48px;
-}
-
-[data-tv-mode="true"] .tv-large-btn {
-  min-height: 60px;
-  font-size: 1.15rem;
-  padding-left: 2rem;
-  padding-right: 2rem;
-}
-
-/* Mobile Safe-Area Utilities */
+/* ==========================================================================
+   7. Safe-area helpers (notch / home indicator)
+   --------------------------------------------------------------------------
+   Paired with `viewportFit: 'cover'` from the root layout's viewport export.
+   `*-safe` guarantees a minimum comfortable pad; `*-safe-flush` adds only the
+   inset itself, for bars that already supply their own padding.
+   ========================================================================== */
 .pb-safe {
   padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
 }
@@ -141,3 +375,283 @@ body {
   padding-top: max(12px, env(safe-area-inset-top, 12px));
 }
 
+.pb-safe-flush {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pt-safe-flush {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Offset for content that must clear the fixed mobile bottom navigation. */
+.pb-mobile-nav {
+  padding-bottom: calc(
+    var(--cinema-mobile-nav-height) + env(safe-area-inset-bottom, 0px) + 12px
+  );
+}
+
+/**
+ * .cinema-navbar-pad — vertical padding for the fixed top bar.
+ *
+ * The navbar previously combined Tailwind's `py-3 sm:py-4` with `.pt-safe-flush`.
+ * That does not layer the way it reads: `.pt-safe-flush` is unlayered CSS and so
+ * outranks the layered `py-*` utility, *replacing* padding-top with
+ * `env(safe-area-inset-top)` — which is `0px` on every device without a notch.
+ * The result was a bar with zero padding above its content and 12–16px below, so
+ * the logo sat jammed against the very top edge while the bar's own box hung
+ * lower than it looked. Symmetric padding with the inset *added* rather than
+ * substituted fixes it.
+ */
+.cinema-navbar-pad {
+  padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
+  padding-bottom: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .cinema-navbar-pad {
+    padding-top: calc(0.625rem + env(safe-area-inset-top, 0px));
+    padding-bottom: 0.625rem;
+  }
+}
+
+/**
+ * .pt-navbar — top offset for content that sits beneath the fixed navbar.
+ *
+ * Derived from `--cinema-navbar-height` plus the safe-area inset, so it tracks
+ * the bar automatically. Pages previously hard-coded `pt-24 sm:pt-28`
+ * (96px / 112px) against a ~56px bar, leaving a 40–56px empty gap that made the
+ * navbar look like it was floating away from the page content.
+ */
+.pt-navbar {
+  padding-top: calc(var(--cinema-navbar-height) + env(safe-area-inset-top, 0px) + 1rem);
+}
+
+/* Same value as a scroll anchor offset for in-page `#section` jumps. */
+.scroll-mt-navbar {
+  scroll-margin-top: calc(var(--cinema-navbar-height) + env(safe-area-inset-top, 0px) + 1rem);
+}
+
+/* ==========================================================================
+   8. Touch vs. hover capability helpers
+   --------------------------------------------------------------------------
+   Media cards reveal their synopsis and action row on `:hover`. On a
+   touchscreen there is no hover, so those controls were unreachable, and on
+   iOS a tap leaves a "stuck" hover state behind. `.reveal-on-hover` keeps the
+   hover reveal for real pointers and shows the content unconditionally on
+   touch devices.
+   ========================================================================== */
+.reveal-on-hover {
+  opacity: 1;
+  max-height: none;
+  transform: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .reveal-on-hover {
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    transform: translateY(0.5rem);
+    transition: opacity 0.2s ease, max-height 0.3s ease, transform 0.2s ease;
+  }
+
+  .group:hover .reveal-on-hover,
+  .group:focus-within .reveal-on-hover {
+    opacity: 1;
+    max-height: 12rem;
+    transform: translateY(0);
+  }
+}
+
+/* Show only on devices without a precise pointer (phones / tablets). */
+.touch-only {
+  display: none;
+}
+
+@media (hover: none) {
+  .touch-only {
+    display: revert;
+  }
+}
+
+/**
+ * .touch-target — guarantees the WCAG 2.5.8 minimum 24px (and the far more
+ * comfortable 44px Apple HIG) hit area on coarse pointers without inflating
+ * the dense desktop/player chrome.
+ */
+@media (pointer: coarse) {
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* ==========================================================================
+   9. Horizontal carousel helpers
+   ========================================================================== */
+
+/**
+ * .cinema-rail — momentum scrolling plus scroll-snap for the poster rows.
+ * Snapping is only enabled on coarse pointers: with a mouse wheel or the
+ * arrow buttons, snap points fight the programmatic `scrollBy`.
+ */
+.cinema-rail {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+@media (pointer: coarse) {
+  .cinema-rail {
+    scroll-snap-type: x proximity;
+  }
+
+  .cinema-rail > * {
+    scroll-snap-align: start;
+  }
+}
+
+/* ==========================================================================
+   10. Keyframe animations
+   --------------------------------------------------------------------------
+   `animate-shake` (login PIN error) and `animate-spin-slow` (rotate-device
+   hint) were both referenced in components but never defined, so those
+   affordances rendered completely static.
+   ========================================================================== */
+@keyframes cinema-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-9px);
+  }
+  40% {
+    transform: translateX(8px);
+  }
+  60% {
+    transform: translateX(-5px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+.animate-shake {
+  animation: cinema-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes cinema-spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: cinema-spin-slow 3.2s linear infinite;
+}
+
+/* ==========================================================================
+   11. 10-foot UI / TV mode
+   ========================================================================== */
+[data-tv-mode='true'] {
+  font-size: 18px;
+}
+
+[data-tv-mode='true'] .cinema-focus:focus-visible,
+[data-tv-mode='true'] button:focus-visible,
+[data-tv-mode='true'] a:focus-visible,
+[data-tv-mode='true'] [role='button']:focus-visible,
+[data-tv-mode='true'] input:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 4px #38bdf8, 0 0 28px rgba(56, 189, 248, 0.85) !important;
+  transform: scale(1.04);
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease;
+  z-index: 40 !important;
+}
+
+/* Display type is only scaled up from tablet width upward — forcing a 3.25rem
+   h1 on a 360px phone (which the previous unconditional rule did whenever TV
+   mode was left enabled) overflows the screen. */
+@media (min-width: 768px) {
+  [data-tv-mode='true'] h1 {
+    font-size: 3.25rem !important;
+    line-height: 1.15 !important;
+  }
+
+  [data-tv-mode='true'] h2 {
+    font-size: 2.25rem !important;
+    line-height: 1.25 !important;
+  }
+
+  [data-tv-mode='true'] h3 {
+    font-size: 1.75rem !important;
+  }
+}
+
+/* TV remote friendly large buttons */
+[data-tv-mode='true'] button,
+[data-tv-mode='true'] .btn-tv {
+  min-height: 48px;
+}
+
+[data-tv-mode='true'] .tv-large-btn {
+  min-height: 60px;
+  font-size: 1.15rem;
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
+/**
+ * .tv-player-mode — applied to the player shell when a TV / leanback device is
+ * detected. Referenced by CinemaPlayer but previously undefined. It enlarges
+ * the control chrome so it stays legible from across a room.
+ */
+.tv-player-mode {
+  font-size: 1.125rem;
+}
+
+.tv-player-mode button {
+  min-height: 52px;
+  min-width: 52px;
+}
+
+.tv-player-mode svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* ==========================================================================
+   12. Reduced-motion & accessibility
+   --------------------------------------------------------------------------
+   The UI leans heavily on Ken Burns zooms, pulses and shimmer loops. Honour
+   the OS-level "reduce motion" setting (WCAG 2.3.3) instead of overriding it.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visually hidden but still focusable — used for the login PIN proxy input. */
+.sr-only-focusable {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}

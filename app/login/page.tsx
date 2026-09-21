@@ -16,18 +16,27 @@ import {
   UserPlus,
   X,
   UserCheck,
-  CheckCircle2,
-  Tv,
 } from 'lucide-react';
 import { profileService } from '@/lib/services/profileService';
-import { presenceService, ProfilePresence } from '@/lib/services/presenceService';
+import {
+  presenceService,
+  isPresenceOnline,
+  ProfilePresence,
+} from '@/lib/services/presenceService';
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get('redirect') || '/';
 
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  /*
+    Seeded from the service synchronously via a lazy initialiser rather than
+    assigned inside an effect. Populating it in the effect body meant the first
+    paint always rendered an empty profile grid and then immediately re-rendered
+    (a cascading render React now warns about), which showed up as a visible
+    flash of the "Who is watching?" card with no avatars in it.
+  */
+  const [profiles, setProfiles] = useState<UserProfile[]>(() => profileService.getAllProfiles());
   const [presenceMap, setPresenceMap] = useState<Record<string, ProfilePresence>>({});
   const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
   const [pin, setPin] = useState('');
@@ -41,9 +50,8 @@ function LoginContent() {
 
   const pinInputRef = useRef<HTMLInputElement>(null);
 
-  // Load profiles and presence
+  // Subscribe to profile + presence updates
   useEffect(() => {
-    setProfiles(profileService.getAllProfiles());
     const unsubProfile = profileService.subscribe(() => {
       setProfiles(profileService.getAllProfiles());
     });
@@ -58,13 +66,12 @@ function LoginContent() {
     };
   }, []);
 
-  // Auto focus pin input when profile selected
+  // Auto-focus the PIN field once the card has animated in.
   useEffect(() => {
-    if (selectedProfile?.pinProtected) {
-      setTimeout(() => {
-        pinInputRef.current?.focus();
-      }, 150);
-    }
+    if (!selectedProfile?.pinProtected) return;
+    const timer = setTimeout(() => pinInputRef.current?.focus(), 150);
+    // Cleared on unmount/re-select so a stale timer cannot steal focus back.
+    return () => clearTimeout(timer);
   }, [selectedProfile]);
 
   const performLogin = async (profileId: string, enteredPin: string = '', guestName?: string) => {
@@ -136,20 +143,29 @@ function LoginContent() {
     performLogin(guest.id, '', guest.name);
   };
 
-  const isOnline = (profileId: string) => {
-    return presenceService.isProfileOnline(profileId);
-  };
+  /*
+    Evaluated against the subscribed snapshot rather than the service singleton.
+    `presenceMap` is what actually triggers this component to re-render, so
+    reading it here is what keeps the online dots truthful — querying the
+    singleton instead left the state write as a dead re-render trigger.
+  */
+  const isOnline = (profileId: string) => isPresenceOnline(presenceMap[profileId]);
 
   const getLastSeen = (profileId: string) => {
     return presenceService.getLastSeenText(profileId);
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-[#05070c] text-white flex flex-col justify-center items-center px-4 py-10 sm:py-16 overflow-hidden selection:bg-cyan-500/30">
-      {/* Cinematic Ambient Glows */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[500px] bg-gradient-to-tr from-cyan-600/10 via-rose-600/15 to-emerald-600/10 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-[400px] h-[400px] bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute top-10 left-10 w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
+    <div className="relative min-h-screen-dynamic w-full bg-[#05070c] text-white flex flex-col justify-center items-center px-4 py-10 sm:py-16 pt-safe pb-safe overflow-hidden selection:bg-cyan-500/30">
+      {/*
+        Ambient glows. Sized relative to the viewport: at a fixed 700×500 with a
+        140px blur these bled well past a phone screen, and because the wrapper
+        is `overflow-hidden` the right-hand pair simply produced a lopsided wash
+        instead of a symmetric bloom.
+      */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120vw] max-w-[700px] h-[60vh] max-h-[500px] bg-gradient-to-tr from-cyan-600/10 via-rose-600/15 to-emerald-600/10 rounded-full blur-[100px] sm:blur-[140px] pointer-events-none" />
+      <div className="absolute bottom-10 -right-20 sm:right-10 w-[70vw] max-w-[400px] h-[70vw] max-h-[400px] bg-cyan-500/10 rounded-full blur-[100px] sm:blur-[120px] pointer-events-none" />
+      <div className="absolute top-10 -left-20 sm:left-10 w-[70vw] max-w-[400px] h-[70vw] max-h-[400px] bg-emerald-500/10 rounded-full blur-[100px] sm:blur-[120px] pointer-events-none" />
 
       {/* Brand Header */}
       <motion.div
@@ -358,16 +374,31 @@ function LoginContent() {
                     })}
                   </div>
 
-                  {/* Hidden real input that triggers instant change */}
+                  {/*
+                    The real input behind the four decorative PIN boxes.
+
+                    It was styled `absolute -left-9999px`, which is not a valid
+                    Tailwind class (arbitrary values need brackets:
+                    `-left-[9999px]`). With no offset applied the input stayed at
+                    its static position directly on top of the boxes, and
+                    `pointer-events-none` then blocked the tap-to-focus that
+                    mobile keyboards depend on — so on a phone the PIN screen
+                    could not be filled in at all.
+
+                    `.sr-only-focusable` clips it out of view while keeping it
+                    focusable and able to raise the numeric keypad.
+                  */}
                   <input
                     ref={pinInputRef}
                     type="password"
                     inputMode="numeric"
+                    autoComplete="one-time-code"
                     pattern="[0-9]*"
                     maxLength={4}
                     value={pin}
                     onChange={(e) => handlePinChange(e.target.value)}
-                    className="opacity-0 pointer-events-none absolute -left-9999px"
+                    aria-label="4-digit PIN"
+                    className="sr-only-focusable"
                   />
 
                   <p className="text-[11px] text-slate-500 mt-3 flex items-center justify-center gap-1.5">
@@ -398,17 +429,23 @@ function LoginContent() {
       {/* Add Guest Modal */}
       <AnimatePresence>
         {isAddGuestOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          /* `overflow-y-auto` + `min-h-full` so the card stays reachable when the
+             on-screen keyboard shrinks the viewport on a phone. */
+          <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain">
             <div
               className="fixed inset-0 bg-black/80 backdrop-blur-sm"
               onClick={() => setIsAddGuestOpen(false)}
             />
 
+            <div className="relative flex min-h-full items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-md bg-[#0d1420] border border-slate-700/60 rounded-2xl p-6 shadow-2xl z-10"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Create guest profile"
+              className="relative w-full max-w-md bg-[#0d1420] border border-slate-700/60 rounded-2xl p-5 sm:p-6 shadow-2xl z-10"
             >
               <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                 <div className="flex items-center gap-2.5">
@@ -454,12 +491,13 @@ function LoginContent() {
                     type="submit"
                     className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition-colors shadow-lg shadow-emerald-500/20 flex items-center gap-1.5"
                   >
-                    <span>Create & Enter</span>
+                    <span>Create &amp; Enter</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </form>
             </motion.div>
+            </div>
           </div>
         )}
       </AnimatePresence>

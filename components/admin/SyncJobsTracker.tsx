@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { SyncJob, SyncJobStatus } from '@/types/admin';
-import { RefreshCw, Play, CheckCircle2, XCircle, Clock, ArrowUpRight, Zap } from 'lucide-react';
+import { RefreshCw, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface SyncJobsTrackerProps {

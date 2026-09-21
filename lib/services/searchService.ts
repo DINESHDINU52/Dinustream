@@ -1,4 +1,4 @@
-import { SearchCategory, SearchFilters, SearchResultItem } from '@/types/search';
+import { SearchFilters, SearchResultItem } from '@/types/search';
 import { searchJellyfin, getMovies, getSeries, JellyfinItem } from '@/lib/api/jellyfin';
 import { MediaBadge } from '@/types/cinema';
 

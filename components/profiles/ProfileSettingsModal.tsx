@@ -71,29 +71,30 @@ export function ProfileSettingsModal({ isOpen, onClose }: ProfileSettingsModalPr
       title={`${profile.name}'s Profile & Settings`}
       description="Tailor independent playback preferences, continue watching, watch history, and subtitles."
       footer={
-        <div className="flex items-center justify-between w-full">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-slate-400">Switch profile:</span>
-            <button
-              onClick={() => switchProfile('dinu')}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+        /*
+          Footer was a pair of "Dinu | Kanmani" pills that looked like an
+          in-place toggle. They both called `switchProfile(id)`, which ignores
+          its argument and ends the session — so tapping the other name quietly
+          signed the user out mid-settings. It is now a single, clearly labelled
+          action alongside the profile currently in use.
+        */
+        <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <span className="text-[11px] font-mono text-slate-400">Signed in as</span>
+            <span
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold shadow-sm ${
                 profileId === 'dinu'
-                  ? 'bg-sky-500 text-white font-semibold shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-white/10'
+                  ? 'bg-sky-500 text-white'
+                  : profileId === 'kanmani'
+                  ? 'bg-rose-500 text-white'
+                  : 'bg-emerald-500 text-black'
               }`}
             >
-              Dinu
-            </button>
-            <button
-              onClick={() => switchProfile('kanmani')}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
-                profileId === 'kanmani'
-                  ? 'bg-purple-500 text-white font-semibold shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              Kanmani
-            </button>
+              {profile.name}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => void switchProfile()}>
+              Switch profile
+            </Button>
           </div>
 
           <Button variant="primary" size="sm" onClick={onClose}>

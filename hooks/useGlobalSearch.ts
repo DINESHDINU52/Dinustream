@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { SearchCategory, SearchFilters, SearchResultItem } from '@/types/search';
+import { SearchFilters, SearchResultItem } from '@/types/search';
 import { searchService } from '@/lib/services/searchService';
 import { useDebounce } from './useDebounce';
 

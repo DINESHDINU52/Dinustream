@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ServiceTelemetry } from '@/types/admin';
-import { Server, HardDriveDownload, Cloud, MessageSquare, CheckCircle2, AlertTriangle, XCircle, Activity } from 'lucide-react';
+import { Server, HardDriveDownload, Cloud, MessageSquare, AlertTriangle, XCircle, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface SystemHealthGaugesProps {
