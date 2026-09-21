@@ -41,23 +41,6 @@ export const AtmosIntro: React.FC<AtmosIntroProps> = ({
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // 1. Fetch hosted local SSD clips dynamically from /opt/dinustream/cache/dolby
-  useEffect(() => {
-    let isMounted = true;
-    fetchHostedDolbyClips().then((hostedClips) => {
-      if (!isMounted) return;
-      if (hostedClips && hostedClips.length > 0) {
-        const nextClip = getNextRandomAtmosClip(hostedClips);
-        setSelectedClip(nextClip);
-        setVideoSrc(nextClip.localPath);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   const handleFinish = useCallback(() => {
     if (hasTriggeredReady) return;
     setHasTriggeredReady(true);
@@ -67,6 +50,36 @@ export const AtmosIntro: React.FC<AtmosIntroProps> = ({
       onReady();
     }
   }, [hasTriggeredReady, onSkip, onReady]);
+
+  // 1. Check if custom server-hosted SSD clips exist in /opt/dinustream/cache/dolby
+  useEffect(() => {
+    let isMounted = true;
+    fetchHostedDolbyClips().then((hostedClips) => {
+      if (!isMounted) return;
+      // Only override if actual custom server clips exist (isHosted === true)
+      if (hostedClips && hostedClips.length > 0 && hostedClips[0].isHosted) {
+        const nextClip = getNextRandomAtmosClip(hostedClips);
+        setSelectedClip(nextClip);
+        setVideoSrc(nextClip.localPath);
+      }
+    });
+
+    // Safety timeout: ensure intro never takes too long and site never feels laggy
+    const safetyTimeout = setTimeout(() => {
+      if (!isSyncComplete) {
+        setIsSyncComplete(true);
+        setProgressPct(100);
+        setTimeout(() => {
+          handleFinish();
+        }, 300);
+      }
+    }, 7000);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimeout);
+    };
+  }, [handleFinish, isSyncComplete]);
 
   // 2. Drive the sync progress bar seamlessly matching the video playback
   const handleTimeUpdate = () => {
@@ -115,6 +128,7 @@ export const AtmosIntro: React.FC<AtmosIntroProps> = ({
           ref={videoRef}
           src={videoSrc}
           autoPlay
+          preload="auto"
           muted={false}
           playsInline
           onLoadedData={() => setIsVideoLoaded(true)}

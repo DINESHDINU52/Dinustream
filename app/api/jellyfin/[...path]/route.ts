@@ -181,9 +181,13 @@ export async function GET(
       });
     }
 
-    // Default: JSON response
+    // Default: JSON response with high-performance browser caching
     const data = await upstreamRes.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, {
+      headers: {
+        'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
+      },
+    });
   } catch (error) {
     console.error('[Jellyfin Proxy GET Error]:', error);
     return NextResponse.json(

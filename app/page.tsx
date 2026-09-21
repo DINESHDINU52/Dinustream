@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
+import { mediaCache } from '@/lib/cache/mediaCache';
 import { MediaItem } from '@/types/cinema';
 import { SyncAndPlayButton } from '@/components/sync';
 import { Play, Zap, Film, Sparkles, Tv, Star, Flame, Bookmark, ShieldCheck } from 'lucide-react';
@@ -24,14 +25,15 @@ export default function CinemaHomePage() {
   const router = useRouter();
   const { profile, companionProfile, continueWatching, myList, toggleMyList } = useActiveProfile();
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [featuredItems, setFeaturedItems] = useState<MediaItem[]>(() => mediaCache.getInstantValue('featured_7') || []);
+  const [movies, setMovies] = useState<MediaItem[]>(() => mediaCache.getInstantValue('movies_50') || []);
+  const [series, setSeries] = useState<MediaItem[]>(() => mediaCache.getInstantValue('series_20') || []);
+  const [recentlyAdded, setRecentlyAdded] = useState<MediaItem[]>(() => mediaCache.getInstantValue('recent_20') || []);
+  const [newlyAddedMovies, setNewlyAddedMovies] = useState<MediaItem[]>(() => mediaCache.getInstantValue('new_movies_20') || []);
 
-  const [featuredItems, setFeaturedItems] = useState<MediaItem[]>([]);
-  const [movies, setMovies] = useState<MediaItem[]>([]);
-  const [series, setSeries] = useState<MediaItem[]>([]);
-  const [recentlyAdded, setRecentlyAdded] = useState<MediaItem[]>([]);
-  const [newlyAddedMovies, setNewlyAddedMovies] = useState<MediaItem[]>([]);
+  const hasCachedData = (movies.length > 0 || featuredItems.length > 0);
+  const [loading, setLoading] = useState(!hasCachedData);
+  const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('all');
 
   const [toastInfo, setToastInfo] = useState<{ message: string; subtext?: string } | null>(null);
@@ -39,7 +41,9 @@ export default function CinemaHomePage() {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   const loadMediaData = async () => {
-    setLoading(true);
+    if (!hasCachedData) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [featured, moviesData, seriesData, recentData, newMoviesData] = await Promise.all([

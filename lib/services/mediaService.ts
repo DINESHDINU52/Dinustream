@@ -7,170 +7,167 @@ import {
   adaptJellyfinEpisodeToEpisode,
   adaptJellyfinSegmentsToMediaSegments,
 } from '@/lib/adapters/jellyfinAdapter';
+import { mediaCache } from '@/lib/cache/mediaCache';
 
 /**
  * Production DinuStream Media Service
  *
  * Exclusively communicates with the live Jellyfin media server.
- * Zero mock data fallbacks.
+ * Enhanced with multi-tier Stale-While-Revalidate caching for instant card and catalog rendering.
  */
 class MediaService {
   /**
-   * Fetch movies from Jellyfin (adapted into MediaItem[])
+   * Fetch movies from Jellyfin (adapted into MediaItem[]) with 10-minute cache
    */
   async getMovies(limit = 50): Promise<MediaItem[]> {
-    try {
-      const res = await jellyfinApi.getMovies(limit);
-      if (res && res.Items && res.Items.length > 0) {
-        return res.Items.map(adaptJellyfinItemToMediaItem);
+    return mediaCache.getOrFetch(`movies_${limit}`, async () => {
+      try {
+        const res = await jellyfinApi.getMovies(limit);
+        if (res && res.Items && res.Items.length > 0) {
+          return res.Items.map(adaptJellyfinItemToMediaItem);
+        }
+      } catch (err) {
+        console.error('[MediaService] getMovies failed:', err);
       }
-    } catch (err) {
-      console.error('[MediaService] getMovies failed:', err);
-    }
-    return [];
+      return [];
+    }, 10 * 60 * 1000);
   }
 
   /**
-   * Fetch series from Jellyfin (adapted into MediaItem[])
+   * Fetch series from Jellyfin (adapted into MediaItem[]) with 10-minute cache
    */
   async getSeries(limit = 50): Promise<MediaItem[]> {
-    try {
-      const res = await jellyfinApi.getSeries(limit);
-      if (res && res.Items && res.Items.length > 0) {
-        return res.Items.map(adaptJellyfinItemToMediaItem);
+    return mediaCache.getOrFetch(`series_${limit}`, async () => {
+      try {
+        const res = await jellyfinApi.getSeries(limit);
+        if (res && res.Items && res.Items.length > 0) {
+          return res.Items.map(adaptJellyfinItemToMediaItem);
+        }
+      } catch (err) {
+        console.error('[MediaService] getSeries failed:', err);
       }
-    } catch (err) {
-      console.error('[MediaService] getSeries failed:', err);
-    }
-    return [];
+      return [];
+    }, 10 * 60 * 1000);
   }
 
   /**
-   * Fetch recently added media items
-   */
-  
-  /**
-   * Fetch newly added movies specifically
+   * Fetch newly added movies specifically with 5-minute cache
    */
   async getNewlyAddedMovies(limit = 20): Promise<MediaItem[]> {
-    try {
-      const items = await jellyfinApi.getRecentlyAddedMovies(limit);
-      if (items && items.length > 0) {
-        return items.map(adaptJellyfinItemToMediaItem);
+    return mediaCache.getOrFetch(`new_movies_${limit}`, async () => {
+      try {
+        const items = await jellyfinApi.getRecentlyAddedMovies(limit);
+        if (items && items.length > 0) {
+          return items.map(adaptJellyfinItemToMediaItem);
+        }
+        // Fallback: Movies sorted by latest
+        const allMovies = await this.getMovies(limit);
+        if (allMovies && allMovies.length > 0) {
+          return [...allMovies].sort((a, b) => (b.releaseYear || 0) - (a.releaseYear || 0));
+        }
+      } catch (err) {
+        console.error('[MediaService] getNewlyAddedMovies failed:', err);
       }
-      // Fallback: Movies sorted by latest
-      const allMovies = await this.getMovies(limit);
-      if (allMovies && allMovies.length > 0) {
-        return [...allMovies].sort((a, b) => (b.releaseYear || 0) - (a.releaseYear || 0));
-      }
-    } catch (err) {
-      console.error('[MediaService] getNewlyAddedMovies failed:', err);
-    }
-    return [];
-  }
-
-  async getRecentlyAdded(limit = 20): Promise<MediaItem[]> {
-    try {
-      const items = await jellyfinApi.getRecentlyAddedItems(limit);
-      if (items && items.length > 0) {
-        return items.map(adaptJellyfinItemToMediaItem);
-      }
-    } catch (err) {
-      console.error('[MediaService] getRecentlyAdded failed:', err);
-    }
-    return [];
+      return [];
+    }, 5 * 60 * 1000);
   }
 
   /**
-   * Fetch hero item for the cinematic hero banner
+   * Fetch recently added media items with 5-minute cache
    */
-    /**
+  async getRecentlyAdded(limit = 20): Promise<MediaItem[]> {
+    return mediaCache.getOrFetch(`recent_${limit}`, async () => {
+      try {
+        const items = await jellyfinApi.getRecentlyAddedItems(limit);
+        if (items && items.length > 0) {
+          return items.map(adaptJellyfinItemToMediaItem);
+        }
+      } catch (err) {
+        console.error('[MediaService] getRecentlyAdded failed:', err);
+      }
+      return [];
+    }, 5 * 60 * 1000);
+  }
+
+  /**
    * Fetch featured items for the multi-slide DinuStream hero carousel
    */
-  async getFeaturedItems(limit = 6): Promise<MediaItem[]> {
-    try {
-      const [movies, series, recent] = await Promise.all([
-        this.getMovies(20),
-        this.getSeries(10),
-        this.getRecentlyAdded(15),
-      ]);
+  async getFeaturedItems(limit = 7): Promise<MediaItem[]> {
+    return mediaCache.getOrFetch(`featured_${limit}`, async () => {
+      try {
+        const [movies, series, recent] = await Promise.all([
+          this.getMovies(25),
+          this.getSeries(15),
+          this.getRecentlyAdded(15),
+        ]);
 
-      const itemsMap = new Map<string, MediaItem>();
+        const itemsMap = new Map<string, MediaItem>();
 
-      // Prioritize items with backdrops or strong overviews
-      const candidates = [...series, ...movies, ...recent];
-      for (const item of candidates) {
-        if (!itemsMap.has(item.id)) {
-          itemsMap.set(item.id, item);
+        // Prioritize items with backdrops or strong overviews
+        const candidates = [...series, ...movies, ...recent];
+        for (const item of candidates) {
+          if (!itemsMap.has(item.id)) {
+            itemsMap.set(item.id, item);
+          }
+          if (itemsMap.size >= limit) break;
         }
-        if (itemsMap.size >= limit) break;
-      }
 
-      return Array.from(itemsMap.values());
-    } catch (err) {
-      console.error('[MediaService] getFeaturedItems failed:', err);
-      return [];
-    }
+        return Array.from(itemsMap.values());
+      } catch (err) {
+        console.error('[MediaService] getFeaturedItems failed:', err);
+        return [];
+      }
+    }, 10 * 60 * 1000);
   }
 
   async getHeroItem(): Promise<MediaItem | null> {
-    try {
-      // Pick first movie from Jellyfin or first recently added
-      const recent = await this.getRecentlyAdded(10);
-      if (recent.length > 0) {
-        // Find one with a valid backdrop if possible
-        const withBackdrop = recent.find((m) => m.backdropUrl && !m.backdropUrl.includes('Primary'));
-        return withBackdrop || recent[0];
-      }
-      const movies = await this.getMovies(5);
-      if (movies.length > 0) {
-        return movies[0];
-      }
-    } catch (err) {
-      console.error('[MediaService] getHeroItem failed:', err);
-    }
-    return null;
+    const featured = await this.getFeaturedItems(1);
+    return featured.length > 0 ? featured[0] : null;
   }
 
   /**
-   * Fetch item details by ID
+   * Fetch item details by ID with 15-minute cache
    */
   async getMediaById(id: string): Promise<MediaItem | null> {
-    try {
-      const jItem = await jellyfinApi.getItemDetails(id);
-      if (jItem && jItem.Name) {
-        return adaptJellyfinItemToMediaItem(jItem);
+    return mediaCache.getOrFetch(`media_${id}`, async () => {
+      try {
+        const jItem = await jellyfinApi.getItemDetails(id);
+        if (jItem && jItem.Name) {
+          return adaptJellyfinItemToMediaItem(jItem);
+        }
+      } catch (err) {
+        console.error(`[MediaService] getMediaById(${id}) failed:`, err);
       }
-    } catch (err) {
-      console.error(`[MediaService] getMediaById(${id}) failed:`, err);
-    }
-    return null;
+      return null;
+    }, 15 * 60 * 1000);
   }
 
   /**
-   * Fetch all seasons and their episodes for a given series
+   * Fetch all seasons and their episodes for a given series with 15-minute cache
    */
   async getSeasonsForSeries(seriesId: string): Promise<Season[]> {
-    try {
-      const [jSeasons, jEpisodes] = await Promise.all([
-        jellyfinApi.getSeasons(seriesId),
-        jellyfinApi.getEpisodes(seriesId),
-      ]);
+    return mediaCache.getOrFetch(`seasons_${seriesId}`, async () => {
+      try {
+        const [jSeasons, jEpisodes] = await Promise.all([
+          jellyfinApi.getSeasons(seriesId),
+          jellyfinApi.getEpisodes(seriesId),
+        ]);
 
-      if (jSeasons && jSeasons.length > 0) {
-        const episodes = jEpisodes.map(adaptJellyfinEpisodeToEpisode);
+        if (jSeasons && jSeasons.length > 0) {
+          const episodes = jEpisodes.map(adaptJellyfinEpisodeToEpisode);
 
-        return jSeasons.map((s) => {
-          const seasonEpisodes = episodes.filter(
-            (e) => e.seasonNumber === (s.IndexNumber || 1)
-          );
-          return adaptJellyfinSeasonToSeason(s, seasonEpisodes);
-        });
+          return jSeasons.map((s) => {
+            const seasonEpisodes = episodes.filter(
+              (e) => e.seasonNumber === (s.IndexNumber || 1)
+            );
+            return adaptJellyfinSeasonToSeason(s, seasonEpisodes);
+          });
+        }
+      } catch (err) {
+        console.error(`[MediaService] getSeasonsForSeries(${seriesId}) failed:`, err);
       }
-    } catch (err) {
-      console.error(`[MediaService] getSeasonsForSeries(${seriesId}) failed:`, err);
-    }
-    return [];
+      return [];
+    }, 15 * 60 * 1000);
   }
 
   /**
@@ -186,44 +183,48 @@ class MediaService {
   }
 
   /**
-   * Fetch audio streams for custom player
+   * Fetch audio streams for custom player with 15-minute cache
    */
   async getAudioTracks(mediaId: string): Promise<Array<{ id: string; label: string; isDefault: boolean }>> {
-    try {
-      const tracks = await jellyfinApi.getAudioTracks(mediaId);
-      if (tracks && tracks.length > 0) {
-        return tracks.map((t) => ({
-          id: String(t.Index),
-          label: t.DisplayTitle || t.Title || t.Language || 'Audio Track',
-          isDefault: Boolean(t.IsDefault),
-        }));
+    return mediaCache.getOrFetch(`audio_${mediaId}`, async () => {
+      try {
+        const tracks = await jellyfinApi.getAudioTracks(mediaId);
+        if (tracks && tracks.length > 0) {
+          return tracks.map((t) => ({
+            id: String(t.Index),
+            label: t.DisplayTitle || t.Title || t.Language || 'Audio Track',
+            isDefault: Boolean(t.IsDefault),
+          }));
+        }
+      } catch (err) {
+        console.error(`[MediaService] getAudioTracks(${mediaId}) failed:`, err);
       }
-    } catch (err) {
-      console.error(`[MediaService] getAudioTracks(${mediaId}) failed:`, err);
-    }
-    return [];
+      return [];
+    }, 15 * 60 * 1000);
   }
 
   /**
-   * Fetch subtitle streams for custom player
+   * Fetch subtitle streams for custom player with 15-minute cache
    */
   async getSubtitleTracks(mediaId: string): Promise<Array<{ id: string; label: string; language?: string }>> {
-    try {
-      const subs = await jellyfinApi.getSubtitleTracks(mediaId);
-      if (subs && subs.length > 0) {
-        return [
-          { id: 'off', label: 'Off' },
-          ...subs.map((s) => ({
-            id: String(s.Index),
-            label: s.DisplayTitle || s.Title || s.Language || 'Subtitles',
-            language: s.Language,
-          })),
-        ];
+    return mediaCache.getOrFetch(`subs_${mediaId}`, async () => {
+      try {
+        const subs = await jellyfinApi.getSubtitleTracks(mediaId);
+        if (subs && subs.length > 0) {
+          return [
+            { id: 'off', label: 'Off' },
+            ...subs.map((s) => ({
+              id: String(s.Index),
+              label: s.DisplayTitle || s.Title || s.Language || 'Subtitles',
+              language: s.Language,
+            })),
+          ];
+        }
+      } catch (err) {
+        console.error(`[MediaService] getSubtitleTracks(${mediaId}) failed:`, err);
       }
-    } catch (err) {
-      console.error(`[MediaService] getSubtitleTracks(${mediaId}) failed:`, err);
-    }
-    return [{ id: 'off', label: 'Off' }];
+      return [{ id: 'off', label: 'Off' }];
+    }, 15 * 60 * 1000);
   }
 
   /**
@@ -247,6 +248,13 @@ class MediaService {
   async reportProgress(mediaId: string, seconds: number, isPaused: boolean): Promise<void> {
     const positionTicks = Math.floor(seconds * 10000000);
     await jellyfinApi.reportPlaybackProgress(mediaId, positionTicks, isPaused);
+  }
+
+  /**
+   * Invalidate local cache on demand
+   */
+  invalidateCache(prefix?: string): void {
+    mediaCache.invalidate(prefix);
   }
 }
 
