@@ -38,16 +38,24 @@ function WatchContent() {
     setLoading(true);
     setError(null);
     try {
-      const [item, seasonList] = await Promise.all([
-        mediaService.getMediaById(mediaId),
-        mediaService.getSeasonsForSeries(mediaId),
-      ]);
+      /*
+        Sequential on purpose. These used to run in a `Promise.all`, which meant
+        `getSeasonsForSeries` was called for movies too — and Jellyfin answers
+        `/Shows/{movieId}/Seasons` and `/Shows/{movieId}/Episodes` with 404. The
+        service swallowed them so playback still worked, but every movie logged
+        two upstream 404s and two error traces to the console, which buried the
+        real diagnostics.
+      */
+      const item = await mediaService.getMediaById(mediaId);
 
       if (!item) {
         setError('Media not found in private vault');
         return;
       }
       setMedia(item);
+
+      const seasonList =
+        item.type === 'series' ? await mediaService.getSeasonsForSeries(mediaId) : [];
       setSeasons(seasonList || []);
     } catch (err) {
       console.error('[WatchPage] Error loading item:', err);
@@ -220,6 +228,9 @@ function WatchContent() {
           isGroupSync={isSyncMode}
           groupId={groupId}
           groupName={DEFAULT_GROUP_NAME}
+          /* Dedicated playback route: fill the screen instead of letterboxing
+             a 16:9 box inside it. */
+          fillViewport
         />
       </main>
 

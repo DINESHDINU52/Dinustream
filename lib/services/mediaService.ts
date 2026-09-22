@@ -228,16 +228,32 @@ class MediaService {
   }
 
   /**
+   * Whether this server has the Media Segments API at all.
+   *
+   * `/Items/{id}/Segments` is provided by a plugin. When it is absent Jellyfin
+   * answers 404 for every item, so without this latch the app fired — and logged
+   * — one doomed request per title for the whole session. Latched once per page
+   * load rather than cached per item, because the answer is a property of the
+   * server, not of the media.
+   */
+  private segmentsApiAvailable = true;
+
+  /**
    * Fetch media segments (Intro/Recap/Outro)
    */
   async getMediaSegments(mediaId: string): Promise<MediaSegment[]> {
+    if (!this.segmentsApiAvailable) return [];
+
     try {
       const segments = await jellyfinApi.getMediaSegments(mediaId);
       if (segments && segments.length > 0) {
         return adaptJellyfinSegmentsToMediaSegments(segments);
       }
-    } catch {
-      // Ignored if server segment plugin not enabled
+    } catch (err) {
+      // A 404 means the plugin is not installed; stop asking.
+      if (err instanceof Error && err.message.includes('404')) {
+        this.segmentsApiAvailable = false;
+      }
     }
     return [];
   }
