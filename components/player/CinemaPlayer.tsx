@@ -92,6 +92,15 @@ export interface CinemaPlayerProps {
   isGroupSync?: boolean;
   groupId?: string;
   groupName?: string;
+  /**
+   * Start in full-window presentation.
+   *
+   * `/watch` is a dedicated playback route — there is nothing else on the page
+   * worth seeing — so its player should fill the viewport rather than sitting in
+   * a letterboxed 16:9 box with dead space around it. The player's own chrome
+   * carries a back button, and `T` still toggles out of it.
+   */
+  fillViewport?: boolean;
 }
 
 export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
@@ -107,6 +116,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   isGroupSync = false,
   groupId = 'group-movie-night',
   groupName = 'Movie Night ❤️',
+  fillViewport = false,
 }) => {
   const router = useRouter();
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -145,7 +155,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   const hasResumedRef = useRef(false);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isTheaterMode, setIsTheaterMode] = useState(false);
+  const [isTheaterMode, setIsTheaterMode] = useState(fillViewport);
   const [isPiPActive, setIsPiPActive] = useState(false);
 
   const activeItemId = episode?.id || media?.id;
