@@ -17,9 +17,9 @@ import { mediaCache } from '@/lib/cache/mediaCache';
  */
 class MediaService {
   /**
-   * Fetch movies from Jellyfin (adapted into MediaItem[]) with 10-minute cache
+   * Fetch movies from Jellyfin (adapted into MediaItem[]) with 3-minute cache
    */
-  async getMovies(limit = 50): Promise<MediaItem[]> {
+  async getMovies(limit = 50, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`movies_${limit}`, async () => {
       try {
         const res = await jellyfinApi.getMovies(limit);
@@ -30,13 +30,13 @@ class MediaService {
         console.error('[MediaService] getMovies failed:', err);
       }
       return [];
-    }, 10 * 60 * 1000);
+    }, 3 * 60 * 1000, forceRefresh);
   }
 
   /**
-   * Fetch series from Jellyfin (adapted into MediaItem[]) with 10-minute cache
+   * Fetch series from Jellyfin (adapted into MediaItem[]) with 3-minute cache
    */
-  async getSeries(limit = 50): Promise<MediaItem[]> {
+  async getSeries(limit = 50, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`series_${limit}`, async () => {
       try {
         const res = await jellyfinApi.getSeries(limit);
@@ -47,13 +47,13 @@ class MediaService {
         console.error('[MediaService] getSeries failed:', err);
       }
       return [];
-    }, 10 * 60 * 1000);
+    }, 3 * 60 * 1000, forceRefresh);
   }
 
   /**
-   * Fetch newly added movies specifically with 5-minute cache
+   * Fetch newly added movies specifically with 3-minute cache
    */
-  async getNewlyAddedMovies(limit = 20): Promise<MediaItem[]> {
+  async getNewlyAddedMovies(limit = 20, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`new_movies_${limit}`, async () => {
       try {
         const items = await jellyfinApi.getRecentlyAddedMovies(limit);
@@ -61,7 +61,7 @@ class MediaService {
           return items.map(adaptJellyfinItemToMediaItem);
         }
         // Fallback: Movies sorted by latest
-        const allMovies = await this.getMovies(limit);
+        const allMovies = await this.getMovies(limit, forceRefresh);
         if (allMovies && allMovies.length > 0) {
           return [...allMovies].sort((a, b) => (b.releaseYear || 0) - (a.releaseYear || 0));
         }
@@ -69,13 +69,13 @@ class MediaService {
         console.error('[MediaService] getNewlyAddedMovies failed:', err);
       }
       return [];
-    }, 5 * 60 * 1000);
+    }, 3 * 60 * 1000, forceRefresh);
   }
 
   /**
-   * Fetch recently added media items with 5-minute cache
+   * Fetch recently added media items with 3-minute cache
    */
-  async getRecentlyAdded(limit = 20): Promise<MediaItem[]> {
+  async getRecentlyAdded(limit = 20, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`recent_${limit}`, async () => {
       try {
         const items = await jellyfinApi.getRecentlyAddedItems(limit);
@@ -86,19 +86,19 @@ class MediaService {
         console.error('[MediaService] getRecentlyAdded failed:', err);
       }
       return [];
-    }, 5 * 60 * 1000);
+    }, 3 * 60 * 1000, forceRefresh);
   }
 
   /**
    * Fetch featured items for the multi-slide DinuStream hero carousel
    */
-  async getFeaturedItems(limit = 7): Promise<MediaItem[]> {
+  async getFeaturedItems(limit = 7, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`featured_${limit}`, async () => {
       try {
         const [movies, series, recent] = await Promise.all([
-          this.getMovies(25),
-          this.getSeries(15),
-          this.getRecentlyAdded(15),
+          this.getMovies(25, forceRefresh),
+          this.getSeries(15, forceRefresh),
+          this.getRecentlyAdded(15, forceRefresh),
         ]);
 
         const itemsMap = new Map<string, MediaItem>();
@@ -117,18 +117,18 @@ class MediaService {
         console.error('[MediaService] getFeaturedItems failed:', err);
         return [];
       }
-    }, 10 * 60 * 1000);
+    }, 3 * 60 * 1000, forceRefresh);
   }
 
-  async getHeroItem(): Promise<MediaItem | null> {
-    const featured = await this.getFeaturedItems(1);
+  async getHeroItem(forceRefresh = false): Promise<MediaItem | null> {
+    const featured = await this.getFeaturedItems(1, forceRefresh);
     return featured.length > 0 ? featured[0] : null;
   }
 
   /**
-   * Fetch item details by ID with 15-minute cache
+   * Fetch item details by ID with 3-minute cache
    */
-  async getMediaById(id: string): Promise<MediaItem | null> {
+  async getMediaById(id: string, forceRefresh = false): Promise<MediaItem | null> {
     return mediaCache.getOrFetch(`media_${id}`, async () => {
       try {
         const jItem = await jellyfinApi.getItemDetails(id);
@@ -139,13 +139,13 @@ class MediaService {
         console.error(`[MediaService] getMediaById(${id}) failed:`, err);
       }
       return null;
-    }, 15 * 60 * 1000);
+    }, 3 * 60 * 1000, forceRefresh);
   }
 
   /**
-   * Fetch all seasons and their episodes for a given series with 15-minute cache
+   * Fetch all seasons and their episodes for a given series with 3-minute cache
    */
-  async getSeasonsForSeries(seriesId: string): Promise<Season[]> {
+  async getSeasonsForSeries(seriesId: string, forceRefresh = false): Promise<Season[]> {
     return mediaCache.getOrFetch(`seasons_${seriesId}`, async () => {
       try {
         const [jSeasons, jEpisodes] = await Promise.all([
@@ -167,7 +167,7 @@ class MediaService {
         console.error(`[MediaService] getSeasonsForSeries(${seriesId}) failed:`, err);
       }
       return [];
-    }, 15 * 60 * 1000);
+    }, 3 * 60 * 1000, forceRefresh);
   }
 
   /**

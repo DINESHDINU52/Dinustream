@@ -18,7 +18,7 @@ import { mediaService } from '@/lib/services/mediaService';
 import { mediaCache } from '@/lib/cache/mediaCache';
 import { MediaItem } from '@/types/cinema';
 import { SyncAndPlayButton } from '@/components/sync';
-import { Play, Zap, Film, Sparkles, Tv, Star, Flame, Bookmark } from 'lucide-react';
+import { Play, Zap, Film, Sparkles, Tv, Star, Flame, Bookmark, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /** Shared horizontal gutters — matches the rails inside MediaCarousel. */
@@ -63,21 +63,27 @@ export default function CinemaHomePage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [toastInfo, setToastInfo] = useState<{ message: string; subtext?: string } | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
-  const loadMediaData = useCallback(async () => {
-    setLoading(true);
+  const loadMediaData = useCallback(async (forceRefresh = false) => {
+    if (forceRefresh) {
+      setIsRefreshing(true);
+      mediaCache.invalidate();
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [featured, moviesData, seriesData, recentData, newMoviesData] = await Promise.all([
-        mediaService.getFeaturedItems(7),
-        mediaService.getMovies(50),
-        mediaService.getSeries(20),
-        mediaService.getRecentlyAdded(20),
-        mediaService.getNewlyAddedMovies(20),
+        mediaService.getFeaturedItems(7, forceRefresh),
+        mediaService.getMovies(50, forceRefresh),
+        mediaService.getSeries(20, forceRefresh),
+        mediaService.getRecentlyAdded(20, forceRefresh),
+        mediaService.getNewlyAddedMovies(20, forceRefresh),
       ]);
 
       setFeaturedItems(featured || []);
@@ -87,12 +93,36 @@ export default function CinemaHomePage() {
       setNewlyAddedMovies(
         newMoviesData && newMoviesData.length > 0 ? newMoviesData : (moviesData || []).slice(0, 10)
       );
+
+      if (forceRefresh) {
+        setToastInfo({
+          message: 'Library Synced',
+          subtext: 'Updated with latest Jellyfin metadata and artwork',
+        });
+      }
     } catch (err) {
       console.error('[CinemaHomePage] Error loading library:', err);
       setError('Unable to load cinema catalog from media server');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
+  }, []);
+
+  /*
+    Subscribe to live cache updates so background revalidations immediately
+    update UI cards without requiring an explicit page reload.
+  */
+  useEffect(() => {
+    const unsubscribe = mediaCache.subscribe((key, data) => {
+      if (!data) return;
+      if (key === 'featured_7') setFeaturedItems(data as MediaItem[]);
+      else if (key === 'movies_50') setMovies(data as MediaItem[]);
+      else if (key === 'series_20') setSeries(data as MediaItem[]);
+      else if (key === 'recent_20') setRecentlyAdded(data as MediaItem[]);
+      else if (key === 'new_movies_20') setNewlyAddedMovies(data as MediaItem[]);
+    });
+    return unsubscribe;
   }, []);
 
   /*
@@ -366,6 +396,22 @@ export default function CinemaHomePage() {
                   </button>
                 );
               })}
+
+              {/* One-click Sync / Refresh Vault Button */}
+              <button
+                type="button"
+                aria-label="Sync Jellyfin Library"
+                title="Sync with Jellyfin"
+                disabled={isRefreshing}
+                onClick={() => loadMediaData(true)}
+                className={cn(
+                  'shrink-0 flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-semibold tracking-wide whitespace-nowrap transition-all cinema-focus backdrop-blur-xl ml-auto disabled:opacity-50',
+                  'bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 hover:text-sky-200 border border-sky-500/30 shadow-[0_0_12px_rgba(56,189,248,0.15)]'
+                )}
+              >
+                <RefreshCw className={cn('w-3.5 h-3.5 text-sky-400', isRefreshing && 'animate-spin')} />
+                <span>{isRefreshing ? 'Syncing...' : 'Sync Vault'}</span>
+              </button>
             </div>
           </div>
 

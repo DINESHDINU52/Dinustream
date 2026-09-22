@@ -12,10 +12,33 @@ interface CacheEntry<T> {
   ttl: number;
 }
 
+export type CacheUpdateListener = (key: string, data: unknown) => void;
+
 class MediaCacheManager {
   private memoryCache = new Map<string, CacheEntry<unknown>>();
   private readonly storagePrefix = 'dinustream_cache_';
   private inFlightRequests = new Map<string, Promise<unknown>>();
+  private listeners = new Set<CacheUpdateListener>();
+
+  /**
+   * Subscribe to cache updates (e.g. when background revalidation finishes)
+   */
+  subscribe(listener: CacheUpdateListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notifyListeners(key: string, data: unknown): void {
+    this.listeners.forEach((listener) => {
+      try {
+        listener(key, data);
+      } catch (err) {
+        console.warn(`[MediaCache] Error in cache subscriber for ${key}:`, err);
+      }
+    });
+  }
 
   /**
    * Get cached data or execute fetcher with Stale-While-Revalidate
@@ -23,17 +46,20 @@ class MediaCacheManager {
   async getOrFetch<T>(
     key: string,
     fetcher: () => Promise<T>,
-    ttlMs = 10 * 60 * 1000 // 10 minutes default TTL
+    ttlMs = 2 * 60 * 1000, // 2 minutes default TTL
+    forceRefresh = false
   ): Promise<T> {
-    const cached = this.get<T>(key);
+    if (!forceRefresh) {
+      const cached = this.get<T>(key);
 
-    if (cached) {
-      const isStale = Date.now() - cached.timestamp > cached.ttl;
-      if (isStale) {
-        // Revalidate in background without blocking caller
-        this.revalidateInBackground(key, fetcher, ttlMs);
+      if (cached) {
+        const isStale = Date.now() - cached.timestamp > cached.ttl;
+        if (isStale) {
+          // Revalidate in background without blocking caller
+          this.revalidateInBackground(key, fetcher, ttlMs);
+        }
+        return cached.data;
       }
-      return cached.data;
     }
 
     // Deduplicate in-flight requests for the exact same key
@@ -47,6 +73,7 @@ class MediaCacheManager {
           // Only cache non-empty results
           if (!Array.isArray(data) || data.length > 0) {
             this.set(key, data, ttlMs);
+            this.notifyListeners(key, data);
           }
         }
         return data;
@@ -99,7 +126,7 @@ class MediaCacheManager {
   /**
    * Store data in L1 memory and L2 storage
    */
-  set<T>(key: string, data: T, ttlMs = 10 * 60 * 1000): void {
+  set<T>(key: string, data: T, ttlMs = 2 * 60 * 1000): void {
     const entry: CacheEntry<T> = {
       data,
       timestamp: Date.now(),
@@ -122,7 +149,7 @@ class MediaCacheManager {
   }
 
   /**
-   * Revalidate key in background
+   * Revalidate key in background and broadcast fresh data to all active UI subscribers
    */
   private revalidateInBackground<T>(key: string, fetcher: () => Promise<T>, ttlMs: number): void {
     if (this.inFlightRequests.has(key)) return;
@@ -132,6 +159,7 @@ class MediaCacheManager {
         if (fresh !== null && fresh !== undefined) {
           if (!Array.isArray(fresh) || fresh.length > 0) {
             this.set(key, fresh, ttlMs);
+            this.notifyListeners(key, fresh);
           }
         }
       })
@@ -149,6 +177,8 @@ class MediaCacheManager {
    * Invalidate entire cache or keys matching prefix
    */
   invalidate(prefix?: string): void {
+    this.inFlightRequests.clear();
+
     if (!prefix) {
       this.memoryCache.clear();
       if (typeof window !== 'undefined') {

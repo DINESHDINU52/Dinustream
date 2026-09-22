@@ -191,12 +191,20 @@ export function adaptJellyfinItemToMediaItem(jItem: JellyfinItem): MediaItem {
       .map(formatSubtitleStreamLabel)
   );
 
-  // Posters & Backdrops from real Jellyfin proxy
-  const backdropUrl = jItem.BackdropImageTags && jItem.BackdropImageTags.length > 0
-    ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Backdrop`
+  // Posters & Backdrops from real Jellyfin proxy with cache-busting tags
+  const primaryTag = jItem.ImageTags?.Primary;
+  const posterUrl = primaryTag
+    ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary?tag=${encodeURIComponent(primaryTag)}`
     : `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary`;
 
-  const posterUrl = `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary`;
+  const backdropTag = jItem.BackdropImageTags && jItem.BackdropImageTags.length > 0
+    ? jItem.BackdropImageTags[0]
+    : undefined;
+  const backdropUrl = backdropTag
+    ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Backdrop?tag=${encodeURIComponent(backdropTag)}`
+    : (primaryTag
+        ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary?tag=${encodeURIComponent(primaryTag)}`
+        : `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary`);
 
   const ratingStr = jItem.CommunityRating
     ? `${jItem.CommunityRating.toFixed(1)}/10`
@@ -238,11 +246,14 @@ export function adaptJellyfinEpisodeToEpisode(jEpisode: JellyfinItem): Episode {
   // 4. Season or Series Primary poster
   let thumbnailUrl = '';
   if (jEpisode.ImageTags && jEpisode.ImageTags.Primary) {
-    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.Id)}/Images/Primary?tag=${jEpisode.ImageTags.Primary}`;
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.Id)}/Images/Primary?tag=${encodeURIComponent(jEpisode.ImageTags.Primary)}`;
   } else if (jEpisode.ParentThumbItemId) {
     thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentThumbItemId)}/Images/Primary`;
   } else if (jEpisode.ParentBackdropItemId) {
-    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentBackdropItemId)}/Images/Backdrop/0`;
+    const parentBackdropTag = jEpisode.ParentBackdropImageTags?.[0];
+    thumbnailUrl = parentBackdropTag
+      ? `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentBackdropItemId)}/Images/Backdrop/0?tag=${encodeURIComponent(parentBackdropTag)}`
+      : `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentBackdropItemId)}/Images/Backdrop/0`;
   } else if (jEpisode.SeasonId) {
     thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.SeasonId)}/Images/Primary`;
   } else if (jEpisode.SeriesId) {

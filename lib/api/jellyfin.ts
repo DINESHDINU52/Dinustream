@@ -133,7 +133,7 @@ export async function getLibraries(): Promise<JellyfinUserView[]> {
  */
 export async function getMovies(limit = 50, startIndex = 0): Promise<JellyfinItemsResponse> {
   return fetchJellyfin<JellyfinItemsResponse>(
-    `/items?includeItemTypes=Movie&recursive=true&limit=${limit}&startIndex=${startIndex}&fields=MediaStreams,Overview,Genres,People,UserData`
+    `/items?includeItemTypes=Movie&recursive=true&limit=${limit}&startIndex=${startIndex}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
   );
 }
 
@@ -142,7 +142,7 @@ export async function getMovies(limit = 50, startIndex = 0): Promise<JellyfinIte
  */
 export async function getSeries(limit = 50, startIndex = 0): Promise<JellyfinItemsResponse> {
   return fetchJellyfin<JellyfinItemsResponse>(
-    `/items?includeItemTypes=Series&recursive=true&limit=${limit}&startIndex=${startIndex}&fields=Overview,Genres,People,UserData`
+    `/items?includeItemTypes=Series&recursive=true&limit=${limit}&startIndex=${startIndex}&fields=Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
   );
 }
 
@@ -333,7 +333,7 @@ export async function searchJellyfin(
     const res = await fetchJellyfin<JellyfinItemsResponse>(
       `/items?searchTerm=${encodeURIComponent(query)}&includeItemTypes=${encodeURIComponent(
         includeItemTypes
-      )}&recursive=true&limit=30&fields=MediaStreams,Overview,Genres,People,UserData`
+      )}&recursive=true&limit=30&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
     );
     return res.Items || [];
   } catch {
@@ -347,7 +347,7 @@ export async function searchJellyfin(
 export async function getRecentlyAddedItems(limit = 20): Promise<JellyfinItem[]> {
   try {
     const res = await fetchJellyfin<JellyfinItemsResponse>(
-      `/items?sortBy=DateCreated&sortOrder=Descending&includeItemTypes=Movie,Series&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData`
+      `/items?sortBy=DateCreated&sortOrder=Descending&includeItemTypes=Movie,Series&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
     );
     return res.Items || [];
   } catch {
@@ -361,7 +361,7 @@ export async function getRecentlyAddedItems(limit = 20): Promise<JellyfinItem[]>
 export async function getResumeItems(limit = 12): Promise<JellyfinItem[]> {
   try {
     const res = await fetchJellyfin<JellyfinItemsResponse>(
-      `/items?filters=IsResumable&sortBy=DatePlayed&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData`
+      `/items?filters=IsResumable&sortBy=DatePlayed&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
     );
     return res.Items || [];
   } catch {
@@ -375,7 +375,7 @@ export async function getResumeItems(limit = 12): Promise<JellyfinItem[]> {
 export async function getRecentlyAddedMovies(limit = 20): Promise<JellyfinItem[]> {
   try {
     const res = await fetchJellyfin<JellyfinItemsResponse>(
-      `/items?includeItemTypes=Movie&sortBy=DateCreated,SortName&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData`
+      `/items?includeItemTypes=Movie&sortBy=DateCreated,SortName&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
     );
     return res.Items || [];
   } catch {

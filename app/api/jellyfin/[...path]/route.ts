@@ -202,9 +202,10 @@ export async function GET(
       }
     }
 
+    const hasTag = req.nextUrl.searchParams.has('tag');
     const upstreamRes = await fetch(targetUrl.toString(), {
       headers: forwardHeaders,
-      cache: isImage ? 'force-cache' : 'no-store',
+      cache: isImage && hasTag ? 'force-cache' : 'no-store',
     });
 
     if (!upstreamRes.ok && upstreamRes.status !== 206) {
@@ -218,10 +219,16 @@ export async function GET(
     if (isImage) {
       const contentType = upstreamRes.headers.get('content-type') || 'image/jpeg';
       const buffer = await upstreamRes.arrayBuffer();
+      // Tagged images are content-addressed and safe to cache long-term.
+      // Untagged images have a short cache so replacements appear quickly.
+      const cacheControl = hasTag
+        ? 'public, max-age=604800, immutable'
+        : 'public, max-age=120, stale-while-revalidate=600';
+
       return new NextResponse(buffer, {
         headers: {
           'Content-Type': contentType,
-          'Cache-Control': 'public, max-age=604800, immutable',
+          'Cache-Control': cacheControl,
         },
       });
     }
@@ -288,11 +295,13 @@ export async function GET(
       });
     }
 
-    // Default: JSON response with high-performance browser caching
+    // Default: JSON response — no browser caching so metadata updates in Jellyfin are immediately reflected
     const data = await upstreamRes.json();
     return NextResponse.json(data, {
       headers: {
-        'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
       },
     });
   } catch (error) {
