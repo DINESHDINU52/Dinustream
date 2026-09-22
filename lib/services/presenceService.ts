@@ -49,15 +49,21 @@ class PresenceService {
       if (firestore) {
         try {
           const colRef = collection(firestore, 'dinustream_presence');
-          this.unsubscribeFirestore = onSnapshot(colRef, (snapshot) => {
-            snapshot.forEach((d) => {
-              const data = d.data() as ProfilePresence;
-              if (data && data.profileId) {
-                this.presences.set(data.profileId, data);
-              }
-            });
-            this.notify();
-          });
+          this.unsubscribeFirestore = onSnapshot(
+            colRef,
+            (snapshot) => {
+              snapshot.forEach((d) => {
+                const data = d.data() as ProfilePresence;
+                if (data && data.profileId) {
+                  this.presences.set(data.profileId, data);
+                }
+              });
+              this.notify();
+            },
+            (err) => {
+              console.warn('[Presence] Firestore presence listener error:', err.message);
+            }
+          );
         } catch (err) {
           console.warn('[Presence] Firestore presence listener error:', err);
         }

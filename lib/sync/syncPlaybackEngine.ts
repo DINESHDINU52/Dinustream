@@ -125,14 +125,20 @@ export class SyncPlaybackEngine {
       if (firestore) {
         try {
           const docRef = doc(firestore, 'dinustream_sync_rooms', this.groupId);
-          this.unsubscribeFirestore = onSnapshot(docRef, (snap) => {
-            if (snap.exists()) {
-              const data = snap.data() as SyncEventPayload;
-              if (data && data.controller !== this.localUserId) {
-                this.handleIncomingPayload(data);
+          this.unsubscribeFirestore = onSnapshot(
+            docRef,
+            (snap) => {
+              if (snap.exists()) {
+                const data = snap.data() as SyncEventPayload;
+                if (data && data.controller !== this.localUserId) {
+                  this.handleIncomingPayload(data);
+                }
               }
+            },
+            (err) => {
+              console.warn('[SyncEngine] Firestore room sync fallback to local mesh:', err.message);
             }
-          });
+          );
         } catch (err) {
           console.warn('[SyncEngine] Firestore listener failed; using local real-time mesh:', err);
         }

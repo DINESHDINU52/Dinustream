@@ -38,8 +38,8 @@ export function SyncWatchOverlay({
     }
   };
 
-  const dinu = session.participants.dinu;
-  const kanmani = session.participants.kanmani;
+  const dinuPresence = session.participants?.dinu?.presence || 'Offline';
+  const kanmaniPresence = session.participants?.kanmani?.presence || 'Offline';
 
   return (
     <>
@@ -89,10 +89,10 @@ export function SyncWatchOverlay({
                 <div className="flex items-center justify-between">
                   <span className="text-slate-300 font-medium">Dinu</span>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-slate-400">{dinu.presence}</span>
+                    <span className="text-[10px] text-slate-400">{dinuPresence}</span>
                     <span
                       className={`w-2 h-2 rounded-full transition-all duration-300 ${getPresenceColor(
-                        dinu.presence
+                        dinuPresence
                       )}`}
                     />
                   </div>
@@ -102,10 +102,10 @@ export function SyncWatchOverlay({
                 <div className="flex items-center justify-between">
                   <span className="text-slate-300 font-medium">Kanmani</span>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-slate-400">{kanmani.presence}</span>
+                    <span className="text-[10px] text-slate-400">{kanmaniPresence}</span>
                     <span
                       className={`w-2 h-2 rounded-full transition-all duration-300 ${getPresenceColor(
-                        kanmani.presence
+                        kanmaniPresence
                       )}`}
                     />
                   </div>

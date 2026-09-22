@@ -41,5 +41,20 @@ service cloud.firestore {
                      && request.resource.data.isTyping is bool;
       }
     }
+
+    // Direct room sync cross-device broadcast
+    match /dinustream_sync_rooms/{roomId} {
+      allow read, write: if true;
+    }
+
+    // Direct user presence broadcast
+    match /dinustream_presence/{profileId} {
+      allow read, write: if true;
+    }
+
+    // Watch groups fallback
+    match /dinustream_watch_groups/{groupId} {
+      allow read, write: if true;
+    }
   }
 }

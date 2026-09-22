@@ -102,16 +102,22 @@ class WatchTogetherService {
 
     try {
       const docRef = doc(firestore, 'dinustream_watch_groups', roomId);
-      this.firestoreUnsub = onSnapshot(docRef, (snap) => {
-        if (snap.exists()) {
-          const cloudGroup = snap.data() as WatchGroup;
-          if (cloudGroup && cloudGroup.id === roomId) {
-            this.group = cloudGroup;
-            this.saveLocal();
-            this.notify();
+      this.firestoreUnsub = onSnapshot(
+        docRef,
+        (snap) => {
+          if (snap.exists()) {
+            const cloudGroup = snap.data() as WatchGroup;
+            if (cloudGroup && cloudGroup.id === roomId) {
+              this.group = cloudGroup;
+              this.saveLocal();
+              this.notify();
+            }
           }
+        },
+        (err) => {
+          console.warn('[WatchTogether] Firestore room subscribe error:', err.message);
         }
-      });
+      );
     } catch (err) {
       console.warn('[WatchTogether] Firestore room subscribe error:', err);
     }
