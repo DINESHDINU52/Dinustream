@@ -88,6 +88,12 @@ export default function SeriesDetailsPage() {
     return () => clearTimeout(timer);
   }, [toastInfo]);
 
+  useEffect(() => {
+    if (seasons.length > 0 && !seasons.some((s) => s.seasonNumber === selectedSeasonNumber)) {
+      setSelectedSeasonNumber(seasons[0].seasonNumber);
+    }
+  }, [seasons, selectedSeasonNumber]);
+
   const isSaved = media ? myList.includes(media.id) : false;
 
   const activeSeason = useMemo(

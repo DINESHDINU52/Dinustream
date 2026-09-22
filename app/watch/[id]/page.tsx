@@ -177,6 +177,29 @@ function WatchContent() {
     );
   }
 
+  if (media.type === 'series' && allEpisodes.length === 0) {
+    return (
+      <div className="min-h-screen-dynamic bg-[#05070c] flex flex-col justify-center items-center p-4">
+        <div className="max-w-md w-full">
+          <ErrorState
+            title="Episodes Not Available"
+            message="No video files for this series are currently indexed in your media vault."
+            onRetry={() => (id ? loadSession(id) : router.push('/'))}
+          />
+          <div className="mt-6 text-center">
+            <Button
+              variant="secondary"
+              icon={<ArrowLeft className="w-4 h-4" />}
+              onClick={() => router.push('/')}
+            >
+              Back to Catalog
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen-dynamic bg-[#05080f] text-white flex flex-col selection:bg-rose-500/30">
       {/*

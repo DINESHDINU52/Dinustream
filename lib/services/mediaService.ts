@@ -150,19 +150,22 @@ class MediaService {
     return mediaCache.getOrFetch(`seasons_${seriesId}`, async () => {
       try {
         const [jSeasons, jEpisodes] = await Promise.all([
-          jellyfinApi.getSeasons(seriesId),
-          jellyfinApi.getEpisodes(seriesId),
+          jellyfinApi.getSeasons(seriesId, forceRefresh),
+          jellyfinApi.getEpisodes(seriesId, undefined, forceRefresh),
         ]);
 
         if (jSeasons && jSeasons.length > 0) {
           const episodes = jEpisodes.map(adaptJellyfinEpisodeToEpisode);
 
-          return jSeasons.map((s) => {
-            const seasonEpisodes = episodes.filter(
-              (e) => e.seasonNumber === (s.IndexNumber || 1)
-            );
-            return adaptJellyfinSeasonToSeason(s, seasonEpisodes);
-          });
+          return jSeasons
+            .map((s) => {
+              const seasonEpisodes = episodes.filter(
+                (e) => e.seasonNumber === (s.IndexNumber || 1)
+              );
+              return adaptJellyfinSeasonToSeason(s, seasonEpisodes);
+            })
+            // Only keep seasons that contain playable media files
+            .filter((season) => season.episodes.length > 0);
         }
       } catch (err) {
         console.error(`[MediaService] getSeasonsForSeries(${seriesId}) failed:`, err);

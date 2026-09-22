@@ -143,6 +143,7 @@ export function usePlaybackSession({
         const resolved = await resolveStreamSource(itemId, {
           deviceId,
           audioStreamIndex: selectedAudioIndex,
+          subtitleStreamIndex: selectedSubtitleIndex,
         });
         if (cancelled) return;
         setNegotiated(resolved);

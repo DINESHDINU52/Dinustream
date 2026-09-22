@@ -142,7 +142,7 @@ export async function GET(
     } else if (subPath.startsWith('shows/') && subPath.endsWith('/episodes')) {
       const sId = subPath.split('/')[1];
       jPath = `/Shows/${encodeURIComponent(sId)}/Episodes`;
-    } else if (subPath.startsWith('items/') && !subPath.includes('/')) {
+    } else if (subPath.startsWith('items/') && !subPath.slice('items/'.length).includes('/')) {
       const itemId = subPath.replace('items/', '');
       jPath = `/Users/${encodeURIComponent(userId)}/Items/${encodeURIComponent(itemId)}`;
     } else if (isVideoPath) {

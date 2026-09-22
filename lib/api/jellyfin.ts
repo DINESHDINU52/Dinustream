@@ -70,6 +70,7 @@ export interface JellyfinItem {
   ParentBackdropItemId?: string;
   ParentBackdropImageTags?: string[];
   Path?: string;
+  LocationType?: string;
 }
 
 export interface JellyfinItemsResponse {
@@ -164,24 +165,27 @@ export async function getSeries(limit = 50, startIndex = 0, forceRefresh = false
  */
 export async function getSeasons(seriesId: string, forceRefresh = false): Promise<JellyfinItem[]> {
   const res = await fetchJellyfin<{ Items: JellyfinItem[] }>(
-    `/shows/${encodeURIComponent(seriesId)}/seasons?fields=Overview,UserData`,
+    `/shows/${encodeURIComponent(seriesId)}/seasons?isMissing=false&fields=Overview,UserData,LocationType`,
     undefined,
     forceRefresh
   );
-  return res.Items || [];
+  return (res.Items || []).filter((s) => s.LocationType !== 'Virtual');
 }
 
 /**
  * 5. Episodes
  */
 export async function getEpisodes(seriesId: string, seasonId?: string, forceRefresh = false): Promise<JellyfinItem[]> {
-  const query = seasonId ? `?seasonId=${encodeURIComponent(seasonId)}&fields=MediaStreams,Overview,UserData` : '?fields=MediaStreams,Overview,UserData';
+  const query = seasonId
+    ? `?seasonId=${encodeURIComponent(seasonId)}&isMissing=false&fields=MediaStreams,Overview,UserData,LocationType,Path`
+    : '?isMissing=false&fields=MediaStreams,Overview,UserData,LocationType,Path';
   const res = await fetchJellyfin<{ Items: JellyfinItem[] }>(
     `/shows/${encodeURIComponent(seriesId)}/episodes${query}`,
     undefined,
     forceRefresh
   );
-  return res.Items || [];
+  // Guarantee only real files with media on the server are returned
+  return (res.Items || []).filter((e) => e.LocationType !== 'Virtual' && Boolean(e.Path));
 }
 
 /**

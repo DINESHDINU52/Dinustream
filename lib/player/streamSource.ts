@@ -142,9 +142,8 @@ export async function resolveStreamSource(
   if (typeof options.audioStreamIndex === 'number') {
     body.AudioStreamIndex = options.audioStreamIndex;
   }
-  if (typeof options.subtitleStreamIndex === 'number') {
-    body.SubtitleStreamIndex = options.subtitleStreamIndex;
-  }
+  body.SubtitleStreamIndex =
+    typeof options.subtitleStreamIndex === 'number' ? options.subtitleStreamIndex : -1;
 
   const res = await fetch(
     `${PROXY_BASE}/items/${encodeURIComponent(itemId)}/playback-info`,
