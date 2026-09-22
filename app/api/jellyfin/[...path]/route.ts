@@ -295,13 +295,11 @@ export async function GET(
       });
     }
 
-    // Default: JSON response — no browser caching so metadata updates in Jellyfin are immediately reflected
+    // Default: JSON response — snappy cache with background revalidation so metadata loads instantly
     const data = await upstreamRes.json();
     return NextResponse.json(data, {
       headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
-        Expires: '0',
+        'Cache-Control': 'private, max-age=30, stale-while-revalidate=120',
       },
     });
   } catch (error) {

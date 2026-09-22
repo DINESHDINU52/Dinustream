@@ -74,7 +74,11 @@ export default function CinemaHomePage() {
       setIsRefreshing(true);
       mediaCache.invalidate();
     } else {
-      setLoading(true);
+      // Never block the user with a full-screen spinner if cached media is already available
+      setLoading((prev) => {
+        const hasCached = Boolean(mediaCache.getInstantValue('movies_50') || mediaCache.getInstantValue('featured_7'));
+        return hasCached ? false : prev;
+      });
     }
     setError(null);
     try {

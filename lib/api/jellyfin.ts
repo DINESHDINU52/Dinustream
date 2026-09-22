@@ -101,15 +101,24 @@ export interface JellyfinSegment {
 
 const BASE_URL = process.env.NEXT_PUBLIC_JELLYFIN_PROXY_URL || '/api/jellyfin';
 
-async function fetchJellyfin<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+async function fetchJellyfin<T>(
+  endpoint: string,
+  options?: RequestInit,
+  forceRefresh = false
+): Promise<T> {
+  const queryPrefix = endpoint.includes('?') ? '&' : '?';
+  const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}${
+    forceRefresh ? `${queryPrefix}_t=${Date.now()}` : ''
+  }`;
   const res = await fetch(url, {
     ...options,
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
+      ...(forceRefresh ? { 'Cache-Control': 'no-cache, no-store' } : {}),
       ...options?.headers,
     },
+    ...(forceRefresh ? { cache: 'no-store' } : {}),
   });
 
   if (!res.ok) {
@@ -123,35 +132,41 @@ async function fetchJellyfin<T>(endpoint: string, options?: RequestInit): Promis
 /**
  * 1. Libraries (User Views)
  */
-export async function getLibraries(): Promise<JellyfinUserView[]> {
-  const res = await fetchJellyfin<{ Items: JellyfinUserView[] }>('/user-views');
+export async function getLibraries(forceRefresh = false): Promise<JellyfinUserView[]> {
+  const res = await fetchJellyfin<{ Items: JellyfinUserView[] }>('/user-views', undefined, forceRefresh);
   return res.Items || [];
 }
 
 /**
  * 2. Movies
  */
-export async function getMovies(limit = 50, startIndex = 0): Promise<JellyfinItemsResponse> {
+export async function getMovies(limit = 50, startIndex = 0, forceRefresh = false): Promise<JellyfinItemsResponse> {
   return fetchJellyfin<JellyfinItemsResponse>(
-    `/items?includeItemTypes=Movie&recursive=true&limit=${limit}&startIndex=${startIndex}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
+    `/items?includeItemTypes=Movie&recursive=true&limit=${limit}&startIndex=${startIndex}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`,
+    undefined,
+    forceRefresh
   );
 }
 
 /**
  * 3. Series
  */
-export async function getSeries(limit = 50, startIndex = 0): Promise<JellyfinItemsResponse> {
+export async function getSeries(limit = 50, startIndex = 0, forceRefresh = false): Promise<JellyfinItemsResponse> {
   return fetchJellyfin<JellyfinItemsResponse>(
-    `/items?includeItemTypes=Series&recursive=true&limit=${limit}&startIndex=${startIndex}&fields=Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
+    `/items?includeItemTypes=Series&recursive=true&limit=${limit}&startIndex=${startIndex}&fields=Overview,Genres,People,UserData,ImageTags,BackdropImageTags`,
+    undefined,
+    forceRefresh
   );
 }
 
 /**
  * 4. Seasons
  */
-export async function getSeasons(seriesId: string): Promise<JellyfinItem[]> {
+export async function getSeasons(seriesId: string, forceRefresh = false): Promise<JellyfinItem[]> {
   const res = await fetchJellyfin<{ Items: JellyfinItem[] }>(
-    `/shows/${encodeURIComponent(seriesId)}/seasons?fields=Overview,UserData`
+    `/shows/${encodeURIComponent(seriesId)}/seasons?fields=Overview,UserData`,
+    undefined,
+    forceRefresh
   );
   return res.Items || [];
 }
@@ -159,10 +174,12 @@ export async function getSeasons(seriesId: string): Promise<JellyfinItem[]> {
 /**
  * 5. Episodes
  */
-export async function getEpisodes(seriesId: string, seasonId?: string): Promise<JellyfinItem[]> {
+export async function getEpisodes(seriesId: string, seasonId?: string, forceRefresh = false): Promise<JellyfinItem[]> {
   const query = seasonId ? `?seasonId=${encodeURIComponent(seasonId)}&fields=MediaStreams,Overview,UserData` : '?fields=MediaStreams,Overview,UserData';
   const res = await fetchJellyfin<{ Items: JellyfinItem[] }>(
-    `/shows/${encodeURIComponent(seriesId)}/episodes${query}`
+    `/shows/${encodeURIComponent(seriesId)}/episodes${query}`,
+    undefined,
+    forceRefresh
   );
   return res.Items || [];
 }
@@ -170,9 +187,11 @@ export async function getEpisodes(seriesId: string, seasonId?: string): Promise<
 /**
  * 6. Item Details
  */
-export async function getItemDetails(itemId: string): Promise<JellyfinItem> {
+export async function getItemDetails(itemId: string, forceRefresh = false): Promise<JellyfinItem> {
   return fetchJellyfin<JellyfinItem>(
-    `/items/${encodeURIComponent(itemId)}?fields=MediaStreams,Overview,Genres,People,UserData,BackdropImageTags`
+    `/items/${encodeURIComponent(itemId)}?fields=MediaStreams,Overview,Genres,People,UserData,BackdropImageTags`,
+    undefined,
+    forceRefresh
   );
 }
 
@@ -344,10 +363,12 @@ export async function searchJellyfin(
 /**
  * 14. Recently Added Items
  */
-export async function getRecentlyAddedItems(limit = 20): Promise<JellyfinItem[]> {
+export async function getRecentlyAddedItems(limit = 20, forceRefresh = false): Promise<JellyfinItem[]> {
   try {
     const res = await fetchJellyfin<JellyfinItemsResponse>(
-      `/items?sortBy=DateCreated&sortOrder=Descending&includeItemTypes=Movie,Series&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
+      `/items?sortBy=DateCreated&sortOrder=Descending&includeItemTypes=Movie,Series&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`,
+      undefined,
+      forceRefresh
     );
     return res.Items || [];
   } catch {
@@ -358,10 +379,12 @@ export async function getRecentlyAddedItems(limit = 20): Promise<JellyfinItem[]>
 /**
  * 15. Resumable / Continue Watching Items
  */
-export async function getResumeItems(limit = 12): Promise<JellyfinItem[]> {
+export async function getResumeItems(limit = 12, forceRefresh = false): Promise<JellyfinItem[]> {
   try {
     const res = await fetchJellyfin<JellyfinItemsResponse>(
-      `/items?filters=IsResumable&sortBy=DatePlayed&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
+      `/items?filters=IsResumable&sortBy=DatePlayed&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`,
+      undefined,
+      forceRefresh
     );
     return res.Items || [];
   } catch {
@@ -372,10 +395,12 @@ export async function getResumeItems(limit = 12): Promise<JellyfinItem[]> {
 /**
  * 16. Recently Added Movies
  */
-export async function getRecentlyAddedMovies(limit = 20): Promise<JellyfinItem[]> {
+export async function getRecentlyAddedMovies(limit = 20, forceRefresh = false): Promise<JellyfinItem[]> {
   try {
     const res = await fetchJellyfin<JellyfinItemsResponse>(
-      `/items?includeItemTypes=Movie&sortBy=DateCreated,SortName&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`
+      `/items?includeItemTypes=Movie&sortBy=DateCreated,SortName&sortOrder=Descending&recursive=true&limit=${limit}&fields=MediaStreams,Overview,Genres,People,UserData,ImageTags,BackdropImageTags`,
+      undefined,
+      forceRefresh
     );
     return res.Items || [];
   } catch {

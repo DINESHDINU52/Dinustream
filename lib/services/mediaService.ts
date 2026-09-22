@@ -22,7 +22,7 @@ class MediaService {
   async getMovies(limit = 50, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`movies_${limit}`, async () => {
       try {
-        const res = await jellyfinApi.getMovies(limit);
+        const res = await jellyfinApi.getMovies(limit, 0, forceRefresh);
         if (res && res.Items && res.Items.length > 0) {
           return res.Items.map(adaptJellyfinItemToMediaItem);
         }
@@ -39,7 +39,7 @@ class MediaService {
   async getSeries(limit = 50, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`series_${limit}`, async () => {
       try {
-        const res = await jellyfinApi.getSeries(limit);
+        const res = await jellyfinApi.getSeries(limit, 0, forceRefresh);
         if (res && res.Items && res.Items.length > 0) {
           return res.Items.map(adaptJellyfinItemToMediaItem);
         }
@@ -56,7 +56,7 @@ class MediaService {
   async getNewlyAddedMovies(limit = 20, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`new_movies_${limit}`, async () => {
       try {
-        const items = await jellyfinApi.getRecentlyAddedMovies(limit);
+        const items = await jellyfinApi.getRecentlyAddedMovies(limit, forceRefresh);
         if (items && items.length > 0) {
           return items.map(adaptJellyfinItemToMediaItem);
         }
@@ -78,7 +78,7 @@ class MediaService {
   async getRecentlyAdded(limit = 20, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`recent_${limit}`, async () => {
       try {
-        const items = await jellyfinApi.getRecentlyAddedItems(limit);
+        const items = await jellyfinApi.getRecentlyAddedItems(limit, forceRefresh);
         if (items && items.length > 0) {
           return items.map(adaptJellyfinItemToMediaItem);
         }
@@ -91,14 +91,15 @@ class MediaService {
 
   /**
    * Fetch featured items for the multi-slide DinuStream hero carousel
+   * Leverages same query keys (50, 20, 20) for automatic in-flight promise deduplication
    */
   async getFeaturedItems(limit = 7, forceRefresh = false): Promise<MediaItem[]> {
     return mediaCache.getOrFetch(`featured_${limit}`, async () => {
       try {
         const [movies, series, recent] = await Promise.all([
-          this.getMovies(25, forceRefresh),
-          this.getSeries(15, forceRefresh),
-          this.getRecentlyAdded(15, forceRefresh),
+          this.getMovies(50, forceRefresh),
+          this.getSeries(20, forceRefresh),
+          this.getRecentlyAdded(20, forceRefresh),
         ]);
 
         const itemsMap = new Map<string, MediaItem>();
@@ -131,7 +132,7 @@ class MediaService {
   async getMediaById(id: string, forceRefresh = false): Promise<MediaItem | null> {
     return mediaCache.getOrFetch(`media_${id}`, async () => {
       try {
-        const jItem = await jellyfinApi.getItemDetails(id);
+        const jItem = await jellyfinApi.getItemDetails(id, forceRefresh);
         if (jItem && jItem.Name) {
           return adaptJellyfinItemToMediaItem(jItem);
         }
