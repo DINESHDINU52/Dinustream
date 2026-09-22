@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { Badge } from '@/components/ui/Badge';
 import { CinematicOverlay } from '@/components/ui/CinematicOverlay';
-import { Play, Plus, Check } from 'lucide-react';
+import { Play, Plus, Check, Zap } from 'lucide-react';
 
 export interface MediaCardProps {
   media: MediaItem;
@@ -88,8 +88,8 @@ export const MediaCard: React.FC<MediaCardProps> = ({
             }}
             className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-semibold shadow-md transition-colors"
           >
-            <Play className="w-3 h-3 fill-current" />
-            <span>Play</span>
+            <Zap className="w-3 h-3 fill-current" />
+            <span>Sync &amp; Play</span>
           </button>
 
           <button

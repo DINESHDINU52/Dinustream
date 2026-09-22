@@ -31,7 +31,7 @@ function WatchContent() {
 
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
   const episodeId = searchParams.get('episode');
-  const isSyncMode = searchParams.get('sync') === 'true';
+  const isSyncMode = searchParams.get('sync') !== 'false';
   const groupId = searchParams.get('group') || DEFAULT_GROUP_ID;
 
   const loadSession = useCallback(async (mediaId: string) => {
@@ -127,19 +127,19 @@ function WatchContent() {
 
   const handleNext = () => {
     if (nextEpisode && media) {
-      router.push(`/watch/${media.id}?episode=${nextEpisode.id}`);
+      router.push(`/watch/${media.id}?episode=${nextEpisode.id}&sync=true`);
     }
   };
 
   const handlePrev = () => {
     if (prevEpisode && media) {
-      router.push(`/watch/${media.id}?episode=${prevEpisode.id}`);
+      router.push(`/watch/${media.id}?episode=${prevEpisode.id}&sync=true`);
     }
   };
 
   const handleSelectEpisode = (epId: string) => {
     if (media) {
-      router.push(`/watch/${media.id}?episode=${epId}`);
+      router.push(`/watch/${media.id}?episode=${epId}&sync=true`);
     }
   };
 

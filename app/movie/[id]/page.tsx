@@ -16,7 +16,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
 import { MediaItem } from '@/types/cinema';
 import { cn } from '@/lib/utils';
-import { Play, Plus, Check, Film, ArrowLeft, Volume2, Subtitles } from 'lucide-react';
+import { Play, Plus, Check, Film, ArrowLeft, Volume2, Subtitles, Zap } from 'lucide-react';
 
 /** Shared horizontal gutters, consistent with the home page rails. */
 const GUTTER = 'px-4 sm:px-8 lg:px-12';
@@ -238,11 +238,11 @@ export default function MovieDetailsPage() {
               <Button
                 variant="silver"
                 size="lg"
-                icon={<Play className="w-4 h-4 fill-current" />}
-                onClick={() => router.push(`/watch/${media.id}`)}
+                icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
+                onClick={() => router.push(`/watch/${media.id}?sync=true`)}
                 className="w-full sm:w-auto justify-center"
               >
-                Play Feature
+                Sync &amp; Play
               </Button>
 
               <Button

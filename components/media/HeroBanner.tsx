@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { Play, Plus, Check, Info } from 'lucide-react';
+import { Play, Plus, Check, Info, Zap } from 'lucide-react';
 
 export interface HeroBannerProps {
   media: MediaItem;
@@ -100,15 +100,15 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
         {/* Hero Actions: Play, Sync & Play, My List, More Info */}
         <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-3">
-          {/* ▶ Play */}
+          {/* ⚡ Sync & Play */}
           <Button
             variant="silver"
             size="lg"
-            icon={<Play className="w-4 h-4 fill-current" />}
+            icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
             onClick={onPlay}
             id="hero-action-play"
           >
-            Play
+            Sync &amp; Play
           </Button>
 
 

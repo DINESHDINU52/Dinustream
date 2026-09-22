@@ -216,9 +216,9 @@ export default function CinemaHomePage() {
     }
   };
 
-  /** Series open their episode list; movies go straight to playback. */
+  /** Series open their episode list; movies go straight to synchronized playback. */
   const playItem = (item: MediaItem) => {
-    router.push(item.type === 'series' ? `/series/${item.id}` : `/watch/${item.id}`);
+    router.push(item.type === 'series' ? `/series/${item.id}` : `/watch/${item.id}?sync=true`);
   };
 
   const chipCount: Record<string, number | undefined> = {
@@ -304,14 +304,14 @@ export default function CinemaHomePage() {
               <Button
                 variant="primary"
                 size="md"
-                icon={<Play className="w-4 h-4 fill-current" />}
+                icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
                 onClick={() => {
                   setIsDetailsModalOpen(false);
                   playItem(selectedMedia);
                 }}
                 className="w-full sm:flex-1 justify-center"
               >
-                {selectedMedia.type === 'series' ? 'Browse Episodes' : 'Play Direct Stream'}
+                {selectedMedia.type === 'series' ? 'Browse Episodes' : 'Sync & Play'}
               </Button>
 
               <Button
@@ -463,7 +463,7 @@ export default function CinemaHomePage() {
                 subtitle={`Pick up right where ${profile.name} left off with frame-accurate sync.`}
                 items={continueWatching}
                 type="continue"
-                onPlay={(item) => router.push(`/watch/${item.id}`)}
+                onPlay={(item) => router.push(`/watch/${item.id}?sync=true`)}
               />
             </div>
           )}

@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
-import { Play, Plus, Check, Star, Info, Sparkles } from 'lucide-react';
+import { Play, Plus, Check, Star, Info, Sparkles, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface MediaCardProps {
@@ -76,7 +76,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
     if (onPlay) {
       onPlay(media);
     } else {
-      router.push(`/watch/${media.id}`);
+      router.push(`/watch/${media.id}?sync=true`);
     }
   };
 
@@ -218,15 +218,15 @@ export const MediaCard: React.FC<MediaCardProps> = ({
         )}
 
         <div className="reveal-on-hover mt-2 flex items-center gap-1.5 sm:gap-2">
-          {/* Watch now */}
+          {/* Sync & Play */}
           <button
             onClick={handlePlay}
-            title="Watch Now"
-            aria-label={`Watch ${media.title}`}
+            title="Sync & Play"
+            aria-label={`Sync & Play ${media.title}`}
             className="flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg bg-white hover:bg-slate-100 text-slate-950 text-xs font-bold shadow-md transition-transform active:scale-95"
           >
-            <Play className="w-3.5 h-3.5 fill-current shrink-0" />
-            <span className="tracking-tight truncate">Watch</span>
+            <Zap className="w-3.5 h-3.5 text-sky-500 fill-sky-500 shrink-0" />
+            <span className="tracking-tight truncate">Sync &amp; Play</span>
           </button>
 
           {/* Watchlist toggle */}

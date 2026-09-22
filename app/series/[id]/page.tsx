@@ -15,7 +15,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
 import { Episode, Season, MediaItem } from '@/types/cinema';
 import { calculatePercentage, cn } from '@/lib/utils';
-import { Play, Plus, Check, ArrowLeft, Tv } from 'lucide-react';
+import { Play, Plus, Check, ArrowLeft, Tv, Zap } from 'lucide-react';
 
 /** Shared horizontal gutters, consistent with the home page rails. */
 const GUTTER = 'px-4 sm:px-8 lg:px-12';
@@ -126,7 +126,7 @@ export default function SeriesDetailsPage() {
    */
   const episodeHref = (episode: Episode) => {
     const seriesId = media?.id ?? id;
-    const query = new URLSearchParams({ episode: episode.id });
+    const query = new URLSearchParams({ episode: episode.id, sync: 'true' });
     return `/watch/${seriesId}?${query.toString()}`;
   };
 
@@ -265,11 +265,11 @@ export default function SeriesDetailsPage() {
                 <Button
                   variant="silver"
                   size="lg"
-                  icon={<Play className="w-4 h-4 fill-current" />}
+                  icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
                   onClick={() => router.push(episodeHref(resumeEpisode))}
                   className="w-full sm:w-auto justify-center"
                 >
-                  Play S{resumeEpisode.seasonNumber}:E{resumeEpisode.episodeNumber}
+                  Sync &amp; Play S{resumeEpisode.seasonNumber}:E{resumeEpisode.episodeNumber}
                 </Button>
               )}
 

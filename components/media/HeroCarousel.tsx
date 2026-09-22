@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { Badge } from '@/components/ui/Badge';
-import { Play, Plus, Check, Info, ChevronLeft, ChevronRight, Star, Sparkles } from 'lucide-react';
+import { Play, Plus, Check, Info, ChevronLeft, ChevronRight, Star, Sparkles, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface HeroCarouselProps {
@@ -359,14 +359,14 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
               target clears 44px.
             */}
             <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-2 sm:pt-3">
-              {/* Watch Now */}
+              {/* Sync & Play */}
               <button
                 onClick={() => onPlay?.(currentMedia)}
                 id="hero-action-play"
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-bold text-sm sm:text-base shadow-[0_4px_30px_rgba(255,255,255,0.3)] transition-transform hover:scale-105 active:scale-95 cinema-focus"
               >
-                <Play className="w-5 h-5 fill-current shrink-0" />
-                <span className="tracking-tight">Watch Now</span>
+                <Zap className="w-5 h-5 text-sky-500 fill-sky-500 shrink-0" />
+                <span className="tracking-tight">Sync &amp; Play</span>
               </button>
 
               {/* My List */}
