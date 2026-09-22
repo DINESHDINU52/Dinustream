@@ -15,6 +15,25 @@ const ALLOWED_ENDPOINTS = [
   'system',
 ];
 
+/**
+ * Remove credentials Jellyfin embeds in the playlists it generates.
+ *
+ * The whole point of this proxy is that the API key never reaches the browser —
+ * but Jellyfin writes `ApiKey=<key>` into every URL inside a generated
+ * master/variant playlist, so serving the manifest verbatim hands the key to the
+ * client in plain text. It is not needed there: the proxy attaches the
+ * Authorization header to each segment request server-side.
+ *
+ * Handled in three passes so no dangling `?` or `&` is left behind, which would
+ * otherwise corrupt the query string the segment routes depend on.
+ */
+function stripEmbeddedCredentials(playlist: string): string {
+  return playlist
+    .replace(/&(?:ApiKey|api_key)=[^&\s"']*/gi, '')
+    .replace(/\?(?:ApiKey|api_key)=[^&\s"']*&/gi, '?')
+    .replace(/\?(?:ApiKey|api_key)=[^&\s"']*/gi, '');
+}
+
 function getJellyfinConfig() {
   const serverUrl = process.env.JELLYFIN_SERVER_URL || 'http://127.0.0.1:8096';
   const apiKey = process.env.JELLYFIN_API_KEY || '';
@@ -218,7 +237,7 @@ export async function GET(
     */
     if (isHlsManifest) {
       const playlist = await upstreamRes.text();
-      return new NextResponse(playlist, {
+      return new NextResponse(stripEmbeddedCredentials(playlist), {
         status: upstreamRes.status,
         headers: {
           'Content-Type': 'application/vnd.apple.mpegurl',

@@ -41,8 +41,6 @@ import { SegmentTimelineMarkers } from './SegmentTimelineMarkers';
 import { SegmentSettingsPanel } from './SegmentSettingsPanel';
 import { NextEpisodeOverlay } from './NextEpisodeOverlay';
 import { EpisodeSelectorDrawer } from './EpisodeSelectorDrawer';
-import { AtmosIntro } from './AtmosIntro';
-import { useDolbyIntroPreference } from '@/hooks/useDolbyIntroPreference';
 import { useAspectRatioPreference } from '@/hooks/useAspectRatioPreference';
 import { useHlsPlayer, AUTO_QUALITY_ID } from '@/hooks/useHlsPlayer';
 import { usePlaybackSession, SUBTITLES_OFF } from '@/hooks/usePlaybackSession';
@@ -83,6 +81,13 @@ export interface CinemaPlayerProps {
   autoPlay?: boolean;
   seasons?: Season[];
   onSelectEpisode?: (episodeId: string) => void;
+  /**
+   * Cache-sync progress.
+   *
+   * Accepted for API compatibility but not rendered: its only consumer was the
+   * Dolby prelude, which has been removed. Sync progress is shown by
+   * SyncOverlay, which runs *before* the player mounts. No caller passes it.
+   */
   syncProgress?: SyncProgressData;
   isGroupSync?: boolean;
   groupId?: string;
@@ -99,7 +104,6 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   autoPlay = false,
   seasons,
   onSelectEpisode,
-  syncProgress,
   isGroupSync = false,
   groupId = 'group-movie-night',
   groupName = 'Movie Night ❤️',
@@ -116,7 +120,15 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   // Playback States
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(166 * 60); // 2h 46m in seconds default
+  /*
+    Starts at 0, not a hard-coded 2h46m. With the fake progress timer gone there
+    is nothing to reconcile an invented duration against, and a placeholder
+    duration made the scrubber show a bogus total (and allowed seeking past the
+    real end) for the moment before metadata arrived.
+  */
+  const [duration, setDuration] = useState(0);
+  /** True when playback only started because we muted it to satisfy autoplay. */
+  const [startedMuted, setStartedMuted] = useState(false);
   const [volume, setVolume] = useState(0.85);
   const [isMuted, setIsMuted] = useState(false);
   const [bufferedEnd, setBufferedEnd] = useState(0);
@@ -150,6 +162,9 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     when the container was one browsers cannot demux — which is every MKV.
   */
   const session = usePlaybackSession({ itemId: activeItemId, externalUrl });
+  /* Destructured so effects can depend on stable identities rather than on the
+     hook's result object, which is a new literal every render. */
+  const { notifyStarted, notifyProgress, resumeSeconds } = session;
 
   const activeVideoSrc = externalUrl || session.source?.url || '';
   const playbackMethod: 'hls' | 'direct' = externalUrl
@@ -536,58 +551,14 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   );
   const activeAspectOption = getAspectRatioOption(aspectRatioMode);
 
-  // Dolby Atmos Cinematic Prelude Intro State
-  const { isDolbyIntroEnabled, setDolbyIntroEnabled } = useDolbyIntroPreference();
-  const [isPlayingDolbyIntro, setIsPlayingDolbyIntro] = useState<boolean>(() => isDolbyIntroEnabled);
-
-  /**
-   * Hand over from the prelude to the feature.
-   *
-   * `setIsTheaterMode(true)` is the important line. The prelude runs edge-to-edge
-   * (see `isImmersive`), so without it the player would snap back to its inline
-   * 16:9 box the instant the clip ended — the feature would start in a small
-   * window right after a full-screen intro. Theater mode is the CSS full-window
-   * presentation, so this holds even when the browser refused native fullscreen;
-   * if native fullscreen *was* granted, `isFullscreen` already covers it and this
-   * is simply redundant.
-   */
-  const handleDolbyIntroComplete = useCallback(() => {
-    setIsPlayingDolbyIntro(false);
-    setIsTheaterMode(true);
-    if (videoRef.current) {
-      videoRef.current
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch(() => {
-          /* Autoplay refused — the centre Play button in the controls takes over. */
-        });
-    }
-  }, []);
-
-  const handleReplayDolbyIntro = useCallback(() => {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      setIsPlaying(false);
-    }
-    setIsPlayingDolbyIntro(true);
-    setActiveMenu(null);
-  }, [setActiveMenu]);
-
   /**
    * Whether the player should occupy the entire viewport.
    *
-   * The Dolby prelude is included unconditionally, and that is what makes it play
-   * "like a movie" without depending on a permission. Native `requestFullscreen`
-   * is only granted while a user gesture is active, and the prelude mounts from a
-   * route load rather than a click — so the OS-level request is usually refused
-   * and cannot be relied on. Treating the prelude as immersive in CSS gives the
-   * same visual result deterministically, and the native request becomes a
-   * best-effort upgrade on top of it rather than the mechanism itself.
-   *
-   * Because `handleDolbyIntroComplete` sets theater mode, the feature inherits
-   * the same full-viewport presentation with no visible transition.
+   * (The Dolby Atmos prelude that used to also force this has been removed —
+   * it delayed every playback behind a clip and was the source of the
+   * autoplay-blocked freeze.)
    */
-  const isImmersive = isFullscreen || isTheaterMode || isPlayingDolbyIntro;
+  const isImmersive = isFullscreen || isTheaterMode;
 
   // Lock body scroll while the player owns the viewport, to stop the page behind
   // it from jumping and to avoid a second scrollbar.
@@ -631,15 +602,52 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     };
   }, [isPlaying, activeMenu]);
 
-  // AutoPlay effect on mount
+  /*
+    Start playback.
+
+    THIS is what broke playback after the streaming rewrite. The old effect ran
+    once on mount and called `play()` immediately — which worked when the source
+    was a plain `src` attribute rendered synchronously. It is now attached
+    asynchronously (a PlaybackInfo round-trip, then a dynamic hls.js import), so
+    on mount the element had no source at all: `play()` rejected, the `.catch(() =>
+    {})` swallowed it, and nothing ever retried. The video simply never started.
+
+    It now waits for `hlsPlayer.isReady` — the manifest being parsed, or the
+    source being assigned for direct play — and re-arms whenever the source
+    changes (next episode, audio-track switch).
+  */
+  const autoPlayedSrcRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (autoPlay && videoRef.current && !isPlayingDolbyIntro) {
-      videoRef.current
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch(() => {});
-    }
-  }, [autoPlay, isPlayingDolbyIntro]);
+    if (!autoPlay) return;
+    const video = videoRef.current;
+    if (!video || !activeVideoSrc || !hlsPlayer.isReady) return;
+    // Only auto-start once per source.
+    if (autoPlayedSrcRef.current === activeVideoSrc) return;
+    autoPlayedSrcRef.current = activeVideoSrc;
+
+    void video
+      .play()
+      .then(() => setIsPlaying(true))
+      .catch(async () => {
+        /*
+          Autoplay *with sound* is blocked until the origin earns media
+          engagement. Rather than give up (which is what left a black frame),
+          retry muted and tell the viewer how to get audio back — the same ladder
+          every streaming site uses.
+        */
+        try {
+          video.muted = true;
+          await video.play();
+          setIsMuted(true);
+          setStartedMuted(true);
+          setIsPlaying(true);
+        } catch {
+          // Playback itself is blocked; the centre Play button takes over.
+          setIsPlaying(false);
+        }
+      });
+  }, [autoPlay, activeVideoSrc, hlsPlayer.isReady]);
 
   // Video Element event listeners
   useEffect(() => {
@@ -656,17 +664,17 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         so calling it from `timeupdate` (~4Hz) is safe. This is what makes resume
         work on another device — nothing used to write this value back.
       */
-      session.notifyProgress(video.currentTime, video.paused);
+      notifyProgress(video.currentTime, video.paused);
     };
 
     const handlePlaying = () => {
-      session.notifyStarted(video.currentTime);
+      notifyStarted(video.currentTime);
     };
 
     const handlePause = () => {
       // Sent immediately rather than on the throttle, so a pause is recorded even
       // if the viewer closes the tab straight afterwards.
-      session.notifyProgress(video.currentTime, true);
+      notifyProgress(video.currentTime, true);
     };
 
     const handleLoadedMetadata = () => {
@@ -697,13 +705,13 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         The 10s floor avoids "resuming" a few seconds in, and stopping 30s before
         the end is treated as finished rather than resumed.
       */
-      if (!hasResumedRef.current && session.resumeSeconds > 10) {
+      if (!hasResumedRef.current && resumeSeconds > 10) {
         const isEffectivelyFinished =
-          video.duration > 0 && session.resumeSeconds > video.duration - 30;
+          video.duration > 0 && resumeSeconds > video.duration - 30;
         hasResumedRef.current = true;
         if (!isEffectivelyFinished) {
-          video.currentTime = session.resumeSeconds;
-          setCurrentTime(session.resumeSeconds);
+          video.currentTime = resumeSeconds;
+          setCurrentTime(resumeSeconds);
         }
       }
     };
@@ -743,7 +751,25 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       video.removeEventListener('playing', handlePlaying);
       video.removeEventListener('pause', handlePause);
     };
-  }, [onNextEpisode, isGroupSync, groupId, router, addWatchHistory, duration, episode, media, session]);
+    /*
+      Depends on the individual stable callbacks, not on the whole `session`
+      object — that object is a fresh literal on every render, so listing it here
+      tore down and re-registered all five media listeners on every single
+      render.
+    */
+  }, [
+    onNextEpisode,
+    isGroupSync,
+    groupId,
+    router,
+    addWatchHistory,
+    duration,
+    episode,
+    media,
+    notifyStarted,
+    notifyProgress,
+    resumeSeconds,
+  ]);
 
   /*
     The "simulated playback time advancement" interval that used to live here has
@@ -887,14 +913,6 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         return;
       }
 
-      /*
-        The Dolby prelude renders on top of the player and binds its own
-        Space/M/F/S handlers. Without this guard both listeners fire for the same
-        keypress: Space would pause the prelude *and* start the feature
-        underneath it, and F would toggle fullscreen twice, cancelling itself out.
-      */
-      if (isPlayingDolbyIntro) return;
-
       switch (e.code) {
         case 'Space':
         case 'KeyK':
@@ -985,7 +1003,6 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     isTV,
     isFullscreen,
     isTheaterMode,
-    isPlayingDolbyIntro,
     volume,
   ]);
 
@@ -1074,8 +1091,14 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         */
         poster={episode ? episode.thumbnailUrl : media.backdropUrl}
         playsInline
-        preload="metadata"
-        crossOrigin="anonymous"
+        preload="auto"
+        /*
+          No `crossOrigin`. Every media and subtitle request is same-origin (they
+          go through /api/jellyfin), so CORS is not involved — but setting
+          `crossOrigin` switches the element to an anonymous fetch mode that
+          strips credentials and makes the browser require CORS headers it has no
+          reason to need. It is a way to break a working same-origin stream.
+        */
         className="relative z-10 w-full h-full transform-gpu"
         style={videoPresentationStyle}
         onClick={togglePlay}
@@ -1132,7 +1155,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         and no way forward. This reports what happened and offers the two useful
         recoveries: re-negotiate with the server, or leave.
       */}
-      {playbackError && !isPlayingDolbyIntro && (
+      {playbackError && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/85 px-6">
           <div className="max-w-md w-full text-center space-y-4 p-6 rounded-2xl glass-strong">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/15 border border-rose-500/30">
@@ -1175,10 +1198,27 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       )}
 
       {/*
+        Autoplay had to be muted to start. Without this the video plays in
+        silence and there is nothing to explain why.
+      */}
+      {startedMuted && isMuted && !playbackError && (
+        <button
+          onClick={() => {
+            toggleMute();
+            setStartedMuted(false);
+          }}
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full glass px-4 py-2 text-xs font-medium text-white transition-transform active:scale-95 cinema-focus"
+        >
+          <VolumeX className="h-4 w-4 text-amber-300" />
+          <span>Tap to unmute</span>
+        </button>
+      )}
+
+      {/*
         Negotiating / recovering indicator. Distinct from a decode failure: the
         server may simply still be starting the transcode.
       */}
-      {(session.isResolving || hlsPlayer.isRecovering) && !playbackError && !isPlayingDolbyIntro && (
+      {(session.isResolving || hlsPlayer.isRecovering) && !playbackError && (
         <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
           <span className="flex items-center gap-2.5 px-4 py-2.5 rounded-full glass text-xs text-slate-200">
             <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
@@ -1296,30 +1336,6 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         onPlayNow={handlePlayNow}
         onCancel={handleCancelAutoplay}
       />
-
-      {/* Atmos Cinematic Pre-Play & Sync System */}
-      <AnimatePresence>
-        {isPlayingDolbyIntro && (
-          /*
-            The prelude is handed the player's own fullscreen state and toggle
-            rather than reaching for the Fullscreen API itself — the player owns
-            `playerContainerRef`, and that is the element that has to go
-            fullscreen so the feature is already fullscreen when the prelude
-            hands over.
-          */
-          <AtmosIntro
-            movie={media}
-            syncProgress={syncProgress}
-            onReady={handleDolbyIntroComplete}
-            onSkip={handleDolbyIntroComplete}
-            isFullscreen={isFullscreen}
-            onToggleFullscreen={toggleFullscreen}
-            autoFullscreen
-            isIntroEnabled={isDolbyIntroEnabled}
-            onSetIntroEnabled={setDolbyIntroEnabled}
-          />
-        )}
-      </AnimatePresence>
 
       {/* Custom Player Controls Layer (Fades in/out on mouse movement) */}
       <motion.div
@@ -1930,36 +1946,6 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
                         >
                           {autoplayNextEpisode ? 'ON' : 'OFF'}
                         </button>
-                      </div>
-
-                      {/* Dolby Atmos Intro Setting */}
-                      <div className="flex items-center justify-between py-1 text-slate-300">
-                        <span className="flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Dolby Atmos Intro</span>
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setDolbyIntroEnabled(!isDolbyIntroEnabled)}
-                            id="dolby-intro-toggle"
-                            className={cn(
-                              'px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-colors',
-                              isDolbyIntroEnabled
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                : 'bg-white/10 text-slate-400'
-                            )}
-                          >
-                            {isDolbyIntroEnabled ? 'ON' : 'OFF'}
-                          </button>
-                          <button
-                            onClick={handleReplayDolbyIntro}
-                            id="replay-dolby-intro-btn"
-                            title="Play Dolby Atmos Intro Now"
-                            className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
-                          >
-                            Play
-                          </button>
-                        </div>
                       </div>
 
                       {/* Segment Skip Preferences */}

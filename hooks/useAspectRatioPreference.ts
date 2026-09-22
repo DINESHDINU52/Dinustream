@@ -17,8 +17,8 @@ const STORAGE_KEY = 'dinustream_aspect_ratio_mode';
  * on the screen you are watching on (a phone in landscape wants Fill, a 16:9 TV
  * is fine on Fit), so syncing it across devices would be actively unhelpful.
  *
- * Follows the same shape as useDolbyIntroPreference, including the `storage`
- * listener so changing the setting in one tab updates any other open tab.
+ * Includes a `storage` listener so changing the setting in one tab updates any
+ * other tab that is open.
  */
 export function useAspectRatioPreference() {
   const [mode, setModeState] = useState<AspectRatioMode>(() => {

@@ -43,15 +43,9 @@ const INITIAL_SERVICES: Record<string, ServiceTelemetry> = {
     endpoint: '/api/sync/health',
     lastChecked: 'Just now',
   },
-  dolbyCache: {
-    name: 'Dolby Atmos Audio Vault',
-    status: 'healthy' as const,
-    latencyMs: 6,
-    uptime: '100% Operational',
-    details: 'Local Cache • /opt/dinustream/cache/dolby',
-    endpoint: '/api/dolby/clips',
-    lastChecked: 'Just now',
-  },
+  /* The `dolbyCache` entry was removed along with the Dolby prelude. It was
+     never surfaced by `getTelemetry()` anyway, so nothing in the dashboard
+     depended on it. */
   googleDrive: {
     name: 'Google Drive Upstream',
     status: 'healthy' as const,
@@ -273,24 +267,8 @@ class AdminService {
       };
     }
 
-    // 3. Query Real Dolby Cache Health
-    try {
-      const dRes = await fetch('/api/dolby/clips');
-      if (dRes.ok) {
-        const dClips = await dRes.json();
-        this.services.dolbyCache = {
-          name: 'Dolby Atmos Audio Vault',
-          status: 'healthy',
-          latencyMs: 8,
-          uptime: 'Operational',
-          details: `${dClips.length || 0} Calibrated Masters in SSD Cache`,
-          endpoint: '/api/dolby/clips',
-          lastChecked: 'Just now',
-        };
-      }
-    } catch {
-      // Keep healthy baseline
-    }
+    /* The Dolby cache health probe was removed with the prelude — it polled
+       /api/dolby/clips, which no longer exists. */
 
     this.notifySubscribers();
   }
