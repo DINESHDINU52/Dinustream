@@ -32,6 +32,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
   className,
 }) => {
   const router = useRouter();
+  const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const isPoster = aspectRatio === 'poster';
 
@@ -117,7 +118,12 @@ export const MediaCard: React.FC<MediaCardProps> = ({
         off every full-size background fetch immediately, which is the single
         biggest data cost of the home page on a phone.
       */}
-      <div className="absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden bg-[#060a14]">
+        {/* Shimmer placeholder while image is downloading and decoding */}
+        {!imgLoaded && !imgError && (
+          <div className="absolute inset-0 bg-white/[0.04] animate-shimmer pointer-events-none" />
+        )}
+
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imageUrl}
@@ -125,19 +131,16 @@ export const MediaCard: React.FC<MediaCardProps> = ({
           aria-hidden="true"
           loading="lazy"
           decoding="async"
+          onLoad={() => setImgLoaded(true)}
           onError={() => setImgError(true)}
-          className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+          className={cn(
+            'w-full h-full object-cover transition-all duration-500 ease-out group-hover:scale-105',
+            imgLoaded ? 'opacity-100' : 'opacity-0'
+          )}
         />
 
-        {/*
-          Single bottom scrim confined to the lower half of the card.
-
-          There used to be two full-bleed gradients stacked over the whole
-          poster (one up, one down, at 90% and 60% opacity), so every piece of
-          artwork was veiled top to bottom and lost its contrast and colour. The
-          scrim now only covers the strip the text actually sits on.
-        */}
-        <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-[#04070f] via-[#04070f]/70 to-transparent" />
+        {/* Single bottom scrim confined to the lower half of the card */}
+        <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-[#04070f] via-[#04070f]/70 to-transparent pointer-events-none" />
       </div>
 
       {/* Top quality & special ribbon strip */}

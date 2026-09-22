@@ -20,6 +20,7 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
   onPlay,
   className,
 }) => {
+  const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
 
   const percent = calculatePercentage(item.progressMinutes, item.totalMinutes);
@@ -51,7 +52,11 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
       aria-label={`Resume ${item.title}`}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden bg-[#060a14]">
+        {!imgLoaded && !imgError && (
+          <div className="absolute inset-0 bg-white/[0.04] animate-shimmer pointer-events-none" />
+        )}
+
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={artwork}
@@ -59,10 +64,14 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
           aria-hidden="true"
           loading="lazy"
           decoding="async"
+          onLoad={() => setImgLoaded(true)}
           onError={() => setImgError(true)}
-          className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
+          className={cn(
+            'w-full h-full object-cover transition-all duration-500 ease-out group-hover:scale-[1.02]',
+            imgLoaded ? 'opacity-100' : 'opacity-0'
+          )}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-cinema-bg via-cinema-bg/40 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-cinema-bg via-cinema-bg/40 to-transparent pointer-events-none" />
       </div>
 
       {/* Centre play indicator */}

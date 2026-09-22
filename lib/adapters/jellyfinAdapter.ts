@@ -191,20 +191,30 @@ export function adaptJellyfinItemToMediaItem(jItem: JellyfinItem): MediaItem {
       .map(formatSubtitleStreamLabel)
   );
 
-  // Posters & Backdrops from real Jellyfin proxy with cache-busting tags
+  // Posters & Backdrops with WebP compression, retina dimensions, and cache-busting tags
   const primaryTag = jItem.ImageTags?.Primary;
-  const posterUrl = primaryTag
-    ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary?tag=${encodeURIComponent(primaryTag)}`
-    : `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary`;
+  const posterParams = new URLSearchParams({
+    fillWidth: '340',
+    fillHeight: '510',
+    quality: '85',
+    format: 'webp',
+  });
+  if (primaryTag) posterParams.set('tag', primaryTag);
+  const posterUrl = `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary?${posterParams.toString()}`;
 
   const backdropTag = jItem.BackdropImageTags && jItem.BackdropImageTags.length > 0
     ? jItem.BackdropImageTags[0]
     : undefined;
+  const backdropParams = new URLSearchParams({
+    maxWidth: '1280',
+    quality: '85',
+    format: 'webp',
+  });
+  if (backdropTag) backdropParams.set('tag', backdropTag);
+
   const backdropUrl = backdropTag
-    ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Backdrop?tag=${encodeURIComponent(backdropTag)}`
-    : (primaryTag
-        ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary?tag=${encodeURIComponent(primaryTag)}`
-        : `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Primary`);
+    ? `/api/jellyfin/items/${encodeURIComponent(jItem.Id)}/Images/Backdrop?${backdropParams.toString()}`
+    : posterUrl;
 
   const ratingStr = jItem.CommunityRating
     ? `${jItem.CommunityRating.toFixed(1)}/10`
@@ -239,27 +249,30 @@ export function adaptJellyfinEpisodeToEpisode(jEpisode: JellyfinItem): Episode {
   const totalMinutes = Math.floor(ticksToSeconds(jEpisode.RunTimeTicks) / 60) || 50;
   const progressMinutes = positionTicks > 0 ? Math.floor(ticksToSeconds(positionTicks) / 60) : undefined;
 
-  // Multi-tier thumbnail fallback strategy:
-  // 1. Episode Primary tag if explicitly present
-  // 2. Parent thumb (season thumbnail)
-  // 3. Parent backdrop (series wide backdrop)
-  // 4. Season or Series Primary poster
+  // Multi-tier thumbnail fallback strategy with WebP 16:9 sizing:
+  const epParams = new URLSearchParams({
+    fillWidth: '480',
+    fillHeight: '270',
+    quality: '85',
+    format: 'webp',
+  });
+
   let thumbnailUrl = '';
   if (jEpisode.ImageTags && jEpisode.ImageTags.Primary) {
-    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.Id)}/Images/Primary?tag=${encodeURIComponent(jEpisode.ImageTags.Primary)}`;
+    epParams.set('tag', jEpisode.ImageTags.Primary);
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.Id)}/Images/Primary?${epParams.toString()}`;
   } else if (jEpisode.ParentThumbItemId) {
-    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentThumbItemId)}/Images/Primary`;
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentThumbItemId)}/Images/Primary?${epParams.toString()}`;
   } else if (jEpisode.ParentBackdropItemId) {
     const parentBackdropTag = jEpisode.ParentBackdropImageTags?.[0];
-    thumbnailUrl = parentBackdropTag
-      ? `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentBackdropItemId)}/Images/Backdrop/0?tag=${encodeURIComponent(parentBackdropTag)}`
-      : `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentBackdropItemId)}/Images/Backdrop/0`;
+    if (parentBackdropTag) epParams.set('tag', parentBackdropTag);
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.ParentBackdropItemId)}/Images/Backdrop/0?${epParams.toString()}`;
   } else if (jEpisode.SeasonId) {
-    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.SeasonId)}/Images/Primary`;
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.SeasonId)}/Images/Primary?${epParams.toString()}`;
   } else if (jEpisode.SeriesId) {
-    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.SeriesId)}/Images/Primary`;
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.SeriesId)}/Images/Primary?${epParams.toString()}`;
   } else {
-    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.Id)}/Images/Primary`;
+    thumbnailUrl = `/api/jellyfin/items/${encodeURIComponent(jEpisode.Id)}/Images/Primary?${epParams.toString()}`;
   }
 
   return {

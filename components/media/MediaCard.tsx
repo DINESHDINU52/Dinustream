@@ -20,6 +20,8 @@ export const MediaCard: React.FC<MediaCardProps> = ({
   isSaved = false,
   onToggleSave,
 }) => {
+  const [imgLoaded, setImgLoaded] = React.useState(false);
+
   return (
     <motion.div
       whileHover={{ y: -6, scale: 1.02 }}
@@ -31,10 +33,22 @@ export const MediaCard: React.FC<MediaCardProps> = ({
       aria-label={`View ${media.title}`}
     >
       {/* Poster Background */}
-      <div
-        className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
-        style={{ backgroundImage: `url(${media.posterUrl})` }}
-      >
+      <div className="absolute inset-0 overflow-hidden bg-[#0a0f1d]">
+        {!imgLoaded && (
+          <div className="absolute inset-0 bg-white/[0.04] animate-shimmer pointer-events-none" />
+        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={media.posterUrl}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setImgLoaded(true)}
+          className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${
+            imgLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
         <CinematicOverlay type="cardScrim" />
       </div>
 
