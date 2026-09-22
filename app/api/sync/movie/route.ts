@@ -3,15 +3,7 @@ import { SyncStatusResponse } from '@/lib/api/syncManager';
 
 import { checkRateLimit, getClientIp } from '@/lib/security/rateLimit';
 import { isValidFilename, isValidMediaId } from '@/lib/security/validation';
-
-// In-memory simulation registry for development fallback when Oracle server is in private VPC
-export const mockSyncRegistry = new Map<string, {
-  filename: string;
-  movieId?: string;
-  startedAt: number;
-  totalBytes: number;
-  speed: number;
-}>();
+import { setSyncJob } from '@/lib/sync/syncJobRegistry';
 
 export async function POST(req: NextRequest) {
   try {
@@ -79,7 +71,12 @@ export async function POST(req: NextRequest) {
     const totalBytes = 18.5 * 1024 * 1024 * 1024;
     const speed = 148 * 1024 * 1024; // 148 MB/s Oracle NVMe SSD write throughput
 
-    mockSyncRegistry.set(filename, {
+    /*
+      Fallback simulation. The registry now lives in lib/sync/syncJobRegistry so
+      the status route is guaranteed to read the same instance — see the note
+      there for why importing a Map across route modules did not work.
+    */
+    setSyncJob(filename, {
       filename,
       movieId,
       startedAt: Date.now(),

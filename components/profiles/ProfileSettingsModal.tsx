@@ -43,25 +43,6 @@ export function ProfileSettingsModal({ isOpen, onClose }: ProfileSettingsModalPr
 
   if (!settings) return null;
 
-  const audioOptions = [
-    'Dolby Atmos (TrueHD 7.1)',
-    'Dolby Digital Plus 5.1',
-    'Stereo',
-  ] as const;
-
-  const subtitleOptions = [
-    'Off',
-    'English [CC]',
-    'Spanish',
-    'French',
-  ] as const;
-
-  const qualityOptions = [
-    '4K UHD (2160p)',
-    '1080p FHD',
-    'Auto',
-  ] as const;
-
   return (
     <Modal
       isOpen={isOpen}
@@ -277,79 +258,34 @@ export function ProfileSettingsModal({ isOpen, onClose }: ProfileSettingsModalPr
                 Stream & Audio Preferences
               </h4>
 
-              {/* Default Audio */}
-              <div className="p-3.5 rounded-xl bg-[#090e18] border border-white/[0.08] space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-white">Default audio track</span>
-                  <span className="text-[11px] font-mono text-amber-300">{settings.defaultAudio}</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {audioOptions.map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => updateSettings({ defaultAudio: opt })}
-                      className={`px-3 py-2 rounded-lg text-xs font-medium border text-left transition-all ${
-                        settings.defaultAudio === opt
-                          ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
-                          : 'bg-black/30 border-white/[0.06] text-slate-400 hover:text-white hover:border-white/20'
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
+              {/*
+                The "Default audio track", "Default subtitles" and "Playback
+                quality" pickers that used to live here have been removed.
+
+                They offered a hard-coded list — "Dolby Atmos (TrueHD 7.1)",
+                "English [CC]", "4K UHD (2160p)" — that had nothing to do with the
+                library. Audio and subtitle tracks are per-file Jellyfin stream
+                *indices*, and quality is a per-file HLS variant ladder, so a saved
+                free-text label cannot be matched to either. Selecting one wrote a
+                string to the profile and changed nothing about playback.
+
+                The player's own menus read the real tracks for the title being
+                watched, so that is where these belong until the preference can be
+                stored as something resolvable (a language code plus an on/off
+                flag).
+              */}
+              <div className="p-3.5 rounded-xl bg-[#090e18] border border-white/[0.08] space-y-1.5">
+                <span className="text-xs font-semibold text-white">
+                  Audio, subtitles &amp; quality
+                </span>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Chosen per title from the player&apos;s settings menu, because the available
+                  tracks and quality levels differ for every file. Your last choice applies for
+                  that playback session.
+                </p>
               </div>
 
-              {/* Default Subtitles */}
-              <div className="p-3.5 rounded-xl bg-[#090e18] border border-white/[0.08] space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-white">Default subtitles</span>
-                  <span className="text-[11px] font-mono text-sky-300">{settings.defaultSubtitles}</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {subtitleOptions.map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => updateSettings({ defaultSubtitles: opt })}
-                      className={`px-3 py-2 rounded-lg text-xs font-medium border text-center transition-all ${
-                        settings.defaultSubtitles === opt
-                          ? 'bg-sky-500/20 border-sky-400/50 text-sky-200'
-                          : 'bg-black/30 border-white/[0.06] text-slate-400 hover:text-white hover:border-white/20'
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Playback Quality & Reduced Motion */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Playback Quality */}
-                <div className="p-3.5 rounded-xl bg-[#090e18] border border-white/[0.08] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-white">Playback quality</span>
-                    <span className="text-[11px] font-mono text-emerald-400">
-                      {settings.playbackQuality}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {qualityOptions.map((q) => (
-                      <button
-                        key={q}
-                        onClick={() => updateSettings({ playbackQuality: q })}
-                        className={`px-2 py-1.5 rounded-lg text-xs font-medium border text-center transition-all ${
-                          settings.playbackQuality === q
-                            ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
-                            : 'bg-black/30 border-white/[0.06] text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Reduced Motion */}
                 <div className="p-3.5 rounded-xl bg-[#090e18] border border-white/[0.08] flex items-center justify-between gap-3">
                   <div>

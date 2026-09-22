@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SyncStatusResponse, formatBytes, formatEta } from '@/lib/api/syncManager';
-import { mockSyncRegistry } from '@/app/api/sync/movie/route';
+import { getSyncJob } from '@/lib/sync/syncJobRegistry';
 import { checkRateLimit, getClientIp } from '@/lib/security/rateLimit';
 import { isValidFilename } from '@/lib/security/validation';
 
-// Pre-cached files for testing the "If movie is cached -> play immediately" behavior
-const CACHED_PRESETS = new Set<string>([
-  'dune-part-two.mkv',
-  'severance-s01e01.mkv',
-  'interstellar.mkv',
-]);
+/*
+  The hard-coded CACHED_PRESETS list ('dune-part-two.mkv', 'severance-s01e01.mkv',
+  'interstellar.mkv') has been removed. Real filenames are derived from Jellyfin
+  item ids, so none of those three could ever match — it was demo data that only
+  ever reported "already cached" for titles that do not exist in the library.
+*/
 
 export async function GET(
   req: NextRequest,
@@ -68,27 +68,8 @@ export async function GET(
       }
     }
 
-    // 1. Check if item is already pre-cached on Oracle NVMe SSD
-    if (CACHED_PRESETS.has(filename.toLowerCase())) {
-      const cachedStatus: SyncStatusResponse = {
-        filename,
-        state: 'ready',
-        percentage: 100,
-        transferredBytes: 18.5 * 1024 * 1024 * 1024,
-        totalBytes: 18.5 * 1024 * 1024 * 1024,
-        transferredFormatted: '18.5 GB',
-        totalFormatted: '18.5 GB',
-        speedBytesPerSec: 0,
-        speedFormatted: 'Cached (NVMe SSD)',
-        etaSeconds: 0,
-        etaFormatted: 'Ready',
-        updatedAt: new Date().toISOString(),
-      };
-      return NextResponse.json(cachedStatus);
-    }
-
-    // 2. Check if a sync job is actively running in memory
-    const existingJob = mockSyncRegistry.get(filename);
+    // Is a simulated sync job running for this file?
+    const existingJob = getSyncJob(filename);
     if (!existingJob) {
       const notCachedStatus: SyncStatusResponse = {
         filename,

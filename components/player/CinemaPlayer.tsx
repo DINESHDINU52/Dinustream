@@ -380,6 +380,11 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   }, []);
 
   // Synchronized Watch Together Playback Engine
+  /*
+    Synchronized playback. The callbacks below are inline, which is fine now:
+    useSyncPlayback holds them in a ref so their changing identity no longer
+    rebuilds the sync engine on every render (see the note in that hook).
+  */
   const syncPlayback = useSyncPlayback({
     groupId: groupId || 'group-movie-night',
     groupName: groupName || 'Movie Night ❤️',
@@ -427,6 +432,19 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     },
   });
 
+  /*
+    Stable references pulled out of the hook result, which is a new object literal
+    on every render. Effects and callbacks depend on these instead, so they are
+    not rebuilt continuously.
+  */
+  const {
+    broadcastPlay,
+    broadcastPause,
+    broadcastSeek,
+    broadcastSkipSegment,
+    performDriftCorrection,
+  } = syncPlayback;
+
   // Reusable Seek Handler for Video Element & Scrubbing
   const handleSeek = useCallback(
     (targetSeconds: number) => {
@@ -436,11 +454,11 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         videoRef.current.currentTime = clamped;
       }
       if (isGroupSync) {
-        syncPlayback.broadcastSeek(clamped);
+        broadcastSeek(clamped);
       }
       setAreControlsVisible(true);
     },
-    [duration, isGroupSync, syncPlayback]
+    [duration, isGroupSync, broadcastSeek]
   );
 
   // Reusable Media Segments UX (Intro, Recap, Outro, Preview, Commercial)
@@ -520,14 +538,23 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     return () => clearInterval(interval);
   }, [isPlaying, currentTime, duration, episode, media, updateContinueWatching]);
 
-  // Continuous Drift Correction loop for Watch Together
+  /*
+    Continuous drift correction for Watch Together.
+
+    `currentTime` is deliberately NOT a dependency. It updates roughly four times
+    a second from `timeupdate`, so listing it meant this interval was cleared and
+    recreated before its 1500ms delay could ever elapse — drift correction
+    effectively never ran, and Watch Together slowly diverged with nothing pulling
+    it back. The position is read from the video element at tick time instead.
+  */
   useEffect(() => {
     if (!isGroupSync || !isPlaying) return;
     const interval = setInterval(() => {
-      syncPlayback.performDriftCorrection(currentTime);
+      const position = videoRef.current?.currentTime ?? 0;
+      performDriftCorrection(position);
     }, 1500);
     return () => clearInterval(interval);
-  }, [isGroupSync, isPlaying, currentTime, syncPlayback]);
+  }, [isGroupSync, isPlaying, performDriftCorrection]);
 
   // Synchronized Skip Segment Handler
   const handleSkipSegment = useCallback(
@@ -540,11 +567,11 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
             targetSeg.type === 'INTRO' || targetSeg.type === 'RECAP' || targetSeg.type === 'OUTRO'
               ? targetSeg.type
               : 'INTRO';
-          syncPlayback.broadcastSkipSegment(segType, targetSeg.endSeconds);
+          broadcastSkipSegment(segType, targetSeg.endSeconds);
         }
       }
     },
-    [activeSegment, skipSegment, isGroupSync, syncPlayback]
+    [activeSegment, skipSegment, isGroupSync, broadcastSkipSegment]
   );
 
   /*
@@ -814,24 +841,24 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         videoRef.current.pause();
         setIsPlaying(false);
         triggerPulse('pause');
-        if (isGroupSync) syncPlayback.broadcastPause(currentTime);
+        if (isGroupSync) broadcastPause(currentTime);
       } else {
         videoRef.current.play().catch(() => {});
         setIsPlaying(true);
         triggerPulse('play');
-        if (isGroupSync) syncPlayback.broadcastPlay(currentTime);
+        if (isGroupSync) broadcastPlay(currentTime);
       }
     } else {
       const nextPlaying = !isPlaying;
       setIsPlaying(nextPlaying);
       triggerPulse(nextPlaying ? 'play' : 'pause');
       if (isGroupSync) {
-        if (nextPlaying) syncPlayback.broadcastPlay(currentTime);
-        else syncPlayback.broadcastPause(currentTime);
+        if (nextPlaying) broadcastPlay(currentTime);
+        else broadcastPause(currentTime);
       }
     }
     onUserActivity();
-  }, [isPlaying, isGroupSync, currentTime, syncPlayback, onUserActivity]);
+  }, [isPlaying, isGroupSync, currentTime, broadcastPlay, broadcastPause, onUserActivity]);
 
   const seekRelative = useCallback(
     (seconds: number) => {
@@ -841,12 +868,12 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         videoRef.current.currentTime = newTime;
       }
       if (isGroupSync) {
-        syncPlayback.broadcastSeek(newTime);
+        broadcastSeek(newTime);
       }
       triggerPulse(seconds < 0 ? 'rewind' : 'forward');
       onUserActivity();
     },
-    [currentTime, duration, isGroupSync, syncPlayback, onUserActivity]
+    [currentTime, duration, isGroupSync, broadcastSeek, onUserActivity]
   );
 
   const handleVolumeChange = (newVolume: number) => {
