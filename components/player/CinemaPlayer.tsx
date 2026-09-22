@@ -1414,12 +1414,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#090e17]/80 border border-slate-400/[0.15] text-[11px] font-mono text-slate-300">
-              <Zap className="w-3.5 h-3.5 text-sky-400 fill-sky-400" />
-              <span>DinuStream Master Sync</span>
-            </div>
-          </div>
+
         </div>
 
         {/* Bottom Control Deck */}

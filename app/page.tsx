@@ -391,11 +391,11 @@ export default function CinemaHomePage() {
                 );
               })}
 
-              {/* One-click Sync / Refresh Vault Button */}
+              {/* One-click Refresh Vault Button */}
               <button
                 type="button"
-                aria-label="Sync Jellyfin Library"
-                title="Sync with Jellyfin"
+                aria-label="Refresh Jellyfin Library"
+                title="Refresh library cache with Jellyfin"
                 disabled={isRefreshing}
                 onClick={() => loadMediaData(true)}
                 className={cn(
@@ -404,7 +404,7 @@ export default function CinemaHomePage() {
                 )}
               >
                 <RefreshCw className={cn('w-3.5 h-3.5 text-sky-400', isRefreshing && 'animate-spin')} />
-                <span>{isRefreshing ? 'Syncing...' : 'Sync Vault'}</span>
+                <span>{isRefreshing ? 'Refreshing...' : 'Refresh Vault'}</span>
               </button>
             </div>
           </div>
