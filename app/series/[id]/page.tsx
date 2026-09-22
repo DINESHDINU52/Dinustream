@@ -6,9 +6,7 @@ import { motion } from 'framer-motion';
 import { CinemaShell } from '@/components/layout/CinemaShell';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Drawer } from '@/components/ui/Drawer';
 import { Toast } from '@/components/ui/Toast';
-import { Avatar } from '@/components/ui/Avatar';
 import { MediaCard } from '@/components/ui/MediaCard';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -17,7 +15,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
 import { Episode, Season, MediaItem } from '@/types/cinema';
 import { calculatePercentage, cn } from '@/lib/utils';
-import { Play, Zap, Plus, Check, ArrowLeft, Tv } from 'lucide-react';
+import { Play, Plus, Check, ArrowLeft, Tv } from 'lucide-react';
 
 /** Shared horizontal gutters, consistent with the home page rails. */
 const GUTTER = 'px-4 sm:px-8 lg:px-12';
@@ -27,7 +25,7 @@ const TOAST_MS = 3500;
 export default function SeriesDetailsPage() {
   const params = useParams();
   const router = useRouter();
-  const { profile, companionProfile, myList, toggleMyList } = useActiveProfile();
+  const { profile, myList, toggleMyList } = useActiveProfile();
 
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
 
@@ -38,7 +36,6 @@ export default function SeriesDetailsPage() {
   const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number>(1);
   const [error, setError] = useState<string | null>(null);
   const [toastInfo, setToastInfo] = useState<{ message: string; subtext?: string } | null>(null);
-  const [isSyncDrawerOpen, setIsSyncDrawerOpen] = useState(false);
   const [backdropError, setBackdropError] = useState(false);
 
   const loadSeries = useCallback(async (seriesId: string) => {
@@ -121,10 +118,9 @@ export default function SeriesDetailsPage() {
    * called with an episode id, returned nothing, and every one of those features
    * silently disappeared.
    */
-  const episodeHref = (episode: Episode, extra?: string) => {
+  const episodeHref = (episode: Episode) => {
     const seriesId = media?.id ?? id;
     const query = new URLSearchParams({ episode: episode.id });
-    if (extra) query.set(extra, 'true');
     return `/watch/${seriesId}?${query.toString()}`;
   };
 
@@ -180,53 +176,6 @@ export default function SeriesDetailsPage() {
         onDismiss={() => setToastInfo(null)}
       />
 
-      {/* Synchronized watch room drawer */}
-      <Drawer
-        isOpen={isSyncDrawerOpen}
-        onClose={() => setIsSyncDrawerOpen(false)}
-        kicker="Private Television Room"
-        title="Sync & Stream Episodic"
-      >
-        <div className="space-y-6">
-          <div className="p-4 rounded-xl bg-[#0b101b] border border-slate-700/40 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-white">Episodic Sync Ready</span>
-              <Badge variant="sync" size="sm">
-                Auto Skip Enabled
-              </Badge>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-              <div className="flex items-center gap-2.5">
-                <Avatar profile={profile} size="sm" />
-                <span className="text-xs text-slate-200">{profile.name} (Host)</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Avatar profile={companionProfile} size="sm" />
-                <span className="text-xs text-slate-200">{companionProfile.name}</span>
-              </div>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-400 font-light leading-relaxed">
-            Starting synchronized playback cues the selected episode on all connected companion
-            screens.
-          </p>
-
-          {resumeEpisode && (
-            <Button
-              variant="primary"
-              className="w-full justify-center"
-              icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
-              onClick={() => {
-                setIsSyncDrawerOpen(false);
-                router.push(episodeHref(resumeEpisode, 'sync'));
-              }}
-            >
-              Stream Ep {resumeEpisode.episodeNumber} in Sync
-            </Button>
-          )}
-        </div>
-      </Drawer>
 
       <div className="relative">
         {/* Back button */}
@@ -318,15 +267,6 @@ export default function SeriesDetailsPage() {
                 </Button>
               )}
 
-              <Button
-                variant="primary"
-                size="lg"
-                icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
-                onClick={() => setIsSyncDrawerOpen(true)}
-                className="w-full sm:w-auto justify-center"
-              >
-                Watch in Sync
-              </Button>
 
               <Button
                 variant="secondary"

@@ -5,14 +5,12 @@ import { motion } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { Play, Zap, Plus, Check, Info } from 'lucide-react';
+import { Play, Plus, Check, Info } from 'lucide-react';
 
 export interface HeroBannerProps {
   media: MediaItem;
   isSaved?: boolean;
   onPlay?: () => void;
-  onSyncPlay?: () => void;
   onToggleSave?: () => void;
   onOpenDetails?: () => void;
 }
@@ -21,11 +19,9 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   media,
   isSaved = false,
   onPlay,
-  onSyncPlay,
   onToggleSave,
   onOpenDetails,
 }) => {
-  const { companionProfile } = useActiveProfile();
 
   return (
     <section className="relative w-full min-h-[82vh] sm:min-h-[88vh] flex items-end pb-12 sm:pb-16 md:pb-20 pt-28 px-4 sm:px-8 lg:px-12 overflow-hidden select-none">
@@ -115,17 +111,6 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             Play
           </Button>
 
-          {/* ⚡ Sync & Play */}
-          <Button
-            variant="primary"
-            size="lg"
-            icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400 shrink-0" />}
-            onClick={onSyncPlay}
-            id="hero-action-sync"
-            className="max-w-full"
-          >
-            <span className="truncate">Sync & Play with {companionProfile.name}</span>
-          </Button>
 
           {/* ＋ My List */}
           <Button

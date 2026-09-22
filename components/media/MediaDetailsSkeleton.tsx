@@ -44,9 +44,8 @@ export const MediaDetailsSkeleton: React.FC = () => {
 
             {/* Action buttons */}
             <div className="flex flex-wrap items-center gap-3 pt-3">
-              <Skeleton className="h-12 w-44 rounded-xl bg-amber-500/20 border-amber-500/30" />
-              <Skeleton className="h-12 w-48 rounded-xl bg-sky-500/15 border-sky-500/30" />
-              <Skeleton className="h-12 w-12 rounded-xl bg-white/[0.06]" />
+              <Skeleton className="h-12 w-40 sm:w-44 rounded-xl bg-amber-500/20 border-amber-500/30" />
+              <Skeleton className="h-12 w-32 sm:w-36 rounded-xl bg-white/[0.06]" />
             </div>
 
             {/* Cast & Crew Grid */}

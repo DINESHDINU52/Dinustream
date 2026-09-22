@@ -7,9 +7,7 @@ import { CinemaShell } from '@/components/layout/CinemaShell';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { GlassPanel } from '@/components/ui/GlassPanel';
-import { Drawer } from '@/components/ui/Drawer';
 import { Toast } from '@/components/ui/Toast';
-import { Avatar } from '@/components/ui/Avatar';
 import { MediaCard } from '@/components/ui/MediaCard';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -17,9 +15,8 @@ import { MediaDetailsSkeleton } from '@/components/media/MediaDetailsSkeleton';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
 import { MediaItem } from '@/types/cinema';
-import { SyncAndPlayButton } from '@/components/sync';
 import { cn } from '@/lib/utils';
-import { Play, Plus, Check, Film, ArrowLeft, Volume2, Subtitles, Sparkles } from 'lucide-react';
+import { Play, Plus, Check, Film, ArrowLeft, Volume2, Subtitles } from 'lucide-react';
 
 /** Shared horizontal gutters, consistent with the home page rails. */
 const GUTTER = 'px-4 sm:px-8 lg:px-12';
@@ -29,7 +26,7 @@ const TOAST_MS = 3500;
 export default function MovieDetailsPage() {
   const params = useParams();
   const router = useRouter();
-  const { profile, companionProfile, myList, toggleMyList } = useActiveProfile();
+  const { profile, myList, toggleMyList } = useActiveProfile();
 
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
 
@@ -38,7 +35,6 @@ export default function MovieDetailsPage() {
   const [similarMovies, setSimilarMovies] = useState<MediaItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [toastInfo, setToastInfo] = useState<{ message: string; subtext?: string } | null>(null);
-  const [isSyncDrawerOpen, setIsSyncDrawerOpen] = useState(false);
   const [backdropError, setBackdropError] = useState(false);
 
   const loadMovie = useCallback(async (movieId: string) => {
@@ -141,57 +137,6 @@ export default function MovieDetailsPage() {
         onDismiss={() => setToastInfo(null)}
       />
 
-      {/* Synchronized screening room drawer */}
-      <Drawer
-        isOpen={isSyncDrawerOpen}
-        onClose={() => setIsSyncDrawerOpen(false)}
-        kicker="Private Screening Room"
-        title="Sync & Play Together"
-      >
-        <div className="space-y-6">
-          <div className="p-4 rounded-xl bg-[#0b101b] border border-slate-700/40 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-white">Live Session Ready</span>
-              <Badge variant="sync" size="sm">
-                Sub-100ms Sync
-              </Badge>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-              <div className="flex items-center gap-2.5">
-                <Avatar profile={profile} size="sm" />
-                <div>
-                  <p className="text-xs font-medium text-slate-200">{profile.name}</p>
-                  <p className="text-[10px] text-cyan-400">Host</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Avatar profile={companionProfile} size="sm" />
-                <div>
-                  <p className="text-xs font-medium text-slate-200">{companionProfile.name}</p>
-                  <p className="text-[10px] text-rose-400">Companion</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-400 font-light leading-relaxed">
-            Launching starts playback on both screens simultaneously, syncing play, pause and seek
-            events with drift correction.
-          </p>
-
-          <Button
-            variant="primary"
-            className="w-full justify-center"
-            icon={<Sparkles className="w-4 h-4" />}
-            onClick={() => {
-              setIsSyncDrawerOpen(false);
-              router.push(`/watch/${media.id}?sync=true`);
-            }}
-          >
-            Launch Synchronized Stream
-          </Button>
-        </div>
-      </Drawer>
 
       <div className="relative">
         {/* Back button — sits below the fixed navbar, clear of the notch */}
@@ -299,15 +244,6 @@ export default function MovieDetailsPage() {
               >
                 Play Feature
               </Button>
-
-              <SyncAndPlayButton
-                media={media}
-                variant="primary"
-                size="lg"
-                isGroupMode
-                onBeforeSync={() => setIsSyncDrawerOpen(true)}
-                className="w-full sm:w-auto justify-center"
-              />
 
               <Button
                 variant="secondary"

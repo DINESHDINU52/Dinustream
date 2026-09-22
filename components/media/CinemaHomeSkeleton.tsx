@@ -44,7 +44,6 @@ export const CinemaHomeSkeleton: React.FC = () => {
             {/* Action Buttons Row */}
             <div className="flex items-center gap-3 pt-3">
               <Skeleton className="h-11 sm:h-12 w-32 sm:w-36 rounded-xl bg-amber-500/20 border-amber-500/30" />
-              <Skeleton className="h-11 sm:h-12 w-36 sm:w-40 rounded-xl bg-sky-500/15 border-sky-500/30" />
               <Skeleton className="h-11 sm:h-12 w-11 sm:w-12 rounded-xl bg-white/[0.06]" />
               <Skeleton className="h-11 sm:h-12 w-11 sm:w-12 rounded-xl bg-white/[0.06]" />
             </div>

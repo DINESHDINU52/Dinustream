@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
-import { Play, Plus, Check, Zap, Star, Info, Sparkles } from 'lucide-react';
+import { Play, Plus, Check, Star, Info, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface MediaCardProps {
@@ -227,19 +227,6 @@ export const MediaCard: React.FC<MediaCardProps> = ({
           >
             <Play className="w-3.5 h-3.5 fill-current shrink-0" />
             <span className="tracking-tight truncate">Watch</span>
-          </button>
-
-          {/* Sync & play */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              router.push(`/watch/${media.id}?sync=true`);
-            }}
-            title="Watch Together (Synchronized)"
-            aria-label={`Watch ${media.title} together`}
-            className="p-2 rounded-lg bg-white/[0.08] hover:bg-white/[0.18] text-cyan-300 border border-cyan-400/30 transition-colors shadow-sm shrink-0"
-          >
-            <Zap className="w-3.5 h-3.5 fill-cyan-400" />
           </button>
 
           {/* Watchlist toggle */}

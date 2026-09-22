@@ -4,15 +4,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { Badge } from '@/components/ui/Badge';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { Play, Zap, Plus, Check, Info, ChevronLeft, ChevronRight, Star, Sparkles } from 'lucide-react';
+import { Play, Plus, Check, Info, ChevronLeft, ChevronRight, Star, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface HeroCarouselProps {
   items: MediaItem[];
   savedIds?: string[];
   onPlay?: (item: MediaItem) => void;
-  onSyncPlay?: (item: MediaItem) => void;
   onToggleSave?: (item: MediaItem) => void;
   onOpenDetails?: (item: MediaItem) => void;
 }
@@ -52,11 +50,9 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
   items,
   savedIds = [],
   onPlay,
-  onSyncPlay,
   onToggleSave,
   onOpenDetails,
 }) => {
-  const { companionProfile } = useActiveProfile();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -367,23 +363,10 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
               <button
                 onClick={() => onPlay?.(currentMedia)}
                 id="hero-action-play"
-                className="flex-1 basis-[calc(50%-0.375rem)] sm:flex-none sm:basis-auto flex items-center justify-center gap-2 px-5 sm:px-7 py-3 sm:py-3.5 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-bold text-sm sm:text-base shadow-[0_4px_30px_rgba(255,255,255,0.3)] transition-transform hover:scale-105 active:scale-95 cinema-focus"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-bold text-sm sm:text-base shadow-[0_4px_30px_rgba(255,255,255,0.3)] transition-transform hover:scale-105 active:scale-95 cinema-focus"
               >
                 <Play className="w-5 h-5 fill-current shrink-0" />
                 <span className="tracking-tight">Watch Now</span>
-              </button>
-
-              {/* Sync & Play */}
-              <button
-                onClick={() => onSyncPlay?.(currentMedia)}
-                id="hero-action-sync"
-                className="flex-1 basis-[calc(50%-0.375rem)] sm:flex-none sm:basis-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-3 sm:py-3.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-200 font-semibold text-sm sm:text-base backdrop-blur-xl shadow-lg transition-transform hover:scale-105 active:scale-95 cinema-focus min-w-0"
-              >
-                <Zap className="w-4 h-4 text-cyan-400 fill-cyan-400 shrink-0" />
-                <span className="truncate">
-                  <span className="sm:hidden">Sync</span>
-                  <span className="hidden sm:inline">Sync with {companionProfile.name}</span>
-                </span>
               </button>
 
               {/* My List */}

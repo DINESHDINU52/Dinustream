@@ -18,7 +18,6 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
 import { mediaCache } from '@/lib/cache/mediaCache';
 import { MediaItem } from '@/types/cinema';
-import { SyncAndPlayButton } from '@/components/sync';
 import { Play, Zap, Film, Sparkles, Tv, Star, Flame, Bookmark, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -315,18 +314,14 @@ export default function CinemaHomePage() {
                 {selectedMedia.type === 'series' ? 'Browse Episodes' : 'Play Direct Stream'}
               </Button>
 
-              <div className="flex items-center gap-2.5">
-                <SyncAndPlayButton media={selectedMedia} size="md" />
-
-                <Button
-                  variant="secondary"
-                  size="md"
-                  className="flex-1 justify-center sm:flex-none"
-                  onClick={() => handleToggleSave(selectedMedia)}
-                >
-                  {myList.includes(selectedMedia.id) ? 'Saved' : '+ List'}
-                </Button>
-              </div>
+              <Button
+                variant="secondary"
+                size="md"
+                className="w-full sm:w-auto justify-center"
+                onClick={() => handleToggleSave(selectedMedia)}
+              >
+                {myList.includes(selectedMedia.id) ? 'Saved' : '+ List'}
+              </Button>
             </div>
           </div>
         )}
@@ -350,7 +345,6 @@ export default function CinemaHomePage() {
               items={featuredItems}
               savedIds={myList}
               onPlay={playItem}
-              onSyncPlay={(item) => router.push(`/watch/${item.id}?sync=true`)}
               onToggleSave={handleToggleSave}
               onOpenDetails={handleOpenDetails}
             />
