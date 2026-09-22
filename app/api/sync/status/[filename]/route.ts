@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SyncStatusResponse, formatBytes, formatEta } from '@/lib/api/syncManager';
 import { getSyncJob } from '@/lib/sync/syncJobRegistry';
+import { adaptSyncStatus } from '@/lib/sync/adaptSyncStatus';
 import { checkRateLimit, getClientIp } from '@/lib/security/rateLimit';
 import { isValidFilename } from '@/lib/security/validation';
 
@@ -60,11 +61,20 @@ export async function GET(
         clearTimeout(timeoutId);
 
         if (oracleRes.ok) {
+          /*
+            Adapt, do not pass through. The Sync Manager answers with
+            `{ progress, status }`, while the client reads `{ percentage, state }`
+            — so returning the raw body left both fields undefined and the UI
+            showed 0% forever regardless of real progress. See
+            lib/sync/adaptSyncStatus.
+          */
           const data = await oracleRes.json();
-          return NextResponse.json(data);
+          return NextResponse.json(adaptSyncStatus(data, filename), {
+            headers: { 'Cache-Control': 'no-store' },
+          });
         }
       } catch {
-        // Fall back to local synchronization state
+        // Unreachable backend: fall through to the local simulation.
       }
     }
 

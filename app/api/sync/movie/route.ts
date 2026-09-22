@@ -4,6 +4,7 @@ import { SyncStatusResponse } from '@/lib/api/syncManager';
 import { checkRateLimit, getClientIp } from '@/lib/security/rateLimit';
 import { isValidFilename, isValidMediaId } from '@/lib/security/validation';
 import { setSyncJob } from '@/lib/sync/syncJobRegistry';
+import { adaptSyncStatus } from '@/lib/sync/adaptSyncStatus';
 
 export async function POST(req: NextRequest) {
   try {
@@ -59,11 +60,24 @@ export async function POST(req: NextRequest) {
         clearTimeout(timeoutId);
 
         if (oracleRes.ok) {
+          /*
+            Adapted for the same reason as the status route: the upstream service
+            replies `{ progress, status }`, not the `SyncStatusResponse` shape the
+            client parses.
+          */
           const data = await oracleRes.json();
-          return NextResponse.json(data);
+          const status = adaptSyncStatus(data, filename);
+          return NextResponse.json({
+            success: status.state !== 'error',
+            message:
+              status.state === 'error'
+                ? status.error ?? 'Sync Manager could not start this transfer'
+                : `Started synchronization for "${filename}"`,
+            status,
+          });
         }
       } catch {
-        // Fall through to resilient local synchronization engine
+        // Unreachable backend: fall through to the local simulation.
       }
     }
 
