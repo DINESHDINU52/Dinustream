@@ -13,6 +13,7 @@ import { Toast } from '@/components/ui/Toast';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { CinemaHomeSkeleton } from '@/components/media/CinemaHomeSkeleton';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
 import { mediaCache } from '@/lib/cache/mediaCache';
@@ -340,12 +341,7 @@ export default function CinemaHomePage() {
           />
         </div>
       ) : loading ? (
-        <div className="min-h-[70svh] flex flex-col items-center justify-center gap-4 px-4 text-center">
-          <div className="w-12 h-12 rounded-full border-2 border-sky-400/20 border-t-sky-400 animate-spin" />
-          <p className="text-xs text-slate-400 tracking-wider font-mono uppercase">
-            Connecting to DinuStream Private Cinema...
-          </p>
-        </div>
+        <CinemaHomeSkeleton />
       ) : (
         <div className="space-y-8 sm:space-y-12 md:space-y-14 pb-12">
           {/* 1. Featured hero carousel */}

@@ -13,6 +13,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { MediaCard } from '@/components/ui/MediaCard';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { MediaDetailsSkeleton } from '@/components/media/MediaDetailsSkeleton';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
 import { MediaItem } from '@/types/cinema';
@@ -100,12 +101,7 @@ export default function MovieDetailsPage() {
   if (loading) {
     return (
       <CinemaShell>
-        <div className="min-h-[70svh] flex flex-col justify-center items-center gap-4 px-4 text-center">
-          <div className="w-10 h-10 border-2 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
-          <p className="text-xs text-slate-400 font-mono tracking-wider uppercase">
-            Loading movie presentation...
-          </p>
-        </div>
+        <MediaDetailsSkeleton />
       </CinemaShell>
     );
   }
