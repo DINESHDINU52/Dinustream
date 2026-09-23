@@ -7,6 +7,7 @@ import {
 } from '@/types/syncPlayback';
 import { QuickReactionEmoji } from '@/types/watchTogether';
 import { PROFILES } from '@/lib/constants';
+import { sendSyncPlayCommand, joinSyncPlayGroup } from '@/lib/api/syncPlay';
 
 export interface SyncEngineCallbacks {
   onPlay?: (sender: UserProfileId, sequence: number) => void;
@@ -426,6 +427,20 @@ export class SyncPlaybackEngine {
       message: options?.customMessage,
       clientTimestamp: Date.now(),
     });
+
+    // Mirror to Jellyfin Native SyncPlay subsystem for server-side transcode alignment
+    if (type === 'PLAY' || type === 'RESUME') {
+      sendSyncPlayCommand(this.groupId, 'Play', position).catch(() => {});
+    } else if (type === 'PAUSE') {
+      sendSyncPlayCommand(this.groupId, 'Pause', position).catch(() => {});
+    } else if (
+      type === 'SEEK' ||
+      type === 'SKIP_INTRO' ||
+      type === 'SKIP_RECAP' ||
+      type === 'SKIP_OUTRO'
+    ) {
+      sendSyncPlayCommand(this.groupId, 'Seek', position).catch(() => {});
+    }
   }
 
   /**

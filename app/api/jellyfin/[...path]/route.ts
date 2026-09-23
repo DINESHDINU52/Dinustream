@@ -165,6 +165,9 @@ export async function GET(
       jPath = '/System/Info';
     } else if (subPath === 'search/hints') {
       jPath = '/Search/Hints';
+    } else if (subPath.toLowerCase().startsWith('syncplay/')) {
+      const command = subPath.slice('syncplay/'.length);
+      jPath = `/SyncPlay/${command.charAt(0).toUpperCase() + command.slice(1)}`;
     }
 
     const targetUrl = new URL(jPath, serverUrl);
