@@ -19,7 +19,7 @@ export const SyncJobsTracker: React.FC<SyncJobsTrackerProps> = ({
   const [filter, setFilter] = useState<SyncJobStatus | 'all'>('all');
   const [isNewSyncModalOpen, setIsNewSyncModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
-  const [newSize, setNewSize] = useState('65');
+  const [newSize, setNewSize] = useState('2.5');
 
   const filteredJobs = syncJobs.filter((job) => (filter === 'all' ? true : job.status === filter));
 
@@ -34,7 +34,7 @@ export const SyncJobsTracker: React.FC<SyncJobsTrackerProps> = ({
   const handleCreateSync = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    onTriggerNewSync(newTitle.trim(), parseFloat(newSize) || 60);
+    onTriggerNewSync(newTitle.trim(), parseFloat(newSize) || 2.5);
     setNewTitle('');
     setIsNewSyncModalOpen(false);
   };
@@ -74,6 +74,7 @@ export const SyncJobsTracker: React.FC<SyncJobsTrackerProps> = ({
             />
             <input
               type="number"
+              step="0.1"
               value={newSize}
               onChange={(e) => setNewSize(e.target.value)}
               placeholder="Size GB"

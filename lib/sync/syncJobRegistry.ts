@@ -51,3 +51,7 @@ export function getSyncJob(filename: string): SyncJob | undefined {
 export function deleteSyncJob(filename: string): boolean {
   return getRegistry().delete(filename);
 }
+
+export function getAllSyncJobs(): SyncJob[] {
+  return Array.from(getRegistry().values());
+}

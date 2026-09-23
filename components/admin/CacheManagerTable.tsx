@@ -104,7 +104,10 @@ export const CacheManagerTable: React.FC<CacheManagerTableProps> = ({
                         <img
                           src={item.posterUrl}
                           alt={item.title}
-                          className="w-9 h-12 rounded object-cover border border-white/10 shrink-0"
+                          className="w-9 h-12 rounded object-cover border border-white/10 shrink-0 bg-white/5"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.opacity = '0.3';
+                          }}
                         />
                         <div>
                           <div className="flex items-center gap-1.5">
