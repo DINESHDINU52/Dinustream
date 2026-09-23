@@ -9,6 +9,7 @@ import { QuickReactionEmoji } from '@/types/watchTogether';
 import { PROFILES } from '@/lib/constants';
 import { firestore } from '@/lib/firebase/config';
 import { doc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { sendSyncPlayCommand } from '@/lib/api/syncPlay';
 
 export interface SyncEngineCallbacks {
   onPlay?: (sender: UserProfileId, sequence: number) => void;
@@ -34,6 +35,7 @@ export class SyncPlaybackEngine {
   private storageKey: string;
   private isDestroyed = false;
   private unsubscribeFirestore: Unsubscribe | null = null;
+  private lastSeekCorrectionTime = 0;
 
   private session: SyncPlaybackSession;
 
@@ -299,6 +301,11 @@ export class SyncPlaybackEngine {
       return;
     }
 
+    // Do not correct drift if the local video is still starting up
+    if (localCurrentTime < 1.0) {
+      return;
+    }
+
     let authoritativePos = this.session.position;
     if (this.session.playbackState === 'PLAYING') {
       const elapsedSeconds = (Date.now() - this.session.timestamp) / 1000;
@@ -308,21 +315,29 @@ export class SyncPlaybackEngine {
     const drift = localCurrentTime - authoritativePos;
     const absDrift = Math.abs(drift);
 
-    if (absDrift < 0.35) {
+    // Well synchronized (< 0.3s): normal 1.0x speed
+    if (absDrift < 0.3) {
       this.callbacks.onDriftCorrectRate?.(1.0);
       return;
     }
 
-    if (absDrift >= 0.35 && absDrift < 2.0) {
+    // Moderate drift (0.3s to 3.0s): gently nudge playback rate by ±4%
+    // This catches up smoothly without triggering buffer flushes or seek stutters!
+    if (absDrift >= 0.3 && absDrift < 3.0) {
       if (drift < 0) {
-        this.callbacks.onDriftCorrectRate?.(1.06);
+        // Local is behind: speed up slightly
+        this.callbacks.onDriftCorrectRate?.(1.04);
       } else {
-        this.callbacks.onDriftCorrectRate?.(0.94);
+        // Local is ahead: slow down slightly
+        this.callbacks.onDriftCorrectRate?.(0.96);
       }
       return;
     }
 
-    if (absDrift >= 2.0) {
+    // Large drift (>= 3.0s): perform seek ONLY if at least 8 seconds have passed since last seek
+    const now = Date.now();
+    if (absDrift >= 3.0 && now - this.lastSeekCorrectionTime > 8000) {
+      this.lastSeekCorrectionTime = now;
       this.callbacks.onDriftCorrectRate?.(1.0);
       this.callbacks.onSeek?.(authoritativePos, this.session.controller, this.session.sequence);
     }
@@ -343,6 +358,16 @@ export class SyncPlaybackEngine {
     this.session.controller = this.localUserId;
     if (options?.episodeId) {
       this.session.episodeId = options.episodeId;
+    }
+
+    // Bridge with native Jellyfin SyncPlay backend
+    const posTicks = Math.round(position * 10_000_000);
+    if (type === 'PLAY' || type === 'RESUME') {
+      sendSyncPlayCommand(this.groupId, 'Play', posTicks).catch(() => {});
+    } else if (type === 'PAUSE') {
+      sendSyncPlayCommand(this.groupId, 'Pause', posTicks).catch(() => {});
+    } else if (type === 'SEEK' || type.startsWith('SKIP_')) {
+      sendSyncPlayCommand(this.groupId, 'Seek', posTicks).catch(() => {});
     }
 
     const senderName = this.getLocalUserName();

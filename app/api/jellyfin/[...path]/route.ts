@@ -345,6 +345,21 @@ export async function POST(
       jPath = `/Items/${encodeURIComponent(itemId)}/PlaybackInfo?userId=${encodeURIComponent(userId)}`;
     } else if (subPath.startsWith('sessions/playing')) {
       jPath = `/${subPath}`;
+    } else if (subPath.toLowerCase().startsWith('syncplay/')) {
+      const command = subPath.slice('syncplay/'.length);
+      const cmdMap: Record<string, string> = {
+        new: 'New',
+        join: 'Join',
+        leave: 'Leave',
+        play: 'Unpause',
+        unpause: 'Unpause',
+        pause: 'Pause',
+        seek: 'Seek',
+        buffering: 'Buffering',
+        ready: 'Ready',
+      };
+      const mapped = cmdMap[command.toLowerCase()] || command;
+      jPath = `/SyncPlay/${mapped}`;
     }
 
     const body = await req.json().catch(() => ({}));

@@ -98,9 +98,22 @@ export function useHlsPlayer({
       // Progressive / direct play: nothing to negotiate.
       if (method === 'direct') {
         video.src = src;
-        if (!cancelled) {
-          setLevels([]);
-          setIsReady(true);
+        try {
+          video.load();
+        } catch {}
+
+        const onDirectReady = () => {
+          if (!cancelled) {
+            setLevels([]);
+            setIsReady(true);
+          }
+        };
+
+        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          onDirectReady();
+        } else {
+          video.addEventListener('loadedmetadata', onDirectReady, { once: true });
+          video.addEventListener('canplay', onDirectReady, { once: true });
         }
         return;
       }
@@ -118,10 +131,34 @@ export function useHlsPlayer({
       */
       if (nativeHls) {
         video.src = src;
-        if (!cancelled) {
-          setLevels([]);
-          setIsReady(true);
+        try {
+          video.load();
+        } catch {}
+
+        const onNativeReady = () => {
+          if (!cancelled) {
+            setLevels([]);
+            setIsReady(true);
+          }
+        };
+
+        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          onNativeReady();
+        } else {
+          video.addEventListener('loadedmetadata', onNativeReady, { once: true });
+          video.addEventListener('canplay', onNativeReady, { once: true });
         }
+
+        const onNativeError = () => {
+          if (cancelled) return;
+          const err = video.error;
+          if (err && err.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+            onFatalErrorRef.current?.(
+              'This video format could not be played directly by Safari. The server is transcoding.'
+            );
+          }
+        };
+        video.addEventListener('error', onNativeError, { once: true });
         return;
       }
 

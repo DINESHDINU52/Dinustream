@@ -162,10 +162,10 @@ export function buildDeviceProfile(options?: {
     */
     TranscodingProfiles: [
       {
-        Container: 'mp4',
+        Container: 'ts',
         Type: 'Video',
         VideoCodec: caps.hevc ? 'h264,hevc' : 'h264',
-        AudioCodec: 'aac,mp3',
+        AudioCodec: 'aac,mp3,copy',
         Protocol: 'hls',
         Context: 'Streaming',
         MaxAudioChannels: String(maxAudioChannels),
@@ -173,9 +173,9 @@ export function buildDeviceProfile(options?: {
         BreakOnNonKeyFrames: true,
       },
       {
-        Container: 'ts',
+        Container: 'mp4',
         Type: 'Video',
-        VideoCodec: 'h264',
+        VideoCodec: caps.hevc ? 'h264,hevc' : 'h264',
         AudioCodec: 'aac,mp3',
         Protocol: 'hls',
         Context: 'Streaming',

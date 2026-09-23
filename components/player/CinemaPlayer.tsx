@@ -306,8 +306,8 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
    * during normal buffer churn.
    */
   const handleVideoError = useCallback(() => {
-    if (playbackMethod !== 'direct') return;
     const code = videoRef.current?.error?.code;
+    if (!code) return;
     const message =
       code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
         ? 'This file’s format is not supported by your browser and the server could not convert it.'
@@ -317,7 +317,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
             ? 'The video stream could not be decoded.'
             : 'Playback failed.';
     setPlaybackError(message);
-  }, [playbackMethod, setPlaybackError]);
+  }, [setPlaybackError]);
 
   // Keep local state in sync with native fullscreen changes (Esc, system UI, …)
   useEffect(() => {
@@ -392,14 +392,14 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     episodeId: episode?.id,
     enabled: Boolean(isGroupSync),
     onRemotePlay: () => {
-      if (videoRef.current) {
+      if (videoRef.current && videoRef.current.paused) {
         videoRef.current.play().catch(() => {});
       }
       setIsPlaying(true);
       triggerPulse('play');
     },
     onRemotePause: () => {
-      if (videoRef.current) {
+      if (videoRef.current && !videoRef.current.paused) {
         videoRef.current.pause();
       }
       setIsPlaying(false);
@@ -407,9 +407,14 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     },
     onRemoteSeek: (targetSeconds) => {
       const clamped = Math.min(duration, Math.max(0, targetSeconds));
-      setCurrentTime(clamped);
       if (videoRef.current) {
-        videoRef.current.currentTime = clamped;
+        const diff = Math.abs(videoRef.current.currentTime - clamped);
+        if (diff > 1.5) {
+          videoRef.current.currentTime = clamped;
+          setCurrentTime(clamped);
+        }
+      } else {
+        setCurrentTime(clamped);
       }
     },
     onRemoteSkipSegment: (_type, targetSeconds) => {
@@ -550,9 +555,10 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   useEffect(() => {
     if (!isGroupSync || !isPlaying) return;
     const interval = setInterval(() => {
-      const position = videoRef.current?.currentTime ?? 0;
-      performDriftCorrection(position);
-    }, 1500);
+      const video = videoRef.current;
+      if (!video || video.seeking || video.readyState < 3 || video.currentTime < 1.0) return;
+      performDriftCorrection(video.currentTime);
+    }, 3000);
     return () => clearInterval(interval);
   }, [isGroupSync, isPlaying, performDriftCorrection]);
 
@@ -705,10 +711,12 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     };
 
     const handlePlaying = () => {
+      setIsPlaying(true);
       notifyStarted(video.currentTime);
     };
 
     const handlePause = () => {
+      setIsPlaying(false);
       // Sent immediately rather than on the throttle, so a pause is recorded even
       // if the viewer closes the tab straight afterwards.
       notifyProgress(video.currentTime, true);
@@ -843,10 +851,17 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         triggerPulse('pause');
         if (isGroupSync) broadcastPause(currentTime);
       } else {
-        videoRef.current.play().catch(() => {});
-        setIsPlaying(true);
-        triggerPulse('play');
-        if (isGroupSync) broadcastPlay(currentTime);
+        videoRef.current
+          .play()
+          .then(() => {
+            setIsPlaying(true);
+            triggerPulse('play');
+            if (isGroupSync) broadcastPlay(currentTime);
+          })
+          .catch((err) => {
+            console.warn('[CinemaPlayer] Playback was blocked or deferred:', err);
+            setIsPlaying(false);
+          });
       }
     } else {
       const nextPlaying = !isPlaying;
@@ -1128,6 +1143,9 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         */
         poster={episode ? episode.thumbnailUrl : media.backdropUrl}
         playsInline
+        // @ts-ignore
+        webkit-playsinline="true"
+        x5-playsinline="true"
         preload="auto"
         /*
           No `crossOrigin`. Every media and subtitle request is same-origin (they
