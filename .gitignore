@@ -58,6 +58,11 @@ next-env.d.ts
 # scratch
 scratch/
 
-# jellyfin source
-/jellyfin/
+# .NET build outputs
+**/[Bb]in/
+**/[Oo]bj/
+*.user
+*.suo
+.vs/
+TestResults/
 
