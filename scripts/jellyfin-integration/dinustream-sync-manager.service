@@ -1,0 +1,22 @@
+[Unit]
+Description=DinuStream Google Drive to Oracle SSD Cache Manager Daemon
+After=network-online.target rclone-gdrive.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/dinustream/server
+ExecStart=/usr/bin/node /opt/dinustream/server/sync-manager-daemon.js
+Restart=always
+RestartSec=5
+
+# Environment configuration
+Environment=SYNC_MANAGER_PORT=8787
+Environment=SYNC_MANAGER_API_KEY=YOUR_SECURE_API_KEY
+Environment=GDRIVE_REMOTE=gdrive:Movies
+Environment=LOCAL_CACHE_DIR=/mnt/ssd-cache/movies
+Environment=MAX_DISK_USAGE_PERCENT=85
+
+[Install]
+WantedBy=multi-user.target

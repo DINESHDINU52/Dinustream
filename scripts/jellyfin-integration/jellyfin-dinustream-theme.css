@@ -1,0 +1,157 @@
+/**
+ * ==============================================================================
+ * DinuStream — Private Cinema Custom Theme for Jellyfin
+ * ==============================================================================
+ * 
+ * Paste this stylesheet into:
+ * Jellyfin Dashboard -> General -> Custom CSS code
+ *
+ * Transforms default Jellyfin into DinuStream's high-end Disney+ / Netflix
+ * midnight glassmorphism interface with custom glowing cards and controls.
+ */
+
+:root {
+  --dinustream-bg: #06080d;
+  --dinustream-surface: #0c111a;
+  --dinustream-surface-elevated: #111724;
+  --dinustream-sky: #38bdf8;
+  --dinustream-rose: #f43f5e;
+  --dinustream-silver: #cbd5e1;
+  --dinustream-border: rgba(255, 255, 255, 0.08);
+}
+
+/* Background & Body Foundation */
+html, body, .backgroundContainer, .skinHeader, .skinHeader-withBackground {
+  background-color: var(--dinustream-bg) !important;
+  color: #f8fafc !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+}
+
+/* Glassmorphic Navigation Bar */
+.skinHeader {
+  background: rgba(6, 8, 13, 0.85) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid var(--dinustream-border) !important;
+}
+
+/* Brand Logo Replacement */
+.headerTop .headerHomeButton {
+  position: relative;
+}
+
+.headerTop .headerLogo {
+  display: none !important;
+}
+
+.headerTop .headerHomeButton::after {
+  content: "DINUSTREAM";
+  font-weight: 900;
+  font-size: 1.15rem;
+  letter-spacing: -0.025em;
+  background: linear-gradient(135deg, #38bdf8 0%, #f43f5e 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+  margin-left: 0.5rem;
+}
+
+/* Card Styling: Disney+ Hotstar Rounded Corners & Zoom Glow */
+.card {
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.35s cubic-bezier(0.2, 0, 0, 1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background: var(--dinustream-surface) !important;
+}
+
+.card:hover {
+  transform: scale(1.05) translateY(-4px) !important;
+  box-shadow: 0 12px 32px rgba(14, 165, 233, 0.25), 0 0 1px 1px rgba(56, 189, 248, 0.5) !important;
+  z-index: 10 !important;
+}
+
+.cardBox {
+  border-radius: 14px !important;
+  overflow: hidden !important;
+}
+
+.cardImageContainer {
+  border-radius: 12px !important;
+}
+
+/* Buttons & Interactive Elements */
+.raised, .button-flat, .paper-icon-button-light {
+  border-radius: 10px !important;
+  transition: all 0.2s ease !important;
+}
+
+.button-submit, .btnPlay {
+  background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%) !important;
+  color: #ffffff !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 4px 20px rgba(14, 165, 233, 0.35) !important;
+  border: none !important;
+  font-weight: 700 !important;
+}
+
+.button-submit:hover, .btnPlay:hover {
+  background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%) !important;
+  box-shadow: 0 6px 28px rgba(14, 165, 233, 0.5) !important;
+  transform: scale(1.03) !important;
+}
+
+/* SyncPlay Room Elements */
+.syncPlayIndicator, .syncPlayButton {
+  border-radius: 9999px !important;
+  background: rgba(244, 63, 94, 0.15) !important;
+  border: 1px solid rgba(244, 63, 94, 0.4) !important;
+  color: #fda4af !important;
+}
+
+/* Detail & Backdrop Hero Banner */
+.itemBackdrop {
+  filter: brightness(0.65) contrast(1.05) !important;
+}
+
+.detailRibbon {
+  background: transparent !important;
+}
+
+/* Dialogs & Menus */
+.dialog, .actionSheet, .mainDrawer {
+  background: rgba(12, 17, 26, 0.95) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  border: 1px solid var(--dinustream-border) !important;
+  border-radius: 18px !important;
+}
+
+/* Progress Bars */
+.itemProgressBarForeground {
+  background: linear-gradient(90deg, #38bdf8, #f43f5e) !important;
+  border-radius: 4px !important;
+}
+
+.playbackProgress-inner {
+  background: #38bdf8 !important;
+}
+
+/* Clean Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.5);
+}
