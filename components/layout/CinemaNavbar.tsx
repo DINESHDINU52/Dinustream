@@ -220,8 +220,8 @@ export const CinemaNavbar: React.FC = () => {
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
         {/* Left: brand logo & desktop nav links */}
         <div className="flex items-center gap-4 lg:gap-8 min-w-0">
-          <Link href="/" className="cinema-focus rounded-lg shrink-0">
-            <Logo size="md" />
+          <Link href="/" className="cinema-focus rounded-lg shrink-0" aria-label="DinuStream Home">
+            <Logo size="md" asLink={false} />
           </Link>
 
           {/* Inline navigation — desktop only (>= lg), mirrored by the bottom bar below lg */}
