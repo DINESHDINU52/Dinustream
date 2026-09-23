@@ -66,6 +66,8 @@ export interface JellyfinItem {
   SeriesId?: string;
   SeriesName?: string;
   SeasonId?: string;
+  SeasonName?: string;
+  IsMissing?: boolean;
   ParentThumbItemId?: string;
   ParentBackdropItemId?: string;
   ParentBackdropImageTags?: string[];
@@ -169,7 +171,7 @@ export async function getSeasons(seriesId: string, forceRefresh = false): Promis
     undefined,
     forceRefresh
   );
-  return (res.Items || []).filter((s) => s.LocationType !== 'Virtual');
+  return (res.Items || []).filter((s) => !s.IsMissing);
 }
 
 /**
@@ -185,7 +187,9 @@ export async function getEpisodes(seriesId: string, seasonId?: string, forceRefr
     forceRefresh
   );
   // Guarantee only real files with media on the server are returned
-  return (res.Items || []).filter((e) => e.LocationType !== 'Virtual' && Boolean(e.Path));
+  return (res.Items || []).filter(
+    (e) => !e.IsMissing && (e.LocationType !== 'Virtual' || Boolean(e.Path))
+  );
 }
 
 /**

@@ -278,8 +278,8 @@ export function adaptJellyfinEpisodeToEpisode(jEpisode: JellyfinItem): Episode {
   return {
     id: jEpisode.Id,
     title: jEpisode.Name,
-    seasonNumber: jEpisode.ParentIndexNumber || 1,
-    episodeNumber: jEpisode.IndexNumber || 1,
+    seasonNumber: jEpisode.ParentIndexNumber ?? 1,
+    episodeNumber: jEpisode.IndexNumber ?? 1,
     runtime: ticksToRuntime(jEpisode.RunTimeTicks) || `${totalMinutes}m`,
     overview: jEpisode.Overview || '',
     thumbnailUrl,
@@ -296,8 +296,8 @@ export function adaptJellyfinSeasonToSeason(
   episodes: Episode[]
 ): Season {
   return {
-    seasonNumber: jSeason.IndexNumber || 1,
-    title: jSeason.Name,
+    seasonNumber: jSeason.IndexNumber ?? 1,
+    title: jSeason.Name || (typeof jSeason.IndexNumber === 'number' ? `Season ${jSeason.IndexNumber}` : 'Season 1'),
     episodeCount: episodes.length,
     episodes,
   };

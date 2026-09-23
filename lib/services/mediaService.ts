@@ -1,4 +1,4 @@
-import { MediaItem, Season } from '@/types/cinema';
+import { MediaItem, Season, Episode } from '@/types/cinema';
 import { MediaSegment } from '@/types/segments';
 import * as jellyfinApi from '@/lib/api/jellyfin';
 import {
@@ -154,18 +154,60 @@ class MediaService {
           jellyfinApi.getEpisodes(seriesId, undefined, forceRefresh),
         ]);
 
-        if (jSeasons && jSeasons.length > 0) {
-          const episodes = jEpisodes.map(adaptJellyfinEpisodeToEpisode);
+        if (jEpisodes && jEpisodes.length > 0) {
+          if (jSeasons && jSeasons.length > 0) {
+            const episodesBySeasonId = new Map<string, Episode[]>();
+            const unassignedEpisodes: Episode[] = [];
 
-          return jSeasons
-            .map((s) => {
-              const seasonEpisodes = episodes.filter(
-                (e) => e.seasonNumber === (s.IndexNumber || 1)
-              );
-              return adaptJellyfinSeasonToSeason(s, seasonEpisodes);
-            })
-            // Only keep seasons that contain playable media files
-            .filter((season) => season.episodes.length > 0);
+            jEpisodes.forEach((jEp, idx) => {
+              const ep = adaptJellyfinEpisodeToEpisode(jEp);
+              if (typeof ep.episodeNumber !== 'number' || ep.episodeNumber <= 0) {
+                ep.episodeNumber = idx + 1;
+              }
+              if (jEp.SeasonId) {
+                const list = episodesBySeasonId.get(jEp.SeasonId) || [];
+                list.push(ep);
+                episodesBySeasonId.set(jEp.SeasonId, list);
+              } else {
+                unassignedEpisodes.push(ep);
+              }
+            });
+
+            const seasons = jSeasons
+              .map((s, seasonIdx) => {
+                const matchedEpisodes = episodesBySeasonId.get(s.Id) || [];
+                if (matchedEpisodes.length === 0 && unassignedEpisodes.length > 0) {
+                  const sNum = s.IndexNumber ?? (seasonIdx + 1);
+                  const matchingByNum = unassignedEpisodes.filter((e) => e.seasonNumber === sNum);
+                  matchedEpisodes.push(...matchingByNum);
+                }
+                return adaptJellyfinSeasonToSeason(s, matchedEpisodes);
+              })
+              .filter((season) => season.episodes.length > 0);
+
+            if (seasons.length > 0) {
+              return seasons;
+            }
+          }
+
+          // Fallback: If Jellyfin returned 0 seasons or all seasons were empty,
+          // but we DO have episodes for this show! Group into a default season.
+          const fallbackEpisodes = jEpisodes.map((jEp, idx) => {
+            const ep = adaptJellyfinEpisodeToEpisode(jEp);
+            if (typeof ep.episodeNumber !== 'number' || ep.episodeNumber <= 0) {
+              ep.episodeNumber = idx + 1;
+            }
+            return ep;
+          });
+
+          return [
+            {
+              seasonNumber: 1,
+              title: jEpisodes[0].SeasonName || 'Season 1',
+              episodeCount: fallbackEpisodes.length,
+              episodes: fallbackEpisodes,
+            },
+          ];
         }
       } catch (err) {
         console.error(`[MediaService] getSeasonsForSeries(${seriesId}) failed:`, err);

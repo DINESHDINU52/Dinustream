@@ -314,7 +314,7 @@ export default function SeriesDetailsPage() {
                             : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/[0.06]'
                         )}
                       >
-                        Season {s.seasonNumber}
+                        {s.title && !s.title.toLowerCase().includes('unknown') ? s.title : `Season ${s.seasonNumber}`}
                       </button>
                     );
                   })}
