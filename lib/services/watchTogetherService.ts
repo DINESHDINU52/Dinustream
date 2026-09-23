@@ -1,5 +1,6 @@
 import { UserProfileId, MediaItem } from '@/types/cinema';
 import { WatchGroup, QueuedMovie } from '@/types/watchTogether';
+import { SyncPlaybackSession } from '@/types/syncPlayback';
 import { createSyncPlayGroup } from '@/lib/api/syncPlay';
 import { PROFILES } from '@/lib/constants';
 import { firestore } from '@/lib/firebase/config';
@@ -392,6 +393,14 @@ class WatchTogetherService {
     this.group.isPlaying = isPlaying;
     this.group.state = isPlaying ? 'PLAYING' : 'PAUSED';
     this.save();
+  }
+
+  syncWithPlaybackSession(session: SyncPlaybackSession) {
+    if (!this.group) return;
+    this.group.currentPositionSeconds = session.position;
+    this.group.isPlaying = session.playbackState === 'PLAYING';
+    this.group.state = session.playbackState === 'PLAYING' ? 'PLAYING' : 'PAUSED';
+    this.save(false);
   }
 
   resetGroup() {

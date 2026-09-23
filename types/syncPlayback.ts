@@ -1,4 +1,5 @@
 import { UserProfileId } from './cinema';
+
 export type SyncPlaybackEventType =
   | 'PLAY'
   | 'PAUSE'
@@ -10,6 +11,7 @@ export type SyncPlaybackEventType =
   | 'NEXT_EPISODE'
   | 'PREVIOUS_EPISODE'
   | 'JOIN'
+  | 'LEAVE'
   | 'HEARTBEAT'
   | 'REACTION';
 
@@ -27,6 +29,7 @@ export interface SyncParticipantState {
   presence: ParticipantPresence;
   lastSeen: number; // epoch ms
   position: number; // seconds
+  latencyMs?: number;
 }
 
 export interface SyncActionNotification {

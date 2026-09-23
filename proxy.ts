@@ -29,6 +29,7 @@ export function proxy(request: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/jellyfin') ||
+    pathname.startsWith('/api/sync') ||
     pathname.startsWith('/favicon.ico') ||
     pathname.match(/\.(png|jpg|jpeg|gif|webp|svg|ico|css|js|woff|woff2)$/)
   ) {

@@ -215,6 +215,10 @@ export function useSyncPlayback({
     engineRef.current?.broadcastReaction(emoji);
   }, []);
 
+  const updateParticipantProgress = useCallback((position: number, state: 'PLAYING' | 'PAUSED' | 'BUFFERING') => {
+    engineRef.current?.updateParticipantProgress(position, state);
+  }, []);
+
   return {
     session,
     activeNotification,
@@ -228,5 +232,6 @@ export function useSyncPlayback({
     broadcastPrevEpisode,
     broadcastReaction,
     performDriftCorrection,
+    updateParticipantProgress,
   };
 }

@@ -7,9 +7,6 @@ import {
 } from '@/types/syncPlayback';
 import { QuickReactionEmoji } from '@/types/watchTogether';
 import { PROFILES } from '@/lib/constants';
-import { firestore } from '@/lib/firebase/config';
-import { doc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
-import { sendSyncPlayCommand } from '@/lib/api/syncPlay';
 
 export interface SyncEngineCallbacks {
   onPlay?: (sender: UserProfileId, sequence: number) => void;
@@ -29,13 +26,19 @@ export class SyncPlaybackEngine {
   private mediaId: string;
   private localUserId: UserProfileId;
   private callbacks: SyncEngineCallbacks;
+
   private channel: BroadcastChannel | null = null;
+  private eventSource: EventSource | null = null;
+  private socket: WebSocket | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private presenceTimer: NodeJS.Timeout | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+
   private storageKey: string;
   private isDestroyed = false;
-  private unsubscribeFirestore: Unsubscribe | null = null;
   private lastSeekCorrectionTime = 0;
+  private lastReportedPosition = 0;
+  private lastReportedState: 'PLAYING' | 'PAUSED' | 'BUFFERING' = 'PAUSED';
 
   private session: SyncPlaybackSession;
 
@@ -58,8 +61,8 @@ export class SyncPlaybackEngine {
       avatarUrl: '/avatars/guest.svg',
     };
 
-    // Initialize session state
-    const initialSession: SyncPlaybackSession = {
+    // Initial session placeholder while connecting to server
+    this.session = {
       groupId,
       groupName,
       mediaId,
@@ -80,232 +83,276 @@ export class SyncPlaybackEngine {
       },
     };
 
-    // Attempt to load existing session from localStorage
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(this.storageKey);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed && parsed.groupId === groupId) {
-            initialSession.sequence = parsed.sequence || 1;
-            initialSession.position = parsed.position || 0;
-            initialSession.playbackState = parsed.playbackState || 'PAUSED';
-            initialSession.groupName = parsed.groupName || groupName;
-            if (parsed.participants) {
-              initialSession.participants = {
-                ...initialSession.participants,
-                ...parsed.participants,
-              };
-            }
-          }
-        }
-      } catch {
-        // Fall back
-      }
-    }
-
-    this.session = initialSession;
     this.initNetworking();
   }
 
   private initNetworking() {
-    if (typeof window !== 'undefined') {
-      // 1. BroadcastChannel for zero-latency local / same-machine sync
-      try {
-        this.channel = new BroadcastChannel(`dinustream_sync_${this.groupId}`);
-        this.channel.onmessage = (event) => {
-          this.handleIncomingPayload(event.data);
-        };
-      } catch {
-        // Fallback
-      }
+    if (typeof window === 'undefined') return;
 
-      // 2. Storage event listener fallback
-      window.addEventListener('storage', this.handleStorageEvent);
+    // 1. Local BroadcastChannel for zero-latency cross-tab communication
+    try {
+      this.channel = new BroadcastChannel(`dinustream_sync_${this.groupId}`);
+      this.channel.onmessage = (event) => {
+        if (event.data?.type === 'EVENT' && event.data?.event) {
+          this.handleAuthoritativeEvent(event.data.event, event.data.session);
+        } else if (event.data?.type === 'REACTION') {
+          this.handleAuthoritativeEvent(event.data, this.session);
+        }
+      };
+    } catch {
+      // BroadcastChannel unavailable
+    }
 
-      // 3. Firestore Real-Time cross-device synchronization
-      if (firestore) {
-        try {
-          const docRef = doc(firestore, 'dinustream_sync_rooms', this.groupId);
-          this.unsubscribeFirestore = onSnapshot(
-            docRef,
-            (snap) => {
-              if (snap.exists()) {
-                const data = snap.data() as SyncEventPayload;
-                if (data && data.controller !== this.localUserId) {
-                  this.handleIncomingPayload(data);
-                }
-              }
-            },
-            (err) => {
-              console.warn('[SyncEngine] Firestore room sync fallback to local mesh:', err.message);
-            }
-          );
-        } catch (err) {
-          console.warn('[SyncEngine] Firestore listener failed; using local real-time mesh:', err);
+    // 2. Fetch authoritative initial state from DinuStream Sync Server
+    this.fetchAuthoritativeState();
+
+    // 3. Connect real-time event stream (SSE / WebSocket)
+    this.connectRealtimeStream();
+
+    // 4. Heartbeat interval to server (every 3.5 seconds)
+    this.heartbeatTimer = setInterval(() => {
+      this.sendHeartbeat();
+    }, 3500);
+
+    // 5. Presence liveness checker
+    this.presenceTimer = setInterval(() => {
+      this.checkPresenceLiveness();
+    }, 5000);
+
+    // Send JOIN command to server
+    this.sendCommand({
+      type: 'JOIN',
+      groupId: this.groupId,
+      sender: this.localUserId,
+      mediaId: this.mediaId,
+    });
+  }
+
+  private async fetchAuthoritativeState() {
+    try {
+      const res = await fetch(
+        `/api/sync/playback?groupId=${encodeURIComponent(this.groupId)}&mediaId=${encodeURIComponent(
+          this.mediaId
+        )}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.session) {
+          this.session = {
+            ...data.session,
+            // Calculate real expected position using server timestamp offset
+            position: data.expectedPosition ?? data.session.position,
+          };
+          this.callbacks.onSessionUpdate?.({ ...this.session });
         }
       }
-
-      // 4. Heartbeat interval
-      this.heartbeatTimer = setInterval(() => {
-        this.sendHeartbeat();
-      }, 3000);
-
-      // 5. Presence checker (mark stale participants offline)
-      this.presenceTimer = setInterval(() => {
-        this.checkPresenceLiveness();
-      }, 5000);
-
-      // Announce JOIN event
-      this.broadcastEvent('JOIN', this.session.position, this.session.playbackState, {
-        customMessage: `${this.getLocalUserName()} connected`,
-      });
+    } catch (err) {
+      console.warn('[SYNC] Failed to fetch initial authoritative state:', err);
     }
   }
 
-  private handleStorageEvent = (e: StorageEvent) => {
-    if (e.key === this.storageKey && e.newValue) {
-      try {
-        const payload: SyncEventPayload = JSON.parse(e.newValue);
-        this.handleIncomingPayload(payload);
-      } catch {}
-    }
-  };
+  private connectRealtimeStream() {
+    if (this.isDestroyed || typeof window === 'undefined') return;
 
-  private handleIncomingPayload(payload: SyncEventPayload) {
-    if (!payload || payload.groupId !== this.groupId) return;
-    if (payload.controller === this.localUserId && payload.type !== 'HEARTBEAT') {
-      return;
+    // Clean up existing connections
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
     }
 
-    const sender = payload.controller;
-    const senderName = this.getUserName(sender);
+    try {
+      const sseUrl = `/api/sync/events?groupId=${encodeURIComponent(
+        this.groupId
+      )}&userId=${encodeURIComponent(this.localUserId)}`;
+      const es = new EventSource(sseUrl);
+      this.eventSource = es;
 
-    // Update participant presence & position dynamically
-    if (!this.session.participants[sender]) {
-      const pProfile = PROFILES[sender];
-      this.session.participants[sender] = {
-        id: sender,
-        name: senderName,
-        avatarUrl: pProfile?.avatarUrl || '/avatars/guest.svg',
-        presence: payload.playbackState === 'PLAYING' ? 'Watching' : 'Paused',
-        lastSeen: Date.now(),
-        position: payload.position,
+      es.onopen = () => {
+        console.log(`[SYNC] Real-time synchronization stream connected for group ${this.groupId}`);
       };
-    } else {
-      this.session.participants[sender].lastSeen = Date.now();
-      this.session.participants[sender].position = payload.position;
-      this.session.participants[sender].presence =
-        payload.playbackState === 'PLAYING'
-          ? 'Watching'
-          : payload.playbackState === 'BUFFERING'
-          ? 'Buffering'
-          : 'Paused';
-    }
 
-    if (payload.type === 'HEARTBEAT') {
-      this.callbacks.onSessionUpdate?.({ ...this.session });
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'INIT' && data.session) {
+            this.handleServerInit(data.session, data.expectedPosition);
+          } else if (data.type === 'EVENT' && data.event && data.session) {
+            this.handleAuthoritativeEvent(data.event, data.session);
+          }
+        } catch (err) {
+          console.warn('[SYNC] Failed to parse SSE message:', err);
+        }
+      };
+
+      es.onerror = () => {
+        console.warn('[SYNC] Real-time stream connection dropped. Reconnecting in 3s...');
+        es.close();
+        this.eventSource = null;
+        if (!this.isDestroyed && !this.reconnectTimer) {
+          this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.connectRealtimeStream();
+          }, 3000);
+        }
+      };
+    } catch (err) {
+      console.warn('[SYNC] Failed to create EventSource stream:', err);
+    }
+  }
+
+  private handleServerInit(session: SyncPlaybackSession, expectedPosition?: number) {
+    if (!session || session.groupId !== this.groupId) return;
+
+    const initialPos = expectedPosition ?? session.position;
+    this.session = {
+      ...session,
+      position: initialPos,
+    };
+
+    console.log(
+      `[SYNC] Received server authoritative session: state=${session.playbackState} pos=${initialPos.toFixed(
+        2
+      )} seq=${session.sequence}`
+    );
+
+    this.callbacks.onSessionUpdate?.({ ...this.session });
+
+    // Synchronize initial playback state
+    if (session.playbackState === 'PLAYING') {
+      this.callbacks.onPlay?.(session.controller, session.sequence);
+      if (initialPos > 0) {
+        this.callbacks.onSeek?.(initialPos, session.controller, session.sequence);
+      }
+    } else {
+      this.callbacks.onPause?.(session.controller, session.sequence);
+      if (initialPos > 0) {
+        this.callbacks.onSeek?.(initialPos, session.controller, session.sequence);
+      }
+    }
+  }
+
+  private handleAuthoritativeEvent(event: SyncEventPayload, updatedSession: SyncPlaybackSession) {
+    if (!event || event.groupId !== this.groupId) return;
+
+    const sender = event.controller;
+    const isLocalSender = sender === this.localUserId;
+
+    // Reject stale events
+    if (
+      event.sequence <= this.session.sequence &&
+      event.type !== 'JOIN' &&
+      event.type !== 'HEARTBEAT' &&
+      event.type !== 'REACTION'
+    ) {
+      console.log(
+        `[SYNC] Stale event rejected: eventSeq=${event.sequence} localSeq=${this.session.sequence} type=${event.type}`
+      );
       return;
     }
 
-    if (payload.type === 'REACTION' && payload.reactionEmoji) {
+    // Update authoritative local session copy
+    this.session = {
+      ...updatedSession,
+      participants: { ...updatedSession.participants },
+    };
+
+    const senderName = PROFILES[sender]?.name || String(sender);
+
+    // Handle reaction
+    if (event.type === 'REACTION' && event.reactionEmoji) {
       this.callbacks.onReaction?.(
-        payload.reactionEmoji as QuickReactionEmoji,
+        event.reactionEmoji as QuickReactionEmoji,
         sender,
         senderName
       );
       return;
     }
 
-    const isHigherSequence = payload.sequence >= this.session.sequence;
+    if (event.type === 'HEARTBEAT') {
+      this.callbacks.onSessionUpdate?.({ ...this.session });
+      return;
+    }
 
-    // Handle discrete playback actions
-    if (isHigherSequence || payload.type === 'SEEK' || payload.type.startsWith('SKIP_')) {
-      this.session.sequence = Math.max(this.session.sequence, payload.sequence);
-      this.session.position = payload.position;
-      this.session.timestamp = payload.timestamp;
-      this.session.playbackState = payload.playbackState;
-      this.session.controller = payload.controller;
+    // Calculate current expected position accounting for transmission latency
+    let targetPosition = event.position;
+    if (event.playbackState === 'PLAYING') {
+      const elapsed = (Date.now() - event.timestamp) / 1000;
+      targetPosition = event.position + Math.max(0, elapsed);
+    }
 
-      let notificationText = payload.message || '';
+    console.log(
+      `[SYNC] Executing authoritative event: ${event.type} seq=${event.sequence} pos=${targetPosition.toFixed(
+        2
+      )} sender=${sender}`
+    );
 
-      switch (payload.type) {
+    // Trigger player callbacks for non-local actions
+    if (!isLocalSender) {
+      switch (event.type) {
         case 'PLAY':
         case 'RESUME':
-          notificationText = notificationText || `${senderName} resumed playback`;
-          this.callbacks.onPlay?.(sender, payload.sequence);
+          this.callbacks.onPlay?.(sender, event.sequence);
           break;
 
         case 'PAUSE':
-          notificationText = notificationText || `${senderName} paused playback`;
-          this.callbacks.onPause?.(sender, payload.sequence);
+          this.callbacks.onPause?.(sender, event.sequence);
           break;
 
         case 'SEEK':
-          notificationText = notificationText || `${senderName} seeked playback`;
-          this.callbacks.onSeek?.(payload.position, sender, payload.sequence);
+          this.callbacks.onSeek?.(targetPosition, sender, event.sequence);
           break;
 
         case 'SKIP_INTRO':
-          notificationText = `${senderName} skipped intro`;
-          this.callbacks.onSkipSegment?.('INTRO', payload.position, sender);
+          this.callbacks.onSkipSegment?.('INTRO', targetPosition, sender);
           break;
 
         case 'SKIP_RECAP':
-          notificationText = `${senderName} skipped recap`;
-          this.callbacks.onSkipSegment?.('RECAP', payload.position, sender);
+          this.callbacks.onSkipSegment?.('RECAP', targetPosition, sender);
           break;
 
         case 'SKIP_OUTRO':
-          notificationText = `${senderName} skipped outro`;
-          this.callbacks.onSkipSegment?.('OUTRO', payload.position, sender);
+          this.callbacks.onSkipSegment?.('OUTRO', targetPosition, sender);
           break;
 
         case 'NEXT_EPISODE':
-          notificationText = `${senderName} played next episode`;
           this.callbacks.onNextEpisode?.(sender);
           break;
 
         case 'PREVIOUS_EPISODE':
-          notificationText = `${senderName} played previous episode`;
           this.callbacks.onPrevEpisode?.(sender);
           break;
-
-        case 'JOIN':
-          notificationText = `${senderName} connected to room`;
-          break;
       }
-
-      if (notificationText) {
-        const notif: SyncActionNotification = {
-          id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          type: payload.type,
-          sender,
-          senderName,
-          text: notificationText,
-          timestamp: Date.now(),
-        };
-        this.session.lastNotification = notif;
-        this.callbacks.onNotification?.(notif);
-      }
-
-      this.persistSession();
-      this.callbacks.onSessionUpdate?.({ ...this.session });
     }
+
+    if (event.message) {
+      const notif: SyncActionNotification = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        type: event.type,
+        sender,
+        senderName,
+        text: event.message,
+        timestamp: Date.now(),
+      };
+      this.session.lastNotification = notif;
+      this.callbacks.onNotification?.(notif);
+    }
+
+    this.persistLocalSession();
+    this.callbacks.onSessionUpdate?.({ ...this.session });
   }
 
+  /**
+   * Server-authoritative drift correction with tiered thresholds and seek cooldown hysteresis.
+   */
   public performDriftCorrection(localCurrentTime: number) {
     if (this.isDestroyed) return;
-    if (this.session.controller === this.localUserId) {
-      this.session.position = localCurrentTime;
-      return;
-    }
 
     // Do not correct drift if the local video is still starting up
     if (localCurrentTime < 1.0) {
       return;
     }
 
+    // Calculate server-authoritative playhead position
     let authoritativePos = this.session.position;
     if (this.session.playbackState === 'PLAYING') {
       const elapsedSeconds = (Date.now() - this.session.timestamp) / 1000;
@@ -315,34 +362,48 @@ export class SyncPlaybackEngine {
     const drift = localCurrentTime - authoritativePos;
     const absDrift = Math.abs(drift);
 
-    // Well synchronized (< 0.3s): normal 1.0x speed
-    if (absDrift < 0.3) {
+    // Tier 1: Drift < 250ms (0.25s) — In sync, ignore
+    if (absDrift < 0.25) {
       this.callbacks.onDriftCorrectRate?.(1.0);
       return;
     }
 
-    // Moderate drift (0.3s to 3.0s): gently nudge playback rate by ±4%
-    // This catches up smoothly without triggering buffer flushes or seek stutters!
-    if (absDrift >= 0.3 && absDrift < 3.0) {
+    // Tier 2: Drift 250ms to 750ms (0.25s - 0.75s) — Smooth rate nudge (±4%)
+    // Nudges playback rate without flushing buffers or stuttering
+    if (absDrift >= 0.25 && absDrift < 0.75) {
       if (drift < 0) {
-        // Local is behind: speed up slightly
+        // Behind: speed up slightly
         this.callbacks.onDriftCorrectRate?.(1.04);
       } else {
-        // Local is ahead: slow down slightly
+        // Ahead: slow down slightly
         this.callbacks.onDriftCorrectRate?.(0.96);
       }
       return;
     }
 
-    // Large drift (>= 3.0s): perform seek ONLY if at least 8 seconds have passed since last seek
+    // Tier 3: Drift > 750ms (0.75s) — Hard seek correction with 6-second cooldown hysteresis
+    // Tier 4: Drift > 2000ms (2.0s) — Immediate forced sync
     const now = Date.now();
-    if (absDrift >= 3.0 && now - this.lastSeekCorrectionTime > 8000) {
+    const shouldForceSeek = absDrift >= 2.0;
+    const cooldownElapsed = now - this.lastSeekCorrectionTime > 6000;
+
+    if (absDrift >= 0.75 && (cooldownElapsed || shouldForceSeek)) {
       this.lastSeekCorrectionTime = now;
       this.callbacks.onDriftCorrectRate?.(1.0);
+
+      console.log(
+        `[SYNC_DRIFT] group=${this.groupId} user=${this.localUserId} expected=${authoritativePos.toFixed(
+          2
+        )} actual=${localCurrentTime.toFixed(2)} drift=${drift.toFixed(2)} action=CORRECT`
+      );
+
       this.callbacks.onSeek?.(authoritativePos, this.session.controller, this.session.sequence);
     }
   }
 
+  /**
+   * Broadcast a user playback action by submitting it to the authoritative backend.
+   */
   public broadcastEvent(
     type: SyncPlaybackEventType,
     position: number,
@@ -351,162 +412,92 @@ export class SyncPlaybackEngine {
   ) {
     if (this.isDestroyed) return;
 
-    this.session.sequence += 1;
-    this.session.position = position;
-    this.session.playbackState = playbackState;
-    this.session.timestamp = Date.now();
-    this.session.controller = this.localUserId;
-    if (options?.episodeId) {
-      this.session.episodeId = options.episodeId;
-    }
+    this.lastReportedPosition = position;
+    this.lastReportedState = playbackState;
 
-    // Bridge with native Jellyfin SyncPlay backend
-    const posTicks = Math.round(position * 10_000_000);
-    if (type === 'PLAY' || type === 'RESUME') {
-      sendSyncPlayCommand(this.groupId, 'Play', posTicks).catch(() => {});
-    } else if (type === 'PAUSE') {
-      sendSyncPlayCommand(this.groupId, 'Pause', posTicks).catch(() => {});
-    } else if (type === 'SEEK' || type.startsWith('SKIP_')) {
-      sendSyncPlayCommand(this.groupId, 'Seek', posTicks).catch(() => {});
-    }
-
-    const senderName = this.getLocalUserName();
-    let message = options?.customMessage;
-    if (!message) {
-      switch (type) {
-        case 'PLAY':
-        case 'RESUME':
-          message = `${senderName} resumed playback`;
-          break;
-        case 'PAUSE':
-          message = `${senderName} paused playback`;
-          break;
-        case 'SEEK':
-          message = `${senderName} seeked playback`;
-          break;
-        case 'SKIP_INTRO':
-          message = `${senderName} skipped intro`;
-          break;
-        case 'SKIP_RECAP':
-          message = `${senderName} skipped recap`;
-          break;
-        case 'SKIP_OUTRO':
-          message = `${senderName} skipped outro`;
-          break;
-        case 'NEXT_EPISODE':
-          message = `${senderName} played next episode`;
-          break;
-        case 'PREVIOUS_EPISODE':
-          message = `${senderName} played previous episode`;
-          break;
-      }
-    }
-
-    const payload: SyncEventPayload = {
+    this.sendCommand({
       type,
       groupId: this.groupId,
+      sender: this.localUserId,
       mediaId: this.mediaId,
-      episodeId: this.session.episodeId,
+      episodeId: options?.episodeId || this.session.episodeId,
       position,
       playbackState,
-      controller: this.localUserId,
-      sequence: this.session.sequence,
-      timestamp: this.session.timestamp,
-      message,
-    };
-
-    // 1. BroadcastChannel (local mesh)
-    if (this.channel) {
-      try {
-        this.channel.postMessage(payload);
-      } catch {}
-    }
-
-    // 2. Firestore real-time cloud write
-    if (firestore) {
-      try {
-        const docRef = doc(firestore, 'dinustream_sync_rooms', this.groupId);
-        setDoc(docRef, payload, { merge: true }).catch(() => {});
-      } catch {}
-    }
-
-    // 3. LocalStorage persistence
-    this.persistSession(payload);
-
-    if (message && type !== 'HEARTBEAT') {
-      const notif: SyncActionNotification = {
-        id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        type,
-        sender: this.localUserId,
-        senderName,
-        text: message,
-        timestamp: Date.now(),
-      };
-      this.session.lastNotification = notif;
-      this.callbacks.onNotification?.(notif);
-    }
-
-    this.callbacks.onSessionUpdate?.({ ...this.session });
+      message: options?.customMessage,
+      clientTimestamp: Date.now(),
+    });
   }
 
+  /**
+   * Send a reaction emoji burst to the group.
+   */
   public broadcastReaction(emoji: QuickReactionEmoji) {
     if (this.isDestroyed) return;
-    const payload: SyncEventPayload = {
+
+    this.sendCommand({
       type: 'REACTION',
       groupId: this.groupId,
-      mediaId: this.mediaId,
-      episodeId: this.session.episodeId,
-      position: this.session.position,
-      playbackState: this.session.playbackState,
-      controller: this.localUserId,
-      sequence: this.session.sequence,
-      timestamp: Date.now(),
+      sender: this.localUserId,
       reactionEmoji: emoji,
-    };
+      clientTimestamp: Date.now(),
+    });
+  }
 
-    if (this.channel) {
-      try {
-        this.channel.postMessage(payload);
-      } catch {}
+  /**
+   * Update participant playback telemetry (position, state, buffering).
+   */
+  public updateParticipantProgress(position: number, state: 'PLAYING' | 'PAUSED' | 'BUFFERING') {
+    this.lastReportedPosition = position;
+    this.lastReportedState = state;
+  }
+
+  private async sendCommand(cmd: Record<string, unknown>) {
+    try {
+      const res = await fetch('/api/sync/playback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cmd),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.event && data.session) {
+          // Broadcast to local BroadcastChannel for zero-latency peer tabs
+          if (this.channel) {
+            try {
+              this.channel.postMessage({
+                type: 'EVENT',
+                event: data.event,
+                session: data.session,
+              });
+            } catch {}
+          }
+          this.handleAuthoritativeEvent(data.event, data.session);
+        }
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        console.warn('[SYNC] Command rejected by server:', errJson.error);
+      }
+    } catch (err) {
+      console.warn('[SYNC] Failed to send command to server:', err);
     }
-
-    if (firestore) {
-      try {
-        const docRef = doc(firestore, 'dinustream_sync_rooms', this.groupId);
-        setDoc(docRef, payload, { merge: true }).catch(() => {});
-      } catch {}
-    }
-
-    this.persistSession(payload);
-    this.callbacks.onReaction?.(emoji, this.localUserId, this.getLocalUserName());
   }
 
   private sendHeartbeat() {
     if (this.isDestroyed) return;
-    const payload: SyncEventPayload = {
-      type: 'HEARTBEAT',
-      groupId: this.groupId,
-      mediaId: this.mediaId,
-      episodeId: this.session.episodeId,
-      position: this.session.position,
-      playbackState: this.session.playbackState,
-      controller: this.localUserId,
-      sequence: this.session.sequence,
-      timestamp: Date.now(),
-    };
 
-    if (this.channel) {
-      try {
-        this.channel.postMessage(payload);
-      } catch {}
-    }
-
-    if (firestore) {
-      try {
-        const docRef = doc(firestore, 'dinustream_sync_rooms', this.groupId);
-        setDoc(docRef, { ...payload, lastHeartbeat: Date.now() }, { merge: true }).catch(() => {});
-      } catch {}
-    }
+    fetch('/api/sync/playback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'HEARTBEAT',
+        groupId: this.groupId,
+        sender: this.localUserId,
+        position: this.lastReportedPosition,
+        playbackState: this.lastReportedState,
+        clientTimestamp: Date.now(),
+      }),
+    }).catch(() => {});
   }
 
   private checkPresenceLiveness() {
@@ -528,19 +519,11 @@ export class SyncPlaybackEngine {
     }
   }
 
-  private persistSession(latestPayload?: SyncEventPayload) {
+  private persistLocalSession() {
     if (typeof window === 'undefined') return;
     try {
-      localStorage.setItem(this.storageKey, JSON.stringify(latestPayload || this.session));
+      localStorage.setItem(this.storageKey, JSON.stringify(this.session));
     } catch {}
-  }
-
-  private getLocalUserName(): string {
-    return this.getUserName(this.localUserId);
-  }
-
-  private getUserName(id: UserProfileId): string {
-    return PROFILES[id]?.name || String(id);
   }
 
   public getSession(): SyncPlaybackSession {
@@ -549,18 +532,33 @@ export class SyncPlaybackEngine {
 
   public destroy() {
     this.isDestroyed = true;
+
+    // Send LEAVE notification to server
+    if (typeof window !== 'undefined') {
+      navigator.sendBeacon?.(
+        '/api/sync/playback',
+        JSON.stringify({
+          type: 'LEAVE',
+          groupId: this.groupId,
+          sender: this.localUserId,
+        })
+      );
+    }
+
     if (this.channel) {
       this.channel.close();
       this.channel = null;
     }
-    if (this.unsubscribeFirestore) {
-      this.unsubscribeFirestore();
-      this.unsubscribeFirestore = null;
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
     }
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('storage', this.handleStorageEvent);
+    if (this.socket) {
+      this.socket.close();
+      this.socket = null;
     }
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.presenceTimer) clearInterval(this.presenceTimer);
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
   }
 }

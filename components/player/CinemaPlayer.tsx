@@ -380,11 +380,8 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   }, []);
 
   // Synchronized Watch Together Playback Engine
-  /*
-    Synchronized playback. The callbacks below are inline, which is fine now:
-    useSyncPlayback holds them in a ref so their changing identity no longer
-    rebuilds the sync engine on every render (see the note in that hook).
-  */
+  const isApplyingRemoteSync = useRef(false);
+
   const syncPlayback = useSyncPlayback({
     groupId: groupId || 'group-movie-night',
     groupName: groupName || 'Movie Night ❤️',
@@ -392,37 +389,53 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     episodeId: episode?.id,
     enabled: Boolean(isGroupSync),
     onRemotePlay: () => {
+      isApplyingRemoteSync.current = true;
       if (videoRef.current && videoRef.current.paused) {
         videoRef.current.play().catch(() => {});
       }
       setIsPlaying(true);
       triggerPulse('play');
+      setTimeout(() => {
+        isApplyingRemoteSync.current = false;
+      }, 300);
     },
     onRemotePause: () => {
+      isApplyingRemoteSync.current = true;
       if (videoRef.current && !videoRef.current.paused) {
         videoRef.current.pause();
       }
       setIsPlaying(false);
       triggerPulse('pause');
+      setTimeout(() => {
+        isApplyingRemoteSync.current = false;
+      }, 300);
     },
     onRemoteSeek: (targetSeconds) => {
+      isApplyingRemoteSync.current = true;
       const clamped = Math.min(duration, Math.max(0, targetSeconds));
       if (videoRef.current) {
         const diff = Math.abs(videoRef.current.currentTime - clamped);
-        if (diff > 1.5) {
+        if (diff > 0.5) {
           videoRef.current.currentTime = clamped;
           setCurrentTime(clamped);
         }
       } else {
         setCurrentTime(clamped);
       }
+      setTimeout(() => {
+        isApplyingRemoteSync.current = false;
+      }, 400);
     },
     onRemoteSkipSegment: (_type, targetSeconds) => {
+      isApplyingRemoteSync.current = true;
       const clamped = Math.min(duration, Math.max(0, targetSeconds));
       setCurrentTime(clamped);
       if (videoRef.current) {
         videoRef.current.currentTime = clamped;
       }
+      setTimeout(() => {
+        isApplyingRemoteSync.current = false;
+      }, 400);
     },
     onRemoteNextEpisode: () => {
       onNextEpisode?.();
@@ -437,17 +450,13 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     },
   });
 
-  /*
-    Stable references pulled out of the hook result, which is a new object literal
-    on every render. Effects and callbacks depend on these instead, so they are
-    not rebuilt continuously.
-  */
   const {
     broadcastPlay,
     broadcastPause,
     broadcastSeek,
     broadcastSkipSegment,
     performDriftCorrection,
+    updateParticipantProgress,
   } = syncPlayback;
 
   // Reusable Seek Handler for Video Element & Scrubbing
@@ -458,7 +467,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       if (videoRef.current) {
         videoRef.current.currentTime = clamped;
       }
-      if (isGroupSync) {
+      if (isGroupSync && !isApplyingRemoteSync.current) {
         broadcastSeek(clamped);
       }
       setAreControlsVisible(true);
@@ -702,24 +711,32 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       if (video.buffered.length > 0) {
         setBufferedEnd(video.buffered.end(video.buffered.length - 1));
       }
-      /*
-        Report position to Jellyfin. Internally throttled to one call every 10s,
-        so calling it from `timeupdate` (~4Hz) is safe. This is what makes resume
-        work on another device — nothing used to write this value back.
-      */
       notifyProgress(video.currentTime, video.paused);
+      if (isGroupSync) {
+        updateParticipantProgress(video.currentTime, video.paused ? 'PAUSED' : 'PLAYING');
+      }
+    };
+
+    const handleWaiting = () => {
+      if (isGroupSync) {
+        updateParticipantProgress(video.currentTime, 'BUFFERING');
+      }
     };
 
     const handlePlaying = () => {
       setIsPlaying(true);
       notifyStarted(video.currentTime);
+      if (isGroupSync) {
+        updateParticipantProgress(video.currentTime, 'PLAYING');
+      }
     };
 
     const handlePause = () => {
       setIsPlaying(false);
-      // Sent immediately rather than on the throttle, so a pause is recorded even
-      // if the viewer closes the tab straight afterwards.
       notifyProgress(video.currentTime, true);
+      if (isGroupSync) {
+        updateParticipantProgress(video.currentTime, 'PAUSED');
+      }
     };
 
     const handleLoadedMetadata = () => {
@@ -788,6 +805,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     video.addEventListener('ended', handleEnded);
     video.addEventListener('playing', handlePlaying);
     video.addEventListener('pause', handlePause);
+    video.addEventListener('waiting', handleWaiting);
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
@@ -795,6 +813,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       video.removeEventListener('ended', handleEnded);
       video.removeEventListener('playing', handlePlaying);
       video.removeEventListener('pause', handlePause);
+      video.removeEventListener('waiting', handleWaiting);
     };
     /*
       Depends on the individual stable callbacks, not on the whole `session`
@@ -844,6 +863,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
 
   // Playback Control Actions
   const togglePlay = useCallback(() => {
+    if (isApplyingRemoteSync.current) return;
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
