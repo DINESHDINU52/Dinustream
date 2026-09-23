@@ -3,6 +3,7 @@ import { WatchGroup, QueuedMovie } from '@/types/watchTogether';
 import { SyncPlaybackSession } from '@/types/syncPlayback';
 import { createSyncPlayGroup } from '@/lib/api/syncPlay';
 import { PROFILES } from '@/lib/constants';
+import { profileService } from './profileService';
 import { firestore } from '@/lib/firebase/config';
 import { doc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 
@@ -233,15 +234,18 @@ class WatchTogetherService {
     if (!this.group) return;
     const existing = this.group.participants.find((p) => p.id === participantId);
     if (!existing) {
-      const pProfile = PROFILES[participantId] || {
-        id: participantId,
-        name: participantId,
-        avatarUrl: '/avatars/guest.svg',
-      };
+      const allP = profileService.getAllProfiles();
+      const pProfile =
+        allP.find((p) => p.id === participantId) ||
+        PROFILES[participantId] || {
+          id: participantId,
+          name: participantId,
+          avatarUrl: '/avatars/characters/iron-man.svg',
+        };
       this.group.participants.push({
         id: participantId,
         name: pProfile.name || String(participantId),
-        avatarUrl: pProfile.avatarUrl || '/avatars/guest.svg',
+        avatarUrl: pProfile.avatarUrl || '/avatars/characters/iron-man.svg',
         isHost: false,
         isOnline: true,
         isReady: false,
@@ -251,6 +255,23 @@ class WatchTogetherService {
       });
       this.save();
     }
+  }
+
+  addParticipant(participantId: UserProfileId) {
+    this.joinGroup(participantId);
+  }
+
+  removeParticipant(participantId: UserProfileId) {
+    if (!this.group) return;
+    if (this.group.hostId === participantId) return; // Do not remove host
+    this.group.participants = this.group.participants.filter((p) => p.id !== participantId);
+    this.save();
+  }
+
+  updateGroupName(name: string) {
+    if (!this.group) return;
+    this.group.name = name.trim() || 'Movie Night ❤️';
+    this.save();
   }
 
   selectMovie(movie: MediaItem) {

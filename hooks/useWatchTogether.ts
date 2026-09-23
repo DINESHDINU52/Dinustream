@@ -68,6 +68,18 @@ export function useWatchTogether() {
     watchTogetherService.updatePlaybackState(position, isPlaying);
   }, []);
 
+  const addParticipant = useCallback((participantId: UserProfileId) => {
+    watchTogetherService.addParticipant(participantId);
+  }, []);
+
+  const removeParticipant = useCallback((participantId: UserProfileId) => {
+    watchTogetherService.removeParticipant(participantId);
+  }, []);
+
+  const updateGroupName = useCallback((name: string) => {
+    watchTogetherService.updateGroupName(name);
+  }, []);
+
   const resetGroup = useCallback(() => {
     watchTogetherService.resetGroup();
   }, []);
@@ -86,6 +98,9 @@ export function useWatchTogether() {
     switchHost,
     startSyncAndPlay,
     updatePlaybackState,
+    addParticipant,
+    removeParticipant,
+    updateGroupName,
     resetGroup,
   };
 }

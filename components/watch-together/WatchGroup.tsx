@@ -26,6 +26,9 @@ export function WatchGroup() {
     toggleParticipantReady,
     startSyncAndPlay,
     resetGroup,
+    addParticipant,
+    removeParticipant,
+    updateGroupName,
   } = useWatchTogether();
 
   const [groupNameInput, setGroupNameInput] = useState('Movie Night ❤️');
@@ -130,8 +133,12 @@ export function WatchGroup() {
       onPlayNext={playNext}
       onToggleReady={toggleParticipantReady}
       onStartSyncAndPlay={startSyncAndPlay}
-      onSwitchProfile={() => switchProfile()}
+      onSwitchProfile={(newId) => profileService.switchProfile(newId)}
       onResetGroup={resetGroup}
+      onAddParticipant={addParticipant}
+      onRemoveParticipant={removeParticipant}
+      onUpdateGroupName={updateGroupName}
+      onCreateGroup={createGroup}
     />
   );
 }
