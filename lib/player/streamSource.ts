@@ -179,19 +179,22 @@ export async function resolveStreamSource(
     transcodeReasons: reasons,
   };
 
-  /*
-    Prefer HLS whenever Jellyfin offers it.
+  const directPlayContainers = ['mp4', 'm4v', 'webm', 'mov'];
+  const isDirectPlayableContainer = directPlayContainers.includes(
+    (source.Container || '').toLowerCase()
+  );
 
-    Direct play is only chosen when Jellyfin confirms the browser can handle the
-    file as-is. Even then it is worth noting the trade-off: direct play has no
-    bitrate ladder, so it is the right choice for a local network and the wrong
-    one over a slow link. Jellyfin already weighs that using MaxStreamingBitrate
-    from the profile, which is why the decision is delegated rather than guessed.
-  */
+  // 1. If the browser can direct play natively (MP4, WebM, M4V), play directly with 0% server CPU overhead
+  if (source.SupportsDirectPlay && isDirectPlayableContainer) {
+    return { ...shared, url: buildDirectUrl(itemId, options, shared.mediaSourceId), method: 'direct' };
+  }
+
+  // 2. Otherwise use HLS (stream-copy remux or transcode)
   if (source.TranscodingUrl) {
     return { ...shared, url: toProxyUrl(source.TranscodingUrl), method: 'hls' };
   }
 
+  // 3. Fallback direct stream
   if (source.SupportsDirectPlay || source.SupportsDirectStream) {
     return { ...shared, url: buildDirectUrl(itemId, options, shared.mediaSourceId), method: 'direct' };
   }

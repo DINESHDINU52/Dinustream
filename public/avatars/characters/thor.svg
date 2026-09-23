@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_thor" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#04263e"/>
+          <stop offset="100%" stop-color="#020d17"/>
+        </radialGradient>
+        <filter id="glow_thor">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_thor)"/>
+      <path d="M20 20 L40 45 L32 55 L52 80" stroke="#38bdf8" stroke-width="1.5" fill="none" opacity="0.4" filter="url(#glow_thor)"/>
+      <path d="M100 20 L80 45 L88 55 L68 85" stroke="#38bdf8" stroke-width="1.5" fill="none" opacity="0.4" filter="url(#glow_thor)"/>
+      <path d="M34 50 C24 35, 20 20, 24 15 C30 25, 34 38, 42 46 Z" fill="#94a3b8" stroke="#cbd5e1" stroke-width="1"/>
+      <path d="M86 50 C96 35, 100 20, 96 15 C90 25, 86 38, 78 46 Z" fill="#94a3b8" stroke="#cbd5e1" stroke-width="1"/>
+      <path d="M42 45 C42 28, 78 28, 78 45 L76 68 C76 86, 68 96, 60 98 C52 96, 44 86, 44 68 Z" fill="#334155" stroke="#64748b" stroke-width="1.5"/>
+      <path d="M46 52 L60 46 L74 52 L63 68 L60 76 L57 68 Z" fill="#475569" stroke="#94a3b8" stroke-width="1"/>
+      <ellipse cx="52" cy="60" rx="3.5" ry="2" fill="#7dd3fc" filter="url(#glow_thor)"/>
+      <ellipse cx="68" cy="60" rx="3.5" ry="2" fill="#7dd3fc" filter="url(#glow_thor)"/>
+    </svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_bat" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#181308"/>
+          <stop offset="100%" stop-color="#050505"/>
+        </radialGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_bat)"/>
+      <polygon points="36,65 30,16 48,46" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+      <polygon points="84,65 90,16 72,46" fill="#1a1a1a" stroke="#262626" stroke-width="1"/>
+      <path d="M38 52 C38 35, 82 35, 82 52 L84 76 C84 94, 72 102, 60 104 C48 102, 36 94, 36 76 Z" fill="#0f0f0f" stroke="#262626" stroke-width="1.5"/>
+      <polygon points="60,60 63,74 57,74" fill="#262626"/>
+      <polygon points="44,60 55,64 53,68 45,66" fill="#ffffff" opacity="0.95"/>
+      <polygon points="76,60 65,64 67,68 75,66" fill="#ffffff" opacity="0.95"/>
+      <path d="M50 82 L70 82 L66 94 L54 94 Z" fill="#d4a373" stroke="#0a0a0a" stroke-width="2"/>
+      <line x1="56" y1="88" x2="64" y2="88" stroke="#8c5836" stroke-width="1.5"/>
+    </svg>

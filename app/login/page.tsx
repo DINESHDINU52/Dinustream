@@ -3,75 +3,78 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PLATFORM_NAME } from '@/lib/constants';
 import { UserProfile } from '@/types/cinema';
 import { Avatar } from '@/components/ui/Avatar';
 import {
   Lock,
-  Sparkles,
-  Film,
-  ArrowRight,
-  ShieldAlert,
-  KeyRound,
-  UserPlus,
+  Plus,
+  Pencil,
+  Trash2,
   X,
-  UserCheck,
+  AlertCircle,
+  Loader2,
+  Sparkles,
+  Check,
 } from 'lucide-react';
 import { profileService } from '@/lib/services/profileService';
-import {
-  presenceService,
-  isPresenceOnline,
-  ProfilePresence,
-} from '@/lib/services/presenceService';
+import { AvatarPickerModal } from '@/components/profile/AvatarPickerModal';
+import { PREMIUM_AVATARS, CharacterAvatar } from '@/lib/constants/avatars';
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get('redirect') || '/';
 
-  /*
-    Seeded from the service synchronously via a lazy initialiser rather than
-    assigned inside an effect. Populating it in the effect body meant the first
-    paint always rendered an empty profile grid and then immediately re-rendered
-    (a cascading render React now warns about), which showed up as a visible
-    flash of the "Who is watching?" card with no avatars in it.
-  */
   const [profiles, setProfiles] = useState<UserProfile[]>(() => profileService.getAllProfiles());
-  const [presenceMap, setPresenceMap] = useState<Record<string, ProfilePresence>>({});
   const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
-  const [pin, setPin] = useState('');
+  const [isManaging, setIsManaging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState(false);
 
-  // Add Guest Modal state
-  const [isAddGuestOpen, setIsAddGuestOpen] = useState(false);
-  const [newGuestName, setNewGuestName] = useState('');
+  // 4-Digit PIN State
+  const [pinDigits, setPinDigits] = useState(['', '', '', '']);
+  const pinInputRefs = [
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+  ];
 
-  const pinInputRef = useRef<HTMLInputElement>(null);
+  // Add Profile Modal State
+  const [isAddProfileOpen, setIsAddProfileOpen] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [newProfilePin, setNewProfilePin] = useState(false);
+  const [newAvatar, setNewAvatar] = useState<CharacterAvatar>(PREMIUM_AVATARS[0]);
 
-  // Subscribe to profile + presence updates
+  // Edit Profile Modal State (When in Manage Profiles mode)
+  const [editingProfile, setEditingProfile] = useState<UserProfile | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPin, setEditPin] = useState(false);
+  const [editAvatar, setEditAvatar] = useState<CharacterAvatar | null>(null);
+
+  // Avatar Picker Modal State
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+  const [avatarPickerTarget, setAvatarPickerTarget] = useState<'create' | 'edit'>('create');
+
+  // Subscribe to profile changes
   useEffect(() => {
-    const unsubProfile = profileService.subscribe(() => {
+    const unsub = profileService.subscribe(() => {
       setProfiles(profileService.getAllProfiles());
     });
-
-    const unsubPresence = presenceService.subscribe((presences) => {
-      setPresenceMap(presences);
-    });
-
-    return () => {
-      unsubProfile();
-      unsubPresence();
-    };
+    return unsub;
   }, []);
 
-  // Auto-focus the PIN field once the card has animated in.
+  // Auto-focus first PIN box when opening PIN overlay
   useEffect(() => {
-    if (!selectedProfile?.pinProtected) return;
-    const timer = setTimeout(() => pinInputRef.current?.focus(), 150);
-    // Cleared on unmount/re-select so a stale timer cannot steal focus back.
-    return () => clearTimeout(timer);
+    if (selectedProfile?.pinProtected) {
+      setPinDigits(['', '', '', '']);
+      setError(null);
+      const timer = setTimeout(() => {
+        pinInputRefs[0].current?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
   }, [selectedProfile]);
 
   const performLogin = async (profileId: string, enteredPin: string = '', guestName?: string) => {
@@ -88,436 +91,594 @@ function LoginContent() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Authentication failed');
+        throw new Error(data.error || 'Incorrect PIN');
       }
 
-      // Sync active profile locally
+      // Switch profile in local service
       profileService.switchProfile(profileId);
 
-      // Successfully authenticated! Redirect
+      // Redirect
       router.push(redirectUrl);
       router.refresh();
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Login failed';
-      setError(errorMsg);
-      setLoading(false);
-      setPin('');
+      const message = err instanceof Error ? err.message : 'Authentication failed';
+      setError(message);
       setIsShaking(true);
       setTimeout(() => setIsShaking(false), 500);
-      pinInputRef.current?.focus();
+      setPinDigits(['', '', '', '']);
+      pinInputRefs[0].current?.focus();
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleProfileClick = (p: UserProfile) => {
-    setError(null);
-    setPin('');
+  const handleProfileClick = (profile: UserProfile) => {
+    if (isManaging) {
+      // Open Edit Profile modal
+      setEditingProfile(profile);
+      setEditName(profile.name);
+      setEditPin(Boolean(profile.pinProtected));
+      const matched =
+        PREMIUM_AVATARS.find(
+          (a) => a.avatarUrl === profile.avatarUrl || a.svgDataUri === profile.avatarUrl
+        ) || PREMIUM_AVATARS[0];
+      setEditAvatar(matched);
+      return;
+    }
 
-    if (p.pinProtected) {
-      setSelectedProfile(p);
+    if (profile.pinProtected) {
+      setSelectedProfile(profile);
     } else {
-      // Direct one-click login for guest profiles
-      setSelectedProfile(p);
-      performLogin(p.id, '');
+      performLogin(profile.id);
     }
   };
 
-  // Instant fast PIN entry handler: auto-submit upon 4 digits
-  const handlePinChange = (val: string) => {
-    const clean = val.replace(/\D/g, '').slice(0, 4);
-    setPin(clean);
+  const handleDigitChange = (index: number, val: string) => {
+    const digit = val.slice(-1);
+    if (!/^\d*$/.test(digit)) return;
+
+    const next = [...pinDigits];
+    next[index] = digit;
+    setPinDigits(next);
     setError(null);
 
-    if (clean.length === 4 && selectedProfile) {
-      // Auto-submit instantly!
-      performLogin(selectedProfile.id, clean);
+    if (digit && index < 3) {
+      pinInputRefs[index + 1].current?.focus();
+    }
+
+    // Auto submit on last digit
+    if (digit && index === 3) {
+      const fullPin = next.join('');
+      if (selectedProfile) {
+        performLogin(selectedProfile.id, fullPin);
+      }
     }
   };
 
-  const handleCreateGuest = (e: React.FormEvent) => {
-    e.preventDefault();
-    const guest = profileService.addGuestProfile(newGuestName);
-    setIsAddGuestOpen(false);
-    setNewGuestName('');
-    // Direct login as newly created guest
-    setSelectedProfile(guest);
-    performLogin(guest.id, '', guest.name);
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !pinDigits[index] && index > 0) {
+      pinInputRefs[index - 1].current?.focus();
+    }
   };
 
-  /*
-    Evaluated against the subscribed snapshot rather than the service singleton.
-    `presenceMap` is what actually triggers this component to re-render, so
-    reading it here is what keeps the online dots truthful — querying the
-    singleton instead left the state write as a dead re-render trigger.
-  */
-  const isOnline = (profileId: string) => isPresenceOnline(presenceMap[profileId]);
+  const handleCreateProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProfileName.trim()) return;
 
-  const getLastSeen = (profileId: string) => {
-    return presenceService.getLastSeenText(profileId);
+    const created = profileService.createCustomProfile(
+      newProfileName.trim(),
+      newAvatar.avatarUrl,
+      newAvatar.accentColor,
+      newProfilePin,
+      newAvatar.glowColor
+    );
+
+    setIsAddProfileOpen(false);
+    setNewProfileName('');
+    setNewProfilePin(false);
+
+    if (created && !created.pinProtected) {
+      performLogin(created.id, '', created.name);
+    }
+  };
+
+  const handleSaveEditProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProfile || !editName.trim()) return;
+
+    profileService.updateProfileCustom(editingProfile.id, {
+      name: editName.trim(),
+      avatarUrl: editAvatar?.avatarUrl || editingProfile.avatarUrl,
+      accentColor: editAvatar?.accentColor || editingProfile.accentColor,
+      glowColor: editAvatar?.glowColor || editingProfile.glowColor,
+      pinProtected: editPin,
+    });
+
+    setEditingProfile(null);
+  };
+
+  const handleDeleteProfile = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (confirm('Are you sure you want to remove this profile?')) {
+      profileService.deleteProfile(id);
+      if (editingProfile?.id === id) {
+        setEditingProfile(null);
+      }
+    }
+  };
+
+  const openAvatarPickerFor = (target: 'create' | 'edit') => {
+    setAvatarPickerTarget(target);
+    setIsAvatarPickerOpen(true);
+  };
+
+  const handleAvatarSelected = (avatar: CharacterAvatar) => {
+    if (avatarPickerTarget === 'create') {
+      setNewAvatar(avatar);
+    } else {
+      setEditAvatar(avatar);
+    }
   };
 
   return (
-    <div className="relative min-h-screen-dynamic w-full bg-[#05070c] text-white flex flex-col justify-center items-center px-4 py-10 sm:py-16 pt-safe pb-safe overflow-hidden selection:bg-cyan-500/30">
-      {/*
-        Ambient glows. Sized relative to the viewport: at a fixed 700×500 with a
-        140px blur these bled well past a phone screen, and because the wrapper
-        is `overflow-hidden` the right-hand pair simply produced a lopsided wash
-        instead of a symmetric bloom.
-      */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120vw] max-w-[700px] h-[60vh] max-h-[500px] bg-gradient-to-tr from-cyan-600/10 via-rose-600/15 to-emerald-600/10 rounded-full blur-[100px] sm:blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-10 -right-20 sm:right-10 w-[70vw] max-w-[400px] h-[70vw] max-h-[400px] bg-cyan-500/10 rounded-full blur-[100px] sm:blur-[120px] pointer-events-none" />
-      <div className="absolute top-10 -left-20 sm:left-10 w-[70vw] max-w-[400px] h-[70vw] max-h-[400px] bg-emerald-500/10 rounded-full blur-[100px] sm:blur-[120px] pointer-events-none" />
+    <div className="relative min-h-screen w-full bg-[#141414] text-white flex flex-col justify-between select-none overflow-x-hidden">
+      {/* Background Gradient & Ambient Vignette */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900/60 via-[#141414] to-[#0c0c0c] pointer-events-none" />
 
-      {/* Brand Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="text-center z-10 mb-8 sm:mb-12 max-w-xl"
-      >
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] backdrop-blur-md mb-4 text-xs font-medium tracking-wide text-cyan-300">
-          <Film className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Private Screening Room</span>
-          <span className="w-1 h-1 rounded-full bg-cyan-400" />
-          <span className="text-slate-300">Dinu, Kanmani & Cinema Guests</span>
+      {/* Top Header / Logo */}
+      <header className="relative z-10 w-full px-6 sm:px-12 py-6 sm:py-8 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-[#E50914] font-black text-2xl sm:text-3xl tracking-wider">
+            DINUSTREAM
+          </span>
+          <span className="hidden sm:inline-block text-[11px] font-semibold tracking-widest uppercase px-2 py-0.5 rounded bg-white/10 text-neutral-300">
+            Cinema
+          </span>
+        </div>
+      </header>
+
+      {/* Main Who's Watching Center Stage */}
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-8 max-w-6xl mx-auto w-full">
+        <motion.h1
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-3xl sm:text-5xl font-medium tracking-tight text-white mb-8 sm:mb-12 text-center"
+        >
+          {isManaging ? 'Manage Profiles:' : "Who's watching?"}
+        </motion.h1>
+
+        {/* Profiles Row */}
+        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8 max-w-4xl">
+          {profiles.map((p) => {
+            const isCustom = p.id !== 'dinu' && p.id !== 'kanmani' && p.id !== 'guest';
+
+            return (
+              <div
+                key={p.id}
+                onClick={() => handleProfileClick(p)}
+                className="group flex flex-col items-center cursor-pointer"
+              >
+                {/* Square Avatar Tile with character glow on hover */}
+                <div
+                  className="relative w-24 h-24 sm:w-36 sm:h-36 md:w-40 md:h-40 rounded-md overflow-hidden bg-neutral-800 border-2 border-transparent group-hover:border-white transition-all duration-200 group-hover:scale-105 shadow-2xl flex items-center justify-center"
+                  style={{
+                    borderColor: isManaging ? 'rgba(255,255,255,0.4)' : undefined,
+                  }}
+                >
+                  <Avatar profile={p} size="xl" className="w-full h-full rounded-none" />
+
+                  {/* Lock Indicator */}
+                  {p.pinProtected && !isManaging && (
+                    <div className="absolute bottom-2 right-2 p-1.5 rounded-full bg-black/70 backdrop-blur-sm text-neutral-300">
+                      <Lock className="w-3.5 h-3.5" />
+                    </div>
+                  )}
+
+                  {/* Manage Profiles Overlay */}
+                  {isManaging && (
+                    <div className="absolute inset-0 bg-black/65 backdrop-blur-[2px] flex items-center justify-center transition-all group-hover:bg-black/45">
+                      <div className="p-2.5 rounded-full border border-white/70 bg-black/50 text-white shadow-lg group-hover:scale-110 transition-transform">
+                        <Pencil className="w-5 h-5" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Profile Name */}
+                <span className="text-neutral-400 group-hover:text-white transition-colors duration-200 text-sm sm:text-base md:text-lg text-center mt-3 font-normal truncate max-w-[100px] sm:max-w-[140px]">
+                  {p.name}
+                </span>
+              </div>
+            );
+          })}
+
+          {/* Add Profile Tile */}
+          {!isManaging && (
+            <div
+              onClick={() => setIsAddProfileOpen(true)}
+              className="group flex flex-col items-center cursor-pointer"
+            >
+              <div className="w-24 h-24 sm:w-36 sm:h-36 md:w-40 md:h-40 rounded-md border-2 border-neutral-700 hover:border-white bg-transparent hover:bg-white/5 transition-all duration-200 group-hover:scale-105 flex items-center justify-center text-neutral-500 hover:text-white shadow-xl">
+                <Plus className="w-10 h-10 sm:w-14 sm:h-14 stroke-[1.5]" />
+              </div>
+              <span className="text-neutral-400 group-hover:text-white transition-colors duration-200 text-sm sm:text-base md:text-lg text-center mt-3 font-normal">
+                Add Profile
+              </span>
+            </div>
+          )}
         </div>
 
-        <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
-          {PLATFORM_NAME}
-        </h1>
-        <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-md mx-auto">
-          Dolby Atmos • 4K HDR • Synchronized Real-Time Cinema
-        </p>
-      </motion.div>
+        {/* Manage Profiles Button */}
+        <div className="mt-12 sm:mt-16">
+          <button
+            onClick={() => setIsManaging(!isManaging)}
+            className={`px-6 sm:px-8 py-2 text-xs sm:text-sm tracking-widest uppercase transition-all duration-200 font-medium ${
+              isManaging
+                ? 'bg-white text-black hover:bg-[#E50914] hover:text-white'
+                : 'border border-neutral-600 text-neutral-400 hover:border-white hover:text-white'
+            }`}
+          >
+            {isManaging ? 'Done' : 'Manage Profiles'}
+          </button>
+        </div>
+      </main>
 
-      {/* Main Container */}
-      <div className="w-full max-w-2xl z-10">
-        <AnimatePresence mode="wait">
-          {!selectedProfile || !selectedProfile.pinProtected ? (
-            /* Profile Selection Grid */
+      {/* Netflix 4-Digit PIN Modal */}
+      <AnimatePresence>
+        {selectedProfile && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+          >
             <motion.div
-              key="profiles-list"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3 }}
-              className="bg-[#0b101b]/80 border border-slate-700/50 rounded-3xl p-6 sm:p-8 backdrop-blur-2xl shadow-[0_25px_60px_rgba(0,0,0,0.85)] text-center"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`w-full max-w-sm flex flex-col items-center text-center ${
+                isShaking ? 'animate-shake' : ''
+              }`}
             >
-              <h2 className="text-lg sm:text-xl font-bold text-slate-100 tracking-tight mb-1">
-                Who is watching?
+              {/* Profile Avatar Thumbnail */}
+              <div className="w-16 h-16 rounded-md overflow-hidden bg-neutral-800 border-2 border-white/20 mb-4 shadow-xl">
+                <Avatar profile={selectedProfile} size="lg" className="w-full h-full rounded-none" />
+              </div>
+
+              <span className="text-neutral-400 text-xs sm:text-sm uppercase tracking-widest font-semibold mb-1">
+                Profile Lock is on
+              </span>
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">
+                Enter your PIN to access {selectedProfile.name}
               </h2>
-              <p className="text-xs text-slate-400 mb-6 sm:mb-8">
-                Select your private cinema profile to enter
+              <p className="text-xs text-neutral-400 mb-8">
+                Enter the 4-digit PIN for this private profile
               </p>
 
+              {/* 4 PIN Digit Inputs */}
+              <div className="flex items-center justify-center gap-3 sm:gap-4 mb-6">
+                {pinDigits.map((digit, idx) => (
+                  <input
+                    key={idx}
+                    ref={pinInputRefs[idx]}
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleDigitChange(idx, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(idx, e)}
+                    disabled={loading}
+                    className="w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl font-bold bg-neutral-900 border border-neutral-700 focus:border-white rounded-md text-white outline-none transition-colors"
+                  />
+                ))}
+              </div>
+
+              {/* Error Message */}
               {error && (
-                <div className="mb-6 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2.5 text-left">
-                  <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+                <div className="flex items-center gap-2 text-rose-500 text-xs mb-6">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
 
-              {/* Profiles Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 sm:gap-5">
-                {profiles.map((p) => {
-                  const online = isOnline(p.id);
-                  const lastSeen = getLastSeen(p.id);
-                  const isDinu = p.id === 'dinu';
-                  const isKanmani = p.id === 'kanmani';
-
-                  let borderClass = 'hover:border-emerald-500/50 hover:shadow-[0_15px_30px_rgba(16,185,129,0.15)]';
-                  let badgeBg = 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
-                  let titleColor = 'group-hover:text-emerald-400';
-                  let icon = <UserCheck className="w-3.5 h-3.5" />;
-                  let iconBg = 'text-emerald-400';
-
-                  if (isDinu) {
-                    borderClass = 'hover:border-cyan-500/50 hover:shadow-[0_15px_30px_rgba(56,189,248,0.15)]';
-                    badgeBg = 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20';
-                    titleColor = 'group-hover:text-cyan-400';
-                    icon = <Lock className="w-3.5 h-3.5" />;
-                    iconBg = 'text-cyan-400';
-                  } else if (isKanmani) {
-                    borderClass = 'hover:border-rose-500/50 hover:shadow-[0_15px_30px_rgba(244,63,94,0.15)]';
-                    badgeBg = 'bg-rose-500/10 text-rose-300 border-rose-500/20';
-                    titleColor = 'group-hover:text-rose-400';
-                    icon = <Sparkles className="w-3.5 h-3.5" />;
-                    iconBg = 'text-rose-400';
-                  }
-
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => handleProfileClick(p)}
-                      disabled={loading}
-                      className={`group relative flex flex-col items-center p-5 sm:p-6 rounded-2xl bg-[#121927]/60 hover:bg-[#162134]/90 border border-slate-700/40 ${borderClass} transition-all duration-300 transform hover:-translate-y-1 text-center focus:outline-none focus:ring-2 focus:ring-cyan-500/40`}
-                    >
-                      {/* Avatar with lock/badge */}
-                      <div className="relative mb-3.5">
-                        <Avatar profile={p} size="xl" isOnline={online} />
-                        <span className={`absolute -bottom-1 -right-1 p-1 bg-[#090d16] rounded-full border border-slate-700/50 ${iconBg}`}>
-                          {icon}
-                        </span>
-                      </div>
-
-                      {/* Name & Title */}
-                      <span className={`text-base font-bold text-slate-100 ${titleColor} transition-colors`}>
-                        {p.name}
-                      </span>
-                      <span className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
-                        {p.title || (p.isGuest ? 'Cinema Guest' : 'VIP Profile')}
-                      </span>
-
-                      {/* Online/Offline & Status Badge */}
-                      <div className="mt-2.5 flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {lastSeen}
-                        </span>
-                      </div>
-
-                      <span className={`mt-2 px-2 py-0.5 text-[10px] rounded-full border font-medium ${badgeBg}`}>
-                        {p.pinProtected ? 'PIN Protected' : '1-Click Entry'}
-                      </span>
-                    </button>
-                  );
-                })}
-
-                {/* + Add Guest Account Card */}
-                <button
-                  onClick={() => setIsAddGuestOpen(true)}
-                  disabled={loading}
-                  className="group relative flex flex-col items-center justify-center p-5 sm:p-6 rounded-2xl bg-[#121927]/30 hover:bg-[#162134]/70 border border-dashed border-slate-700 hover:border-emerald-500/50 transition-all duration-300 transform hover:-translate-y-1 text-center focus:outline-none"
-                >
-                  <div className="w-16 h-16 rounded-full flex items-center justify-center bg-white/[0.04] group-hover:bg-emerald-500/10 border border-white/[0.08] group-hover:border-emerald-500/30 text-slate-400 group-hover:text-emerald-400 transition-all mb-3.5">
-                    <UserPlus className="w-6 h-6" />
-                  </div>
-                  <span className="text-sm font-semibold text-slate-200 group-hover:text-emerald-300 transition-colors">
-                    Add Guest
-                  </span>
-                  <span className="text-[11px] text-slate-500 mt-1">
-                    Multiple guest profiles
-                  </span>
-                </button>
-              </div>
-
               {loading && (
-                <div className="mt-8 flex items-center justify-center gap-2 text-xs text-slate-400">
-                  <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-                  <span>Entering private cinema...</span>
+                <div className="flex items-center gap-2 text-neutral-400 text-xs mb-6">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Unlocking cinema vault...</span>
                 </div>
               )}
+
+              {/* Cancel Button */}
+              <button
+                onClick={() => setSelectedProfile(null)}
+                disabled={loading}
+                className="text-neutral-400 hover:text-white text-xs sm:text-sm tracking-wider uppercase font-medium mt-2 transition-colors"
+              >
+                Cancel
+              </button>
             </motion.div>
-          ) : (
-            /* Fast PIN Verification View for PIN Protected Profiles */
-            <motion.div
-              key="enter-pin"
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              transition={{ duration: 0.25 }}
-              className={`bg-[#0b101b]/90 border border-slate-700/50 rounded-3xl p-6 sm:p-10 backdrop-blur-2xl shadow-[0_25px_60px_rgba(0,0,0,0.85)] max-w-md mx-auto ${isShaking ? 'animate-shake' : ''}`}
-            >
-              {/* Header with profile info */}
-              <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-800">
-                <div className="flex items-center gap-3">
-                  <Avatar profile={selectedProfile} size="md" />
-                  <div className="text-left">
-                    <h3 className="font-bold text-slate-100 text-base">{selectedProfile.name}</h3>
-                    <p className={`text-xs ${selectedProfile.id === 'dinu' ? 'text-cyan-400' : 'text-rose-400'}`}>
-                      {selectedProfile.id === 'dinu' ? 'Cinema Master Authorization' : 'Private Screening PIN'}
-                    </p>
-                  </div>
-                </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedProfile(null);
-                    setError(null);
-                    setPin('');
-                  }}
-                  className="text-xs text-slate-400 hover:text-slate-200 transition-colors px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08]"
-                >
-                  Switch Profile
-                </button>
-              </div>
-
-              <div className="text-center space-y-6">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                    Enter 4-Digit PIN
-                  </label>
-
-                  {/* Aesthetic 4-Digit Box Container */}
-                  <div
-                    onClick={() => pinInputRef.current?.focus()}
-                    className="flex justify-center items-center gap-3 sm:gap-4 cursor-text my-2"
-                  >
-                    {[0, 1, 2, 3].map((index) => {
-                      const char = pin[index];
-                      const isFilled = Boolean(char);
-                      const isDinu = selectedProfile.id === 'dinu';
-                      const activeBorder = isDinu
-                        ? 'border-cyan-500 shadow-[0_0_15px_rgba(56,189,248,0.3)] text-cyan-300'
-                        : 'border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.3)] text-rose-300';
-
-                      return (
-                        <div
-                          key={index}
-                          className={`w-12 h-14 sm:w-14 sm:h-16 rounded-2xl flex items-center justify-center text-2xl font-bold bg-[#121927] border transition-all duration-200 ${
-                            isFilled ? activeBorder : 'border-slate-700/80 text-slate-600'
-                          }`}
-                        >
-                          {isFilled ? '•' : ''}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/*
-                    The real input behind the four decorative PIN boxes.
-
-                    It was styled `absolute -left-9999px`, which is not a valid
-                    Tailwind class (arbitrary values need brackets:
-                    `-left-[9999px]`). With no offset applied the input stayed at
-                    its static position directly on top of the boxes, and
-                    `pointer-events-none` then blocked the tap-to-focus that
-                    mobile keyboards depend on — so on a phone the PIN screen
-                    could not be filled in at all.
-
-                    `.sr-only-focusable` clips it out of view while keeping it
-                    focusable and able to raise the numeric keypad.
-                  */}
-                  <input
-                    ref={pinInputRef}
-                    type="password"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    pattern="[0-9]*"
-                    maxLength={4}
-                    value={pin}
-                    onChange={(e) => handlePinChange(e.target.value)}
-                    aria-label="4-digit PIN"
-                    className="sr-only-focusable"
-                  />
-
-                  <p className="text-[11px] text-slate-500 mt-3 flex items-center justify-center gap-1.5">
-                    <KeyRound className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Auto-authenticates immediately upon entering 4 digits</span>
-                  </p>
-                </div>
-
-                {error && (
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2 text-left">
-                    <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                {loading && (
-                  <div className="flex items-center justify-center gap-2 py-3 rounded-xl bg-white/[0.04] text-xs text-slate-300">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Authenticating instantly...</span>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Add Guest Modal */}
+      {/* Add Profile Modal */}
       <AnimatePresence>
-        {isAddGuestOpen && (
-          /* `overflow-y-auto` + `min-h-full` so the card stays reachable when the
-             on-screen keyboard shrinks the viewport on a phone. */
-          <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain">
-            <div
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
-              onClick={() => setIsAddGuestOpen(false)}
-            />
-
-            <div className="relative flex min-h-full items-center justify-center p-4">
+        {isAddProfileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+          >
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Create guest profile"
-              className="relative w-full max-w-md bg-[#0d1420] border border-slate-700/60 rounded-2xl p-5 sm:p-6 shadow-2xl z-10"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#181818] border border-neutral-800 rounded-xl p-6 sm:p-8 w-full max-w-md shadow-2xl"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2.5">
-                  <UserPlus className="w-5 h-5 text-emerald-400" />
-                  <h3 className="font-bold text-white text-base">Create Guest Profile</h3>
-                </div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl sm:text-2xl font-bold text-white">Add Profile</h2>
                 <button
-                  onClick={() => setIsAddGuestOpen(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                  onClick={() => setIsAddProfileOpen(false)}
+                  className="p-1 rounded-full text-neutral-400 hover:text-white"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleCreateGuest} className="mt-5 space-y-4">
+              <p className="text-xs text-neutral-400 mb-6">
+                Choose a cinema character and name for your personalized profile.
+              </p>
+
+              <form onSubmit={handleCreateProfile} className="space-y-6">
+                {/* Avatar Preview & Character Picker Trigger */}
+                <div className="flex items-center gap-4 p-3 rounded-lg bg-neutral-900/60 border border-neutral-800">
+                  <div
+                    onClick={() => openAvatarPickerFor('create')}
+                    className="relative group cursor-pointer w-18 h-18 sm:w-20 sm:h-20 rounded-md overflow-hidden bg-neutral-800 border-2 transition-transform hover:scale-105 shadow-xl flex-shrink-0"
+                    style={{
+                      borderColor: newAvatar.accentColor,
+                      boxShadow: `0 0 15px ${newAvatar.glowColor}`,
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={newAvatar.avatarUrl || newAvatar.svgDataUri}
+                      alt={newAvatar.name}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <Pencil className="w-4 h-4 text-white" />
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-white/10 text-neutral-300">
+                      {newAvatar.franchise}
+                    </span>
+                    <h4 className="text-sm font-bold text-white mt-1 truncate">
+                      {newAvatar.name}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => openAvatarPickerFor('create')}
+                      className="mt-2 text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1 transition-colors"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Choose Character Avatar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Profile Name Input */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Guest Profile Name
+                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                    Profile Name
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="e.g. Guest 2, Living Room TV, Alex"
-                    value={newGuestName}
-                    onChange={(e) => setNewGuestName(e.target.value)}
+                    value={newProfileName}
+                    onChange={(e) => setNewProfileName(e.target.value)}
+                    placeholder="Enter name (e.g., Alex, Dinu, Guest)"
                     autoFocus
-                    className="w-full bg-[#141e30] border border-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none"
+                    required
+                    className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-700 focus:border-white rounded text-white text-sm outline-none transition-colors"
                   />
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Guest profiles have full 1-click access without requiring a PIN.
-                  </p>
                 </div>
 
-                <div className="flex items-center justify-end gap-2.5 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddGuestOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-white/[0.06]"
-                  >
-                    Cancel
-                  </button>
+                {/* PIN Lock Toggle */}
+                <div className="flex items-center justify-between pt-2 border-t border-neutral-800">
+                  <div>
+                    <span className="text-xs text-neutral-200 block font-medium">Require 4-digit PIN</span>
+                    <span className="text-[11px] text-neutral-500">Lock this profile with PIN code 1234</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={newProfilePin}
+                    onChange={(e) => setNewProfilePin(e.target.checked)}
+                    className="w-4 h-4 accent-[#E50914] rounded cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-4">
                   <button
                     type="submit"
-                    className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition-colors shadow-lg shadow-emerald-500/20 flex items-center gap-1.5"
+                    className="flex-1 py-2.5 bg-white text-black hover:bg-[#E50914] hover:text-white font-semibold text-xs sm:text-sm tracking-wider uppercase transition-colors"
                   >
-                    <span>Create &amp; Enter</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    Continue
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddProfileOpen(false)}
+                    className="flex-1 py-2.5 border border-neutral-600 text-neutral-400 hover:border-white hover:text-white font-medium text-xs sm:text-sm tracking-wider uppercase transition-colors"
+                  >
+                    Cancel
                   </button>
                 </div>
               </form>
             </motion.div>
-            </div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Footer Info */}
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4 }}
-        className="mt-12 text-xs text-slate-500 text-center z-10"
-      >
-        Private Cloud Architecture • Zero Telemetry • Dolby Atmos Direct Play
-      </motion.p>
+      {/* Edit Profile Modal (Hotstar Character Selection in Manage Profiles Mode) */}
+      <AnimatePresence>
+        {editingProfile && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#181818] border border-neutral-800 rounded-xl p-6 sm:p-8 w-full max-w-md shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl sm:text-2xl font-bold text-white">Edit Profile</h2>
+                <button
+                  onClick={() => setEditingProfile(null)}
+                  className="p-1 rounded-full text-neutral-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditProfile} className="space-y-6">
+                {/* Avatar Preview & Character Picker Trigger */}
+                <div className="flex items-center gap-4 p-3 rounded-lg bg-neutral-900/60 border border-neutral-800">
+                  <div
+                    onClick={() => openAvatarPickerFor('edit')}
+                    className="relative group cursor-pointer w-20 h-20 rounded-md overflow-hidden bg-neutral-800 border-2 transition-transform hover:scale-105 shadow-xl flex-shrink-0"
+                    style={{
+                      borderColor: editAvatar?.accentColor || editingProfile.accentColor,
+                      boxShadow: `0 0 15px ${editAvatar?.glowColor || editingProfile.glowColor}`,
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={editAvatar?.avatarUrl || editingProfile.avatarUrl}
+                      alt={editName}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <Pencil className="w-4 h-4 text-white" />
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-white/10 text-neutral-300">
+                      {editAvatar?.franchise || 'Cinema Character'}
+                    </span>
+                    <h4 className="text-sm font-bold text-white mt-1 truncate">
+                      {editAvatar?.name || editName}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => openAvatarPickerFor('edit')}
+                      className="mt-2 text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1 transition-colors"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Change Character Avatar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Profile Name Input */}
+                <div>
+                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                    Profile Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    required
+                    className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-700 focus:border-white rounded text-white text-sm outline-none transition-colors"
+                  />
+                </div>
+
+                {/* PIN Lock Toggle */}
+                <div className="flex items-center justify-between pt-2 border-t border-neutral-800">
+                  <div>
+                    <span className="text-xs text-neutral-200 block font-medium">Profile PIN Lock</span>
+                    <span className="text-[11px] text-neutral-500">Require PIN code to open</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={editPin}
+                    onChange={(e) => setEditPin(e.target.checked)}
+                    className="w-4 h-4 accent-[#E50914] rounded cursor-pointer"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-3 pt-4">
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 bg-white text-black hover:bg-[#E50914] hover:text-white font-semibold text-xs sm:text-sm tracking-wider uppercase transition-colors"
+                  >
+                    Save Changes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingProfile(null)}
+                    className="flex-1 py-2.5 border border-neutral-600 text-neutral-400 hover:border-white hover:text-white font-medium text-xs sm:text-sm tracking-wider uppercase transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                {/* Delete Profile (Only for custom non-core profiles) */}
+                {editingProfile.id !== 'dinu' && editingProfile.id !== 'kanmani' && editingProfile.id !== 'guest' && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteProfile(editingProfile.id)}
+                      className="text-xs text-rose-500 hover:text-rose-400 flex items-center justify-center gap-1 mx-auto"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete This Profile
+                    </button>
+                  </div>
+                )}
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Disney+ Hotstar Style Avatar Picker Modal */}
+      <AvatarPickerModal
+        isOpen={isAvatarPickerOpen}
+        onClose={() => setIsAvatarPickerOpen(false)}
+        currentAvatarUrl={
+          avatarPickerTarget === 'create'
+            ? newAvatar.avatarUrl
+            : editAvatar?.avatarUrl || editingProfile?.avatarUrl
+        }
+        onSelectAvatar={handleAvatarSelected}
+      />
+
+      {/* Footer */}
+      <footer className="relative z-10 w-full py-6 text-center text-xs text-neutral-600">
+        DinuStream Cinema • Netflix Pure Profile Architecture • Hotstar Character Vault
+      </footer>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#05070c]" />}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#141414] flex items-center justify-center text-white">
+          <Loader2 className="w-8 h-8 animate-spin text-[#E50914]" />
+        </div>
+      }
+    >
       <LoginContent />
     </Suspense>
   );

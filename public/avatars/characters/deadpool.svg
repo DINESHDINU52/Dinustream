@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_dp" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#3b0307"/>
+          <stop offset="100%" stop-color="#0c0102"/>
+        </radialGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_dp)"/>
+      <!-- Mask Base -->
+      <path d="M34 38 C34 16, 86 16, 86 38 C86 64, 82 85, 60 104 C38 85, 34 64, 34 38 Z" fill="#be123c" stroke="#e11d48" stroke-width="1.5"/>
+      <!-- Black Eye Patches -->
+      <path d="M40 38 C54 36, 56 68, 42 72 C34 66, 32 46, 40 38 Z" fill="#18181b" stroke="#09090b" stroke-width="1.5"/>
+      <path d="M80 38 C66 36, 64 68, 78 72 C86 66, 88 46, 80 38 Z" fill="#18181b" stroke="#09090b" stroke-width="1.5"/>
+      <!-- Expressive Squint Eyes -->
+      <ellipse cx="46" cy="52" rx="4.5" ry="3" fill="#ffffff" transform="rotate(-10 46 52)"/>
+      <ellipse cx="74" cy="52" rx="3.5" ry="4.5" fill="#ffffff" transform="rotate(10 74 52)"/>
+      <!-- Center Seam -->
+      <line x1="60" y1="20" x2="60" y2="104" stroke="#881337" stroke-width="1.5"/>
+    </svg>

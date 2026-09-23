@@ -183,6 +183,7 @@ class WatchTogetherService {
       state: 'CREATED',
       createdAt: new Date().toISOString(),
       jellyfinSyncPlayGroupId: syncPlay.GroupId,
+      controlMode: 'EVERYONE',
       participants: [
         {
           id: hostId,
@@ -215,6 +216,17 @@ class WatchTogetherService {
     this.save();
     this.subscribeToFirestoreRoom(groupId);
     return newGroup;
+  }
+
+  setControlMode(mode: 'HOST_ONLY' | 'EVERYONE') {
+    if (!this.group) return;
+    this.group.controlMode = mode;
+    this.save();
+  }
+
+  isHost(profileId?: string): boolean {
+    if (!this.group || !profileId) return false;
+    return this.group.hostId === profileId;
   }
 
   joinGroup(participantId: UserProfileId) {

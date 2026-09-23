@@ -62,7 +62,7 @@ export function GroupQueue({
             )}
           </div>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Back-to-back synchronized cinema lineup for Dinu & Kanmani.
+            Back-to-back synchronized cinema lineup for the room.
           </p>
         </div>
 
@@ -189,11 +189,11 @@ export function GroupQueue({
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
                             item.addedBy === 'dinu'
                               ? 'bg-sky-950/70 border-sky-400/30 text-sky-300'
-                              : 'bg-purple-950/70 border-purple-400/30 text-purple-300'
+                              : 'bg-rose-950/70 border-rose-400/30 text-rose-300'
                           }`}
                         >
                           <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                          Added by {item.addedByName || (item.addedBy === 'dinu' ? 'Dinu' : 'Kanmani')}
+                          Added by {item.addedByName || item.addedBy || 'Member'}
                           {isAddedByMe && ' (You)'}
                         </span>
 

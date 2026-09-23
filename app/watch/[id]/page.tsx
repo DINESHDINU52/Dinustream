@@ -12,7 +12,7 @@ import { Episode, MediaItem, Season } from '@/types/cinema';
 import { GroupChat } from '@/components/chat/GroupChat';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { ArrowLeft, Sparkles, Users } from 'lucide-react';
 
 /** Default room used when no `group` query param is supplied. */
 const DEFAULT_GROUP_ID = 'group-movie-night';
@@ -28,11 +28,13 @@ function WatchContent() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
   const episodeId = searchParams.get('episode');
-  const isSyncMode = searchParams.get('sync') !== 'false';
-  const groupId = searchParams.get('group') || DEFAULT_GROUP_ID;
+  const roomParam = searchParams.get('room') || searchParams.get('group');
+  const isSyncMode = Boolean(roomParam) || searchParams.get('sync') === 'true';
+  const groupId = roomParam || (isSyncMode ? DEFAULT_GROUP_ID : '');
 
   const loadSession = useCallback(async (mediaId: string) => {
     setLoading(true);
@@ -127,20 +129,37 @@ function WatchContent() {
 
   const handleNext = () => {
     if (nextEpisode && media) {
-      router.push(`/watch/${media.id}?episode=${nextEpisode.id}&sync=true`);
+      const roomQ = groupId ? `&room=${encodeURIComponent(groupId)}` : '';
+      router.push(`/watch/${media.id}?episode=${nextEpisode.id}${roomQ}`);
     }
   };
 
   const handlePrev = () => {
     if (prevEpisode && media) {
-      router.push(`/watch/${media.id}?episode=${prevEpisode.id}&sync=true`);
+      const roomQ = groupId ? `&room=${encodeURIComponent(groupId)}` : '';
+      router.push(`/watch/${media.id}?episode=${prevEpisode.id}${roomQ}`);
     }
   };
 
   const handleSelectEpisode = (epId: string) => {
     if (media) {
-      router.push(`/watch/${media.id}?episode=${epId}&sync=true`);
+      const roomQ = groupId ? `&room=${encodeURIComponent(groupId)}` : '';
+      router.push(`/watch/${media.id}?episode=${epId}${roomQ}`);
     }
+  };
+
+  const handleStartWatchTogether = () => {
+    if (!media) return;
+    const newRoomId = `cinema-${Math.random().toString(36).substring(2, 8)}`;
+    const epQuery = currentEpisode ? `&episode=${currentEpisode.id}` : '';
+    router.push(`/watch/${media.id}?room=${newRoomId}${epQuery}`);
+  };
+
+  const handleCopyInviteLink = () => {
+    if (typeof window === 'undefined') return;
+    navigator.clipboard.writeText(window.location.href);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   if (loading) {
@@ -218,16 +237,26 @@ function WatchContent() {
         </button>
 
         <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto min-w-0">
-          {isSyncMode && (
-            <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11px] sm:text-xs font-medium shadow-[0_0_12px_rgba(244,63,94,0.3)] min-w-0">
-              <Sparkles className="w-3 h-3 text-rose-400 animate-pulse shrink-0" />
-              {/* Companion name is dropped on narrow screens so the pill cannot
-                  collide with the exit button. */}
+          {isSyncMode ? (
+            <button
+              onClick={handleCopyInviteLink}
+              title="Click to copy invite link"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 hover:text-white text-[11px] sm:text-xs font-medium shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-rose-400 animate-pulse shrink-0" />
               <span className="truncate">
-                <span className="sm:hidden">In sync</span>
-                <span className="hidden sm:inline">Syncing with {companionProfile.name}</span>
+                {copiedLink ? 'Link Copied!' : `Watch Together: ${groupId}`}
               </span>
-            </div>
+            </button>
+          ) : (
+            <button
+              onClick={handleStartWatchTogether}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#121927]/90 hover:bg-rose-500/20 border border-slate-700 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-[11px] sm:text-xs font-medium transition-all backdrop-blur-md cursor-pointer"
+            >
+              <Users className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden sm:inline">Start Watch Together</span>
+              <span className="sm:hidden">Sync</span>
+            </button>
           )}
 
           <div className="hidden lg:flex items-center gap-2">

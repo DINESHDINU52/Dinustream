@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_loki" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#022919"/>
+          <stop offset="100%" stop-color="#010e08"/>
+        </radialGradient>
+        <linearGradient id="gold_loki" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#ffe259"/>
+          <stop offset="100%" stop-color="#ffa751"/>
+        </linearGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_loki)"/>
+      <path d="M40 50 C25 20, 10 15, 8 8 C15 16, 30 35, 48 45 Z" fill="url(#gold_loki)" stroke="#ffd700" stroke-width="1"/>
+      <path d="M80 50 C95 20, 110 15, 112 8 C105 16, 90 35, 72 45 Z" fill="url(#gold_loki)" stroke="#ffd700" stroke-width="1"/>
+      <path d="M38 52 L60 38 L82 52 L76 62 L60 56 L44 62 Z" fill="url(#gold_loki)" stroke="#e5a93b" stroke-width="1"/>
+      <polygon points="60,45 64,51 60,57 56,51" fill="#34d399"/>
+      <path d="M46 60 C46 54, 74 54, 74 60 C74 78, 68 88, 60 94 C52 88, 46 78, 46 60 Z" fill="#0d1f15" stroke="#10b981" stroke-width="1.5"/>
+      <path d="M50 70 Q55 67 58 70" stroke="#34d399" stroke-width="2" fill="none"/>
+      <path d="M70 70 Q65 67 62 70" stroke="#34d399" stroke-width="2" fill="none"/>
+      <path d="M54 84 Q62 88 68 82" stroke="#10b981" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    </svg>

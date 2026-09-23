@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_bp" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#240738"/>
+          <stop offset="100%" stop-color="#08010d"/>
+        </radialGradient>
+        <filter id="glow_bp">
+          <feGaussianBlur stdDeviation="2" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_bp)"/>
+      <!-- Panther Ears -->
+      <polygon points="36,46 32,22 46,34" fill="#09090b" stroke="#3f3f46" stroke-width="1"/>
+      <polygon points="84,46 88,22 74,34" fill="#09090b" stroke="#3f3f46" stroke-width="1"/>
+      <!-- Head Mask -->
+      <path d="M36 40 C36 24, 84 24, 84 40 L84 70 C84 88, 72 102, 60 104 C48 102, 36 88, 36 70 Z" fill="#18181b" stroke="#27272a" stroke-width="1.5"/>
+      <!-- Vibranium Purple Lines -->
+      <path d="M46 32 L60 44 L74 32" fill="none" stroke="#a855f7" stroke-width="1.5" filter="url(#glow_bp)"/>
+      <path d="M42 56 L52 64 L68 64 L78 56" fill="none" stroke="#a855f7" stroke-width="1.5" filter="url(#glow_bp)"/>
+      <!-- Silver Tooth Necklace Outline -->
+      <polygon points="60,98 56,88 64,88" fill="#e4e4e7"/>
+      <polygon points="50,94 48,86 54,87" fill="#e4e4e7"/>
+      <polygon points="70,94 72,86 66,87" fill="#e4e4e7"/>
+      <!-- Glowing Eyes -->
+      <polygon points="46,50 56,52 54,58 45,56" fill="#c084fc" filter="url(#glow_bp)"/>
+      <polygon points="74,50 64,52 66,58 75,56" fill="#c084fc" filter="url(#glow_bp)"/>
+    </svg>

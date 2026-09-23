@@ -103,9 +103,10 @@ export function GroupChat({
     await firebaseChat.setTyping(groupId, profile.id, isTyping);
   };
 
-  const otherUserId: UserProfileId = profile.id === 'dinu' ? 'kanmani' : 'dinu';
-  const otherUserName = otherUserId === 'dinu' ? 'Dinu' : 'Kanmani';
-  const isOtherUserTyping = typing[otherUserId];
+  const isOtherUserTyping = Object.entries(typing).some(
+    ([uid, isTyping]) => uid !== profile.id && isTyping
+  );
+  const otherUserName = 'Someone';
 
   return (
     <>
@@ -160,8 +161,8 @@ export function GroupChat({
                       <h3 className="text-xs font-bold text-white tracking-wide">{groupName}</h3>
                       <div className="flex items-center gap-2 text-[9px] font-mono text-slate-400">
                         <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
-                          Dinu & Kanmani
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse" />
+                          Live Room
                         </span>
                         <span>•</span>
                         <span className="text-sky-400 font-semibold">TV Mode</span>
@@ -268,25 +269,8 @@ export function GroupChat({
                       {/* Online Presence */}
                       <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400 mt-0.5">
                         <span className="flex items-center gap-1">
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              presence.dinu === 'Online'
-                                ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
-                                : 'bg-slate-600'
-                            }`}
-                          />
-                          Dinu
-                        </span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              presence.kanmani === 'Online'
-                                ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
-                                : 'bg-slate-600'
-                            }`}
-                          />
-                          Kanmani
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] animate-pulse" />
+                          Watch Together Room
                         </span>
                       </div>
                     </div>

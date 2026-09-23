@@ -173,17 +173,18 @@ export function useHlsPlayer({
         return;
       }
 
+      let mediaErrorCount = 0;
+      let networkErrorCount = 0;
+
       hls = new HlsCtor({
-        // Keep a modest forward buffer: Jellyfin transcodes on demand, so
-        // buffering far ahead just burns server CPU on video that may be skipped.
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        backBufferLength: 30,
-        // Start conservatively, then let ABR climb. Opening on the top rung is
-        // the classic cause of a stall in the first few seconds.
+        // Keep a light forward buffer for Oracle Cloud on-demand transcoding
+        maxBufferLength: 15,
+        maxMaxBufferLength: 30,
+        backBufferLength: 15,
         startLevel: -1,
         capLevelToPlayerSize: true,
         enableWorker: true,
+        startFragPrefetch: true,
         lowLatencyMode: false,
       });
       hlsRef.current = hls;
@@ -209,25 +210,42 @@ export function useHlsPlayer({
         if (cancelled) return;
 
         if (!data.fatal) {
-          // Non-fatal errors are routine (a single 404 segment, a gap in the
-          // buffer); hls.js retries them itself.
           return;
         }
 
         switch (data.type) {
           case HlsCtor.ErrorTypes.NETWORK_ERROR:
-            /*
-              Jellyfin returns 404 for a segment that its transcoder has not
-              produced yet. Reloading the playlist picks up the newly written
-              segments, so this is recoverable and common on a fresh seek.
-            */
-            setIsRecovering(true);
-            hls?.startLoad();
+            networkErrorCount += 1;
+            if (networkErrorCount <= 4) {
+              setIsRecovering(true);
+              setTimeout(() => {
+                if (!cancelled) hls?.startLoad();
+              }, 600 * networkErrorCount);
+            } else {
+              setIsRecovering(false);
+              onFatalErrorRef.current?.(
+                'Media server connection dropped. Please check connection to Oracle Cloud.'
+              );
+              cleanUp();
+            }
             break;
 
           case HlsCtor.ErrorTypes.MEDIA_ERROR:
-            setIsRecovering(true);
-            hls?.recoverMediaError();
+            mediaErrorCount += 1;
+            if (mediaErrorCount === 1) {
+              setIsRecovering(true);
+              hls?.recoverMediaError();
+            } else if (mediaErrorCount === 2) {
+              setIsRecovering(true);
+              hls?.swapAudioCodec();
+              hls?.recoverMediaError();
+            } else {
+              setIsRecovering(false);
+              onFatalErrorRef.current?.(
+                'Video decoding error encountered with this format.'
+              );
+              cleanUp();
+            }
             break;
 
           default:
@@ -240,7 +258,11 @@ export function useHlsPlayer({
       });
 
       hls.on(HlsCtor.Events.FRAG_BUFFERED, () => {
-        if (!cancelled) setIsRecovering(false);
+        if (!cancelled) {
+          mediaErrorCount = 0;
+          networkErrorCount = 0;
+          setIsRecovering(false);
+        }
       });
 
       hls.loadSource(src);

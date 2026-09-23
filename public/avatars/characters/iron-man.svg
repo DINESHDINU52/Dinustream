@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_iron" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#4a0004"/>
+          <stop offset="100%" stop-color="#0e0002"/>
+        </radialGradient>
+        <linearGradient id="gold_iron" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#ffd700"/>
+          <stop offset="100%" stop-color="#d4af37"/>
+        </linearGradient>
+        <linearGradient id="red_iron" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ff1a2b"/>
+          <stop offset="100%" stop-color="#99000a"/>
+        </linearGradient>
+        <filter id="glow_iron">
+          <feGaussianBlur stdDeviation="2.5" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_iron)"/>
+      <path d="M35 30 C35 15, 85 15, 85 30 L88 65 C88 88, 70 102, 60 106 C50 102, 32 88, 32 65 Z" fill="url(#red_iron)" stroke="#ff4d5a" stroke-width="1.5"/>
+      <path d="M42 36 L78 36 L76 76 L60 92 L44 76 Z" fill="url(#gold_iron)" opacity="0.95"/>
+      <path d="M46 36 L60 48 L74 36" fill="none" stroke="#99000a" stroke-width="2"/>
+      <path d="M44 58 L52 64 L68 64 L76 58" fill="none" stroke="#99000a" stroke-width="1.5"/>
+      <polygon points="46,54 57,56 56,60 47,58" fill="#58d9ff" filter="url(#glow_iron)"/>
+      <polygon points="74,54 63,56 64,60 73,58" fill="#58d9ff" filter="url(#glow_iron)"/>
+      <line x1="53" y1="80" x2="67" y2="80" stroke="#800000" stroke-width="2.5" stroke-linecap="round"/>
+      <polygon points="60,98 52,90 68,90" fill="#99000a"/>
+    </svg>

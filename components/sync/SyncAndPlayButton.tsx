@@ -56,9 +56,13 @@ export const SyncAndPlayButton: React.FC<SyncAndPlayButtonProps> = ({
     // Retained so callers can still open their own "screening room" drawer.
     onBeforeSync?.();
 
-    const query = new URLSearchParams({ sync: 'true' });
-    if (isGroupMode) query.set('group', 'dinu-kanmani');
-    router.push(`/watch/${media.id}?${query.toString()}`);
+    const query = new URLSearchParams();
+    if (isGroupMode) {
+      const uniqueRoom = `cinema-${Math.random().toString(36).substring(2, 8)}`;
+      query.set('room', uniqueRoom);
+    }
+    const qStr = query.toString();
+    router.push(`/watch/${media.id}${qStr ? `?${qStr}` : ''}`);
   };
 
   return (

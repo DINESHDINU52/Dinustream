@@ -55,11 +55,14 @@ export interface QueuedMovie {
   addedAt: number;
 }
 
+export type ControlMode = 'HOST_ONLY' | 'EVERYONE';
+
 export interface WatchGroup {
   id: string;
   name: string;
   state: WatchGroupState;
   hostId: UserProfileId;
+  controlMode?: ControlMode;
   participants: WatchGroupParticipant[];
   selectedMovie: MediaItem | null;
   queue: QueuedMovie[];

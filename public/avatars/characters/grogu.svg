@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_grogu" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#14331e"/>
+          <stop offset="100%" stop-color="#050e08"/>
+        </radialGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_grogu)"/>
+      <!-- Huge Pointy Ears -->
+      <path d="M42 56 C24 50, 6 62, 2 68 C12 60, 28 66, 42 68 Z" fill="#86efac" stroke="#4ade80" stroke-width="1"/>
+      <path d="M78 56 C96 50, 114 62, 118 68 C108 60, 92 66, 78 68 Z" fill="#86efac" stroke="#4ade80" stroke-width="1"/>
+      <!-- Inner Pink Ears -->
+      <path d="M38 58 C26 56, 12 64, 8 67 C16 63, 26 66, 36 67 Z" fill="#fda4af" opacity="0.75"/>
+      <path d="M82 58 C94 56, 108 64, 112 67 C104 63, 94 66, 84 67 Z" fill="#fda4af" opacity="0.75"/>
+      <!-- Head -->
+      <ellipse cx="60" cy="62" rx="22" ry="18" fill="#86efac" stroke="#4ade80" stroke-width="1"/>
+      <!-- Soulful Glossy Black Eyes -->
+      <circle cx="50" cy="60" r="6" fill="#09090b"/>
+      <circle cx="70" cy="60" r="6" fill="#09090b"/>
+      <circle cx="48" cy="58" r="2" fill="#ffffff"/>
+      <circle cx="68" cy="58" r="2" fill="#ffffff"/>
+      <!-- Tiny Smile -->
+      <path d="M57 70 Q60 72 63 70" stroke="#166534" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      <!-- Fluffy Beige Robe Collar -->
+      <path d="M38 78 Q60 72 82 78 L86 106 Q60 112 34 106 Z" fill="#d4b483" stroke="#b08968" stroke-width="1.5"/>
+    </svg>

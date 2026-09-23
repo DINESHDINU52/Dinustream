@@ -22,6 +22,7 @@ import {
   Users,
 } from 'lucide-react';
 import Image from 'next/image';
+import { profileService } from '@/lib/services/profileService';
 
 interface WatchGroupLobbyProps {
   group: WatchGroup;
@@ -107,38 +108,33 @@ export function WatchGroupLobby({
               <span>{group.name}</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-400">
-              Ultra-low latency frame synchronization between{' '}
-              <strong className="text-sky-300">Dinu</strong> &{' '}
-              <strong className="text-purple-300">Kanmani</strong> powered by Jellyfin SyncPlay.
+              Ultra-low latency frame synchronization powered by Jellyfin SyncPlay.
             </p>
           </div>
 
-          {/* Quick Perspective Switcher (Testing tool for pairing) */}
-          <div className="flex items-center gap-2 bg-[#090e17] p-1.5 rounded-xl border border-white/[0.08]">
+          {/* Quick Perspective Switcher */}
+          <div className="flex flex-wrap items-center gap-2 bg-[#090e17] p-1.5 rounded-xl border border-white/[0.08]">
             <span className="text-[11px] font-mono text-slate-400 px-2 flex items-center gap-1">
               <Users className="w-3 h-3" />
               Viewing as:
             </span>
-            <button
-              onClick={() => onSwitchProfile('dinu')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                currentUserId === 'dinu'
-                  ? 'bg-sky-500 text-white shadow-md shadow-sky-500/20'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Dinu (Host)
-            </button>
-            <button
-              onClick={() => onSwitchProfile('kanmani')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                currentUserId === 'kanmani'
-                  ? 'bg-purple-500 text-white shadow-md shadow-purple-500/20'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Kanmani
-            </button>
+            {profileService.getAllProfiles().map((p) => {
+              const isCurrent = currentUserId === p.id;
+              const isHost = group.hostId === p.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => onSwitchProfile(p.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    isCurrent
+                      ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {p.name} {isHost ? '(Host)' : ''}
+                </button>
+              );
+            })}
 
             <button
               onClick={onResetGroup}
@@ -298,7 +294,7 @@ export function WatchGroupLobby({
                   : '⚡ SYNC & PLAY (CACHE TO SSD)'}
               </Button>
               <p className="text-center text-[11px] text-slate-400 mt-2 font-mono">
-                Initiates synchronized 4K HDR bitstream playback for both Dinu & Kanmani.
+                Initiates synchronized 4K HDR playback for all participants.
               </p>
             </div>
           </GlassPanel>

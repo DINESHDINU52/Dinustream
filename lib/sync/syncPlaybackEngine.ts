@@ -223,7 +223,7 @@ export class SyncPlaybackEngine {
       if (initialPos > 0) {
         this.callbacks.onSeek?.(initialPos, session.controller, session.sequence);
       }
-    } else {
+    } else if (session.controller !== this.localUserId && (session.sequence > 1 || initialPos > 0)) {
       this.callbacks.onPause?.(session.controller, session.sequence);
       if (initialPos > 0) {
         this.callbacks.onSeek?.(initialPos, session.controller, session.sequence);
@@ -451,6 +451,20 @@ export class SyncPlaybackEngine {
     this.lastReportedState = state;
   }
 
+  /**
+   * Set the room control mode (Host Only vs Everyone)
+   */
+  public setControlMode(mode: 'HOST_ONLY' | 'EVERYONE') {
+    if (this.isDestroyed) return;
+    this.sendCommand({
+      type: 'CONTROL_MODE_CHANGE',
+      groupId: this.groupId,
+      sender: this.localUserId,
+      controlMode: mode,
+      clientTimestamp: Date.now(),
+    });
+  }
+
   private async sendCommand(cmd: Record<string, unknown>) {
     try {
       const res = await fetch('/api/sync/playback', {
@@ -473,10 +487,29 @@ export class SyncPlaybackEngine {
             } catch {}
           }
           this.handleAuthoritativeEvent(data.event, data.session);
+        } else if (!data.success && data.error) {
+          this.callbacks.onNotification?.({
+            id: `err-${Date.now()}`,
+            type: 'PAUSE',
+            sender: this.localUserId,
+            senderName: 'System',
+            text: data.error,
+            timestamp: Date.now(),
+          });
         }
       } else {
         const errJson = await res.json().catch(() => ({}));
         console.warn('[SYNC] Command rejected by server:', errJson.error);
+        if (errJson.error) {
+          this.callbacks.onNotification?.({
+            id: `err-${Date.now()}`,
+            type: 'PAUSE',
+            sender: this.localUserId,
+            senderName: 'System',
+            text: errJson.error,
+            timestamp: Date.now(),
+          });
+        }
       }
     } catch (err) {
       console.warn('[SYNC] Failed to send command to server:', err);

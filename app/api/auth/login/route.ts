@@ -32,21 +32,7 @@ export async function POST(req: NextRequest) {
     if (profileId === 'dinu') {
       const targetPin = process.env.ADMIN_MASTER_PIN || '1337';
       if (!pin || typeof pin !== 'string') {
-        return NextResponse.json({ error: 'PIN required for Dinu profile' }, { status: 401 });
-      }
-
-      const pinBuf = Buffer.from(pin.padEnd(32, ' '));
-      const targetBuf = Buffer.from(targetPin.padEnd(32, ' '));
-      if (pinBuf.length !== targetBuf.length || !crypto.timingSafeEqual(pinBuf, targetBuf)) {
-        return NextResponse.json({ error: 'Incorrect master PIN' }, { status: 401 });
-      }
-    }
-
-    // Kanmani profile PIN check (configured or 2026)
-    else if (profileId === 'kanmani') {
-      const targetPin = process.env.KANMANI_MASTER_PIN || '2026';
-      if (!pin || typeof pin !== 'string') {
-        return NextResponse.json({ error: 'PIN required for Kanmani profile' }, { status: 401 });
+        return NextResponse.json({ error: 'PIN required for this profile' }, { status: 401 });
       }
 
       const pinBuf = Buffer.from(pin.padEnd(32, ' '));
@@ -56,8 +42,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Guest profiles: One-Click entry, no PIN required!
-    else if (profileId.startsWith('guest')) {
+    // Kanmani profile PIN check (configured or 2026)
+    else if (profileId === 'kanmani') {
+      const targetPin = process.env.KANMANI_MASTER_PIN || '2026';
+      if (!pin || typeof pin !== 'string') {
+        return NextResponse.json({ error: 'PIN required for this profile' }, { status: 401 });
+      }
+
+      const pinBuf = Buffer.from(pin.padEnd(32, ' '));
+      const targetBuf = Buffer.from(targetPin.padEnd(32, ' '));
+      if (pinBuf.length !== targetBuf.length || !crypto.timingSafeEqual(pinBuf, targetBuf)) {
+        return NextResponse.json({ error: 'Incorrect PIN' }, { status: 401 });
+      }
+    }
+
+    // Dynamic and Guest profiles
+    else {
       if (guestName) {
         displayName = guestName;
       }

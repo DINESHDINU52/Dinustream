@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_spidey" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#1f0307"/>
+          <stop offset="100%" stop-color="#0a0102"/>
+        </radialGradient>
+        <filter id="glow_spidey">
+          <feGaussianBlur stdDeviation="2.5" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_spidey)"/>
+      <path d="M34 38 C34 16, 86 16, 86 38 C86 64, 82 85, 60 104 C38 85, 34 64, 34 38 Z" fill="#b30018" stroke="#ff2a43" stroke-width="1.5"/>
+      <line x1="60" y1="20" x2="60" y2="104" stroke="#1a0004" stroke-width="1.5" opacity="0.6"/>
+      <line x1="34" y1="40" x2="86" y2="40" stroke="#1a0004" stroke-width="1.2" opacity="0.5"/>
+      <line x1="38" y1="65" x2="82" y2="65" stroke="#1a0004" stroke-width="1.2" opacity="0.5"/>
+      <path d="M42 30 Q60 42 78 30" fill="none" stroke="#1a0004" stroke-width="1.2" opacity="0.6"/>
+      <path d="M38 52 Q60 68 82 52" fill="none" stroke="#1a0004" stroke-width="1.2" opacity="0.6"/>
+      <path d="M44 76 Q60 90 76 76" fill="none" stroke="#1a0004" stroke-width="1.2" opacity="0.6"/>
+      <path d="M40 45 Q55 42 57 60 Q48 68 39 58 Z" fill="#080808" stroke="#000" stroke-width="3"/>
+      <path d="M80 45 Q65 42 63 60 Q72 68 81 58 Z" fill="#080808" stroke="#000" stroke-width="3"/>
+      <path d="M42 47 Q53 45 55 58 Q48 65 41 57 Z" fill="#ffffff" filter="url(#glow_spidey)"/>
+      <path d="M78 47 Q67 45 65 58 Q72 65 79 57 Z" fill="#ffffff" filter="url(#glow_spidey)"/>
+    </svg>

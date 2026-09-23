@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_space" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#02182b"/>
+          <stop offset="100%" stop-color="#010811"/>
+        </radialGradient>
+        <linearGradient id="gold_visor" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#ffe259"/>
+          <stop offset="40%" stop-color="#ffa751"/>
+          <stop offset="100%" stop-color="#4a2800"/>
+        </linearGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_space)"/>
+      <ellipse cx="60" cy="60" rx="36" ry="38" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+      <ellipse cx="60" cy="58" rx="26" ry="24" fill="url(#gold_visor)" stroke="#1e293b" stroke-width="2"/>
+      <path d="M42 56 Q60 48 78 56 Q60 68 42 56 Z" fill="#000000" opacity="0.65"/>
+      <circle cx="60" cy="58" r="4" fill="#ffffff" opacity="0.8"/>
+      <path d="M38 90 L82 90 L86 106 L34 106 Z" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+      <rect x="52" y="94" width="16" height="6" rx="2" fill="#0284c7"/>
+    </svg>

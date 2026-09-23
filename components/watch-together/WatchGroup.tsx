@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { UserProfileId } from '@/types/cinema';
 import { useWatchTogether } from '@/hooks/useWatchTogether';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { profileService } from '@/lib/services/profileService';
+import { Avatar } from '@/components/ui/Avatar';
 import { WatchGroupLobby } from './WatchGroupLobby';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +13,7 @@ import { Sparkles, Heart, Lock } from 'lucide-react';
 
 export function WatchGroup() {
   const { profile, switchProfile } = useActiveProfile();
+  const profiles = profileService.getAllProfiles();
   const {
     group,
     createGroup,
@@ -26,7 +29,7 @@ export function WatchGroup() {
   } = useWatchTogether();
 
   const [groupNameInput, setGroupNameInput] = useState('Movie Night ❤️');
-  const [selectedHost, setSelectedHost] = useState<UserProfileId>('dinu');
+  const [selectedHost, setSelectedHost] = useState<UserProfileId>(profile.id);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +50,7 @@ export function WatchGroup() {
               Create Watch Group
             </h1>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              Start an ultra-low latency synchronized room exclusively for Dinu & Kanmani with Jellyfin SyncPlay.
+              Start an ultra-low latency synchronized room with Jellyfin SyncPlay.
             </p>
           </div>
 
@@ -72,42 +75,30 @@ export function WatchGroup() {
               <label className="block text-xs font-mono text-slate-400 uppercase tracking-wider mb-2">
                 Room Host
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setSelectedHost('dinu')}
-                  className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${
-                    selectedHost === 'dinu'
-                      ? 'bg-sky-500/20 border-sky-400 shadow-[0_0_15px_rgba(14,165,233,0.2)]'
-                      : 'bg-[#0b111c] border-white/[0.08] hover:border-white/[0.15]'
-                  }`}
-                >
-                  <div className="w-8 h-8 rounded-full overflow-hidden border border-sky-400/60 flex-shrink-0">
-                    
-                  </div>
-                  <div className="text-left">
-                    <p className="text-sm font-semibold text-white">Dinu</p>
-                    <p className="text-[10px] text-slate-400">Host</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedHost('kanmani')}
-                  className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${
-                    selectedHost === 'kanmani'
-                      ? 'bg-purple-500/20 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.2)]'
-                      : 'bg-[#0b111c] border-white/[0.08] hover:border-white/[0.15]'
-                  }`}
-                >
-                  <div className="w-8 h-8 rounded-full overflow-hidden border border-purple-400/60 flex-shrink-0">
-                    
-                  </div>
-                  <div className="text-left">
-                    <p className="text-sm font-semibold text-white">Kanmani</p>
-                    <p className="text-[10px] text-slate-400">Host</p>
-                  </div>
-                </button>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {profiles.map((p) => {
+                  const isSelected = selectedHost === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setSelectedHost(p.id)}
+                      className={`p-3 rounded-xl border flex items-center gap-2.5 transition-all text-left ${
+                        isSelected
+                          ? 'bg-rose-500/20 border-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.25)]'
+                          : 'bg-[#0b111c] border-white/[0.08] hover:border-white/[0.15]'
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full overflow-hidden border border-white/20 flex-shrink-0">
+                        <Avatar profile={p} size="sm" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">{p.name}</p>
+                        <p className="text-[10px] text-slate-400">Host</p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

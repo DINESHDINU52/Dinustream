@@ -121,6 +121,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
   const router = useRouter();
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { isPortrait, isMobile, isTV: isDeviceTV, requestFullscreenLandscape } = useDeviceOrientation();
@@ -129,6 +130,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
 
   // Playback States
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   /*
     Starts at 0, not a hard-coded 2h46m. With the fake progress timer gone there
@@ -706,10 +708,16 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     const video = videoRef.current;
     if (!video) return;
 
+    let lastTimeUpdate = 0;
     const handleTimeUpdate = () => {
-      setCurrentTime(video.currentTime);
-      if (video.buffered.length > 0) {
-        setBufferedEnd(video.buffered.end(video.buffered.length - 1));
+      const now = performance.now();
+      // Throttle React state updates to ~4fps (every 250ms) to prevent UI thread congestion
+      if (now - lastTimeUpdate > 250 || video.paused) {
+        lastTimeUpdate = now;
+        setCurrentTime(video.currentTime);
+        if (video.buffered.length > 0) {
+          setBufferedEnd(video.buffered.end(video.buffered.length - 1));
+        }
       }
       notifyProgress(video.currentTime, video.paused);
       if (isGroupSync) {
@@ -718,17 +726,31 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     };
 
     const handleWaiting = () => {
+      setIsBuffering(true);
       if (isGroupSync) {
         updateParticipantProgress(video.currentTime, 'BUFFERING');
       }
     };
 
     const handlePlaying = () => {
+      setIsBuffering(false);
       setIsPlaying(true);
       notifyStarted(video.currentTime);
       if (isGroupSync) {
         updateParticipantProgress(video.currentTime, 'PLAYING');
       }
+    };
+
+    const handleCanPlay = () => {
+      setIsBuffering(false);
+    };
+
+    const handleSeeking = () => {
+      setIsBuffering(true);
+    };
+
+    const handleSeeked = () => {
+      setIsBuffering(false);
     };
 
     const handlePause = () => {
@@ -806,6 +828,9 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     video.addEventListener('playing', handlePlaying);
     video.addEventListener('pause', handlePause);
     video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('seeking', handleSeeking);
+    video.addEventListener('seeked', handleSeeked);
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
@@ -814,6 +839,9 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       video.removeEventListener('playing', handlePlaying);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('seeking', handleSeeking);
+      video.removeEventListener('seeked', handleSeeked);
     };
     /*
       Depends on the individual stable callbacks, not on the whole `session`
@@ -866,19 +894,33 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     if (isApplyingRemoteSync.current) return;
     if (videoRef.current) {
       if (isPlaying) {
-        videoRef.current.pause();
-        setIsPlaying(false);
-        triggerPulse('pause');
-        if (isGroupSync) broadcastPause(currentTime);
+        if (playPromiseRef.current) {
+          playPromiseRef.current
+            .then(() => {
+              videoRef.current?.pause();
+              setIsPlaying(false);
+              triggerPulse('pause');
+              if (isGroupSync) broadcastPause(currentTime);
+            })
+            .catch(() => {});
+        } else {
+          videoRef.current.pause();
+          setIsPlaying(false);
+          triggerPulse('pause');
+          if (isGroupSync) broadcastPause(currentTime);
+        }
       } else {
-        videoRef.current
-          .play()
+        const promise = videoRef.current.play();
+        playPromiseRef.current = promise;
+        promise
           .then(() => {
+            playPromiseRef.current = null;
             setIsPlaying(true);
             triggerPulse('play');
             if (isGroupSync) broadcastPlay(currentTime);
           })
           .catch((err) => {
+            playPromiseRef.current = null;
             console.warn('[CinemaPlayer] Playback was blocked or deferred:', err);
             setIsPlaying(false);
           });
@@ -1290,17 +1332,53 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       )}
 
       {/*
-        Negotiating / recovering indicator. Distinct from a decode failure: the
-        server may simply still be starting the transcode.
+        Cinematic Center Loading Spinner:
+        Matches exact movie startup and buffering timing from initial fetch until first playback frames.
       */}
-      {(session.isResolving || hlsPlayer.isRecovering) && !playbackError && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
-          <span className="flex items-center gap-2.5 px-4 py-2.5 rounded-full glass text-xs text-slate-200">
-            <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
-            {session.isResolving ? 'Preparing stream…' : 'Reconnecting…'}
-          </span>
-        </div>
-      )}
+      <AnimatePresence>
+        {(isBuffering ||
+          session.isResolving ||
+          hlsPlayer.isRecovering ||
+          (!hlsPlayer.isReady && Boolean(activeVideoSrc)) ||
+          (autoPlay && !isPlaying && currentTime === 0)) &&
+          !playbackError && (
+            <motion.div
+              key="cinema-movie-loader"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none bg-black/40 backdrop-blur-[2px]"
+            >
+              <div className="relative flex items-center justify-center">
+                {/* Ambient Pulsing Glow */}
+                <div className="absolute w-24 h-24 rounded-full bg-rose-500/20 blur-xl animate-pulse" />
+                {/* Outer Red Cinema Spinner Ring */}
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-white/10 border-t-rose-500 animate-spin" />
+                {/* Inner Cyan Reverse Accent Ring */}
+                <div className="absolute w-10 h-10 sm:w-11 sm:h-11 rounded-full border-2 border-transparent border-b-sky-400 animate-spin [animation-duration:1.2s] [animation-direction:reverse]" />
+              </div>
+
+              {/* Status Indicator */}
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 border border-white/10 text-xs font-mono text-slate-300 tracking-wider uppercase shadow-xl"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                <span>
+                  {session.isResolving
+                    ? 'Connecting to Cinema Vault…'
+                    : !hlsPlayer.isReady
+                    ? 'Preparing Bitstream…'
+                    : hlsPlayer.isRecovering
+                    ? 'Reconnecting Stream…'
+                    : 'Buffering Presentation…'}
+                </span>
+              </motion.div>
+            </motion.div>
+          )}
+      </AnimatePresence>
 
       {/* Screen Vignette Overlay */}
       <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-black/90 via-transparent to-black/70 opacity-80" />
@@ -1399,6 +1477,8 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
           session={syncPlayback.session}
           isVisible={areControlsVisible || !isPlaying}
           notification={syncPlayback.activeNotification}
+          currentUserId={profile.id}
+          onToggleControlMode={(newMode) => syncPlayback.setControlMode(newMode)}
         />
       )}
 

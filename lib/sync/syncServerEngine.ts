@@ -19,6 +19,10 @@ export interface SyncCommand {
   reactionEmoji?: string;
   latencyMs?: number;
   clientTimestamp?: number;
+  senderName?: string;
+  senderAvatar?: string;
+  isHost?: boolean;
+  controlMode?: 'HOST_ONLY' | 'EVERYONE';
 }
 
 export interface SyncCommandResult {
@@ -51,26 +55,10 @@ class SyncServerEngine {
         playbackState: 'PAUSED',
         position: 0,
         timestamp: Date.now(),
-        controller: 'dinu',
+        controller: 'host',
         sequence: 1,
-        participants: {
-          dinu: {
-            id: 'dinu',
-            name: PROFILES.dinu?.name || 'Dinu',
-            avatarUrl: PROFILES.dinu?.avatarUrl || '/avatars/dinu.svg',
-            presence: 'Online',
-            lastSeen: Date.now(),
-            position: 0,
-          },
-          kanmani: {
-            id: 'kanmani',
-            name: PROFILES.kanmani?.name || 'Kanmani',
-            avatarUrl: PROFILES.kanmani?.avatarUrl || '/avatars/kanmani.svg',
-            presence: 'Online',
-            lastSeen: Date.now(),
-            position: 0,
-          },
-        },
+        controlMode: 'EVERYONE',
+        participants: {},
       };
       this.sessions.set(groupId, session);
     }
@@ -123,18 +111,28 @@ class SyncServerEngine {
       };
     }
 
-    // Authenticate sender
-    if (!['dinu', 'kanmani'].includes(sender) && !PROFILES[sender]) {
-      console.warn(`[SYNC] Rejected command from unauthenticated user: ${sender}`);
+    // Validate sender
+    if (!sender || typeof sender !== 'string') {
       return {
         success: false,
         session: this.getSession(groupId),
-        error: 'Unauthorized participant profile',
+        error: 'Invalid participant profile',
       };
     }
 
     const session = this.getSession(groupId, cmd.mediaId);
-    const senderName = PROFILES[sender]?.name || String(sender);
+    const senderName = PROFILES[sender]?.name || (cmd.senderName as string) || String(sender);
+
+    // Track room host
+    if (!session.hostId) {
+      if (cmd.isHost || Object.keys(session.participants).length === 0) {
+        session.hostId = sender;
+      }
+    } else if (cmd.isHost && session.hostId !== sender && Object.keys(session.participants).length <= 1) {
+      session.hostId = sender;
+    }
+
+    const isThisSenderHost = session.hostId === sender;
 
     // Ensure participant entry exists
     if (!session.participants[sender]) {
@@ -142,13 +140,15 @@ class SyncServerEngine {
       session.participants[sender] = {
         id: sender,
         name: senderName,
-        avatarUrl: pProfile?.avatarUrl || '/avatars/guest.svg',
+        avatarUrl: pProfile?.avatarUrl || (cmd.senderAvatar as string) || '/avatars/guest.svg',
         presence: 'Watching',
         lastSeen: serverNow,
         position: cmd.position || 0,
+        isHost: isThisSenderHost,
       };
     } else {
       session.participants[sender].lastSeen = serverNow;
+      session.participants[sender].isHost = isThisSenderHost;
       if (typeof cmd.position === 'number') {
         session.participants[sender].position = cmd.position;
       }
@@ -250,6 +250,77 @@ class SyncServerEngine {
       return { success: true, session: { ...session }, event: payload };
     }
 
+    // Handle CONTROL_MODE_CHANGE
+    if (type === 'CONTROL_MODE_CHANGE') {
+      if (session.hostId && sender !== session.hostId) {
+        return {
+          success: false,
+          session: { ...session },
+          error: 'Only the room host can change control settings.',
+        };
+      }
+
+      const newMode = cmd.controlMode || 'EVERYONE';
+      session.controlMode = newMode;
+      const notifMsg = `${senderName} switched controls to ${
+        newMode === 'HOST_ONLY' ? '👑 Host Only' : '🌐 Everyone'
+      }`;
+
+      const notif: SyncActionNotification = {
+        id: `notif-${serverNow}-${Math.random().toString(36).slice(2, 6)}`,
+        type: 'CONTROL_MODE_CHANGE',
+        sender,
+        senderName,
+        text: notifMsg,
+        timestamp: serverNow,
+      };
+      session.lastNotification = notif;
+
+      const payload: SyncEventPayload = {
+        type: 'CONTROL_MODE_CHANGE',
+        groupId,
+        mediaId: session.mediaId,
+        episodeId: session.episodeId,
+        position: this.getExpectedPosition(session, serverNow),
+        playbackState: session.playbackState,
+        controller: sender,
+        sequence: session.sequence,
+        timestamp: serverNow,
+        controlMode: newMode,
+        message: notifMsg,
+      };
+
+      this.sessions.set(groupId, session);
+      this.broadcast(groupId, payload, session);
+      return { success: true, session: { ...session }, event: payload };
+    }
+
+    // Check Host-Only restrictions for state-changing playback commands
+    const isStateChangingPlayback = [
+      'PLAY',
+      'PAUSE',
+      'SEEK',
+      'RESUME',
+      'SKIP_INTRO',
+      'SKIP_RECAP',
+      'SKIP_OUTRO',
+      'NEXT_EPISODE',
+      'PREVIOUS_EPISODE',
+    ].includes(type);
+
+    if (
+      session.controlMode === 'HOST_ONLY' &&
+      session.hostId &&
+      sender !== session.hostId &&
+      isStateChangingPlayback
+    ) {
+      return {
+        success: false,
+        session: { ...session },
+        error: 'Host-Only mode is active. Only the room host can control playback.',
+      };
+    }
+
     // State-changing playback actions: Increment server sequence and set authoritative timestamp
     session.sequence += 1;
     session.timestamp = serverNow;
@@ -341,6 +412,7 @@ class SyncServerEngine {
       controller: sender,
       sequence: session.sequence,
       timestamp: session.timestamp,
+      controlMode: session.controlMode,
       message: finalMsg,
     };
 

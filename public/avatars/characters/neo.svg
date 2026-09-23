@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_neo" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#022c15"/>
+          <stop offset="100%" stop-color="#000d05"/>
+        </radialGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_neo)"/>
+      <!-- Digital Matrix Code Rain Lines -->
+      <line x1="20" y1="10" x2="20" y2="40" stroke="#22c55e" stroke-width="1" stroke-dasharray="2 4" opacity="0.4"/>
+      <line x1="100" y1="20" x2="100" y2="70" stroke="#22c55e" stroke-width="1" stroke-dasharray="3 3" opacity="0.4"/>
+      <!-- Slicked Black Hair -->
+      <path d="M40 38 C40 22, 80 22, 80 38 L82 50 C82 52, 78 50, 76 46 C70 42, 50 42, 44 46 C42 50, 38 52, 38 50 Z" fill="#09090b"/>
+      <!-- Face -->
+      <path d="M42 46 C42 40, 78 40, 78 46 L78 72 C78 88, 70 96, 60 98 C50 96, 42 88, 42 72 Z" fill="#d4a373"/>
+      <!-- Iconic Rimless Dark Sunglasses -->
+      <ellipse cx="50" cy="56" rx="9" ry="5.5" fill="#09090b" stroke="#16a34a" stroke-width="0.8"/>
+      <ellipse cx="70" cy="56" rx="9" ry="5.5" fill="#09090b" stroke="#16a34a" stroke-width="0.8"/>
+      <line x1="59" y1="56" x2="61" y2="56" stroke="#18181b" stroke-width="1.5"/>
+      <line x1="45" y1="55" x2="55" y2="55" stroke="#4ade80" stroke-width="1" opacity="0.7"/>
+      <line x1="65" y1="55" x2="75" y2="55" stroke="#4ade80" stroke-width="1" opacity="0.7"/>
+      <!-- Mouth line -->
+      <line x1="55" y1="78" x2="65" y2="78" stroke="#78350f" stroke-width="1.5"/>
+      <!-- High Collar Black Trench Coat -->
+      <polygon points="36,104 48,94 60,102 72,94 84,104 88,120 32,120" fill="#09090b"/>
+    </svg>

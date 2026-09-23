@@ -58,7 +58,7 @@ export const Avatar: React.FC<AvatarProps> = ({
           <img
             src={effectiveAvatarUrl}
             alt={displayName}
-            className="w-full h-full rounded-full object-cover"
+            className="w-full h-full rounded-[inherit] object-cover"
           />
         ) : (
           <span>{initial}</span>

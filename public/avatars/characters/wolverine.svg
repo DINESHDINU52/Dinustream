@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_wolv" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#332204"/>
+          <stop offset="100%" stop-color="#0a0701"/>
+        </radialGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_wolv)"/>
+      <!-- Signature Cowl Wings Black -->
+      <path d="M38 58 C22 30, 16 12, 12 6 C18 18, 30 40, 44 52 Z" fill="#09090b" stroke="#27272a" stroke-width="1"/>
+      <path d="M82 58 C98 30, 104 12, 108 6 C102 18, 90 40, 76 52 Z" fill="#09090b" stroke="#27272a" stroke-width="1"/>
+      <!-- Yellow Mask Face -->
+      <path d="M40 40 C40 24, 80 24, 80 40 L80 66 C80 82, 70 96, 60 98 C50 96, 40 82, 40 66 Z" fill="#eab308" stroke="#ca8a04" stroke-width="1.5"/>
+      <!-- Cowl Face Eye Accents Black -->
+      <polygon points="40,54 58,48 56,60 42,66" fill="#09090b"/>
+      <polygon points="80,54 62,48 64,60 78,66" fill="#09090b"/>
+      <!-- Angry White Slit Eyes -->
+      <polygon points="44,56 54,52 52,58 45,60" fill="#ffffff"/>
+      <polygon points="76,56 66,52 68,58 75,60" fill="#ffffff"/>
+      <!-- Stubble Chin -->
+      <polygon points="54,82 66,82 64,92 56,92" fill="#d4a373"/>
+      <line x1="56" y1="88" x2="64" y2="88" stroke="#1c1917" stroke-width="1.5"/>
+    </svg>

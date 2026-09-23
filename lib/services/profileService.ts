@@ -260,28 +260,33 @@ class ProfileService {
     return list;
   }
 
-  addGuestProfile(name?: string, avatarUrl?: string): UserProfile {
-    const count = Object.keys(this.guestProfiles).length + 2; // Guest 1 is default, next is Guest 2
-    const id = `guest_${Date.now().toString(36)}`;
-    const guestName = name && name.trim() ? name.trim() : `Guest ${count}`;
+  createCustomProfile(
+    name: string,
+    avatarUrl?: string,
+    accentColor: string = '#e50914',
+    pinProtected: boolean = false,
+    glowColor?: string
+  ): UserProfile {
+    const id = `profile_${Date.now().toString(36)}`;
+    const cleanName = name.trim() || 'New Viewer';
 
-    const newGuest: UserProfile = {
+    const newProfile: UserProfile = {
       id,
-      name: guestName,
-      title: 'Cinema Guest',
-      avatarUrl: avatarUrl || '/avatars/guest.svg',
-      accentColor: '#10b981',
-      glowColor: 'rgba(16, 185, 129, 0.35)',
-      favoriteGenre: 'Blockbusters & Cinema Hits',
+      name: cleanName,
+      title: 'Cinema Member',
+      avatarUrl: avatarUrl || '/avatars/characters/iron-man.svg',
+      accentColor,
+      glowColor: glowColor || 'rgba(229, 9, 20, 0.45)',
+      favoriteGenre: 'Movies & Series',
       isOnline: false,
-      statusMessage: 'Visiting private cinema',
-      isGuest: true,
-      pinProtected: false,
+      statusMessage: 'Ready to stream',
+      isGuest: false,
+      pinProtected,
     };
 
-    this.guestProfiles[id] = newGuest;
+    this.guestProfiles[id] = newProfile;
     this.store[id] = {
-      profile: newGuest,
+      profile: newProfile,
       continueWatching: [],
       myList: [],
       watchHistory: [],
@@ -289,10 +294,23 @@ class ProfileService {
     };
 
     this.save();
-    return newGuest;
+    return newProfile;
   }
 
-  removeGuestProfile(id: string) {
+  updateProfileCustom(id: string, updates: Partial<UserProfile>) {
+    if (this.guestProfiles[id]) {
+      this.guestProfiles[id] = { ...this.guestProfiles[id], ...updates };
+    }
+    if (PROFILES[id]) {
+      Object.assign(PROFILES[id], updates);
+    }
+    if (this.store[id]) {
+      this.store[id].profile = { ...this.store[id].profile, ...updates };
+    }
+    this.save(true);
+  }
+
+  deleteProfile(id: string) {
     if (this.guestProfiles[id]) {
       delete this.guestProfiles[id];
       delete this.store[id];
@@ -301,6 +319,14 @@ class ProfileService {
       }
       this.save();
     }
+  }
+
+  addGuestProfile(name?: string, avatarUrl?: string): UserProfile {
+    return this.createCustomProfile(name || 'Guest', avatarUrl, '#10b981', false);
+  }
+
+  removeGuestProfile(id: string) {
+    this.deleteProfile(id);
   }
 
   getActiveProfileData(): UserProfileData {

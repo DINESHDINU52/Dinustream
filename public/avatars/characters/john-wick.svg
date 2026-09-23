@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_wick" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#0c1d2e"/>
+          <stop offset="100%" stop-color="#030710"/>
+        </radialGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_wick)"/>
+      <path d="M34 45 C32 20, 88 20, 86 45 C90 70, 88 88, 86 94 C82 80, 80 50, 76 42 C72 35, 48 35, 44 42 C40 50, 38 80, 34 94 Z" fill="#090a0f" stroke="#1e293b" stroke-width="1"/>
+      <path d="M44 46 C44 40, 76 40, 76 46 L76 74 C76 86, 68 96, 60 98 C52 96, 44 86, 44 74 Z" fill="#d4a373"/>
+      <path d="M48 58 Q54 56 57 58" stroke="#1e293b" stroke-width="2" fill="none"/>
+      <path d="M72 58 Q66 56 63 58" stroke="#1e293b" stroke-width="2" fill="none"/>
+      <circle cx="53" cy="62" r="2" fill="#0f172a"/>
+      <circle cx="67" cy="62" r="2" fill="#0f172a"/>
+      <path d="M46 76 C46 88, 52 96, 60 96 C68 96, 74 88, 74 76 C70 80, 50 80, 46 76 Z" fill="#1c1917" opacity="0.85"/>
+      <line x1="55" y1="74" x2="65" y2="74" stroke="#1c1917" stroke-width="2"/>
+      <polygon points="40,105 52,94 60,108 68,94 80,105 84,120 36,120" fill="#090a0f"/>
+      <polygon points="57,98 63,98 62,118 58,118" fill="#111827"/>
+    </svg>

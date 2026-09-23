@@ -13,7 +13,8 @@ export type SyncPlaybackEventType =
   | 'JOIN'
   | 'LEAVE'
   | 'HEARTBEAT'
-  | 'REACTION';
+  | 'REACTION'
+  | 'CONTROL_MODE_CHANGE';
 
 export type ParticipantPresence =
   | 'Online'
@@ -30,6 +31,7 @@ export interface SyncParticipantState {
   lastSeen: number; // epoch ms
   position: number; // seconds
   latencyMs?: number;
+  isHost?: boolean;
 }
 
 export interface SyncActionNotification {
@@ -53,6 +55,8 @@ export interface SyncPlaybackSession {
   sequence: number; // monotonically increasing sequence number
   participants: Record<string, SyncParticipantState>;
   lastNotification?: SyncActionNotification;
+  hostId?: string;
+  controlMode?: 'HOST_ONLY' | 'EVERYONE';
 }
 
 export interface SyncEventPayload {
@@ -67,4 +71,5 @@ export interface SyncEventPayload {
   timestamp: number;
   message?: string;
   reactionEmoji?: string;
+  controlMode?: 'HOST_ONLY' | 'EVERYONE';
 }

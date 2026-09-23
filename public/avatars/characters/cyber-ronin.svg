@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_cyber" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#2d062e"/>
+          <stop offset="100%" stop-color="#0a010a"/>
+        </radialGradient>
+        <filter id="glow_cyber">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_cyber)"/>
+      <!-- Cyber Oni Horns -->
+      <polygon points="38,44 26,18 46,36" fill="#ec4899" filter="url(#glow_cyber)"/>
+      <polygon points="82,44 94,18 74,36" fill="#ec4899" filter="url(#glow_cyber)"/>
+      <!-- Mask Base -->
+      <path d="M38 42 C38 28, 82 28, 82 42 L82 72 C82 92, 70 102, 60 104 C50 102, 38 92, 38 72 Z" fill="#18181b" stroke="#3f3f46" stroke-width="1.5"/>
+      <!-- Neon Cyan Visor Bar -->
+      <rect x="42" y="52" width="36" height="8" rx="2" fill="#06b6d4" filter="url(#glow_cyber)"/>
+      <!-- Oni Teeth Grille -->
+      <path d="M48 76 L72 76 L68 88 L52 88 Z" fill="#09090b" stroke="#ec4899" stroke-width="1.5"/>
+      <line x1="54" y1="76" x2="54" y2="88" stroke="#ffffff" stroke-width="1.5"/>
+      <line x1="60" y1="76" x2="60" y2="88" stroke="#ffffff" stroke-width="1.5"/>
+      <line x1="66" y1="76" x2="66" y2="88" stroke="#ffffff" stroke-width="1.5"/>
+    </svg>

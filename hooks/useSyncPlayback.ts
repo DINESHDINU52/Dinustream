@@ -215,6 +215,10 @@ export function useSyncPlayback({
     engineRef.current?.broadcastReaction(emoji);
   }, []);
 
+  const setControlMode = useCallback((mode: 'HOST_ONLY' | 'EVERYONE') => {
+    engineRef.current?.setControlMode(mode);
+  }, []);
+
   const updateParticipantProgress = useCallback((position: number, state: 'PLAYING' | 'PAUSED' | 'BUFFERING') => {
     engineRef.current?.updateParticipantProgress(position, state);
   }, []);
@@ -231,6 +235,7 @@ export function useSyncPlayback({
     broadcastNextEpisode,
     broadcastPrevEpisode,
     broadcastReaction,
+    setControlMode,
     performDriftCorrection,
     updateParticipantProgress,
   };

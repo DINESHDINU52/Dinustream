@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_st" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#1e293b"/>
+          <stop offset="100%" stop-color="#020617"/>
+        </radialGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_st)"/>
+      <!-- Helmet Outer Dome -->
+      <path d="M36 42 C36 20, 84 20, 84 42 L88 74 C88 94, 76 102, 60 102 C44 102, 32 94, 32 74 Z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+      <!-- Black Brow Line -->
+      <line x1="36" y1="42" x2="84" y2="42" stroke="#09090b" stroke-width="3"/>
+      <!-- Grey Lens Visor / Eyes -->
+      <polygon points="42,50 56,52 54,58 44,56" fill="#0f172a"/>
+      <polygon points="78,50 64,52 66,58 76,56" fill="#0f172a"/>
+      <!-- Cheek Indents / Black Grilles -->
+      <polygon points="38,68 46,74 44,82 36,78" fill="#334155"/>
+      <polygon points="82,68 74,74 76,82 84,78" fill="#334155"/>
+      <!-- Nose & Mouth Vocoder -->
+      <polygon points="60,68 67,86 53,86" fill="#09090b"/>
+      <circle cx="50" cy="94" r="3" fill="#64748b"/>
+      <circle cx="70" cy="94" r="3" fill="#64748b"/>
+    </svg>

@@ -76,7 +76,7 @@ export function GroupMovieSelector({
       onClose={onClose}
       kicker="Watch Together Selector"
       title="Select Feature Presentation"
-      description="Choose a title for your private synchronized screening. Both Dinu & Kanmani will synchronize to this selection."
+      description="Choose a title for your private synchronized screening. All participants will synchronize to this selection."
       size="xl"
     >
       <div className="space-y-4">

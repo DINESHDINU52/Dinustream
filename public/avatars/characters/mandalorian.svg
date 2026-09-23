@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <defs>
+        <radialGradient id="bg_mando" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#1e293b"/>
+          <stop offset="100%" stop-color="#090d16"/>
+        </radialGradient>
+        <linearGradient id="beskar_mando" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#f1f5f9"/>
+          <stop offset="50%" stop-color="#94a3b8"/>
+          <stop offset="100%" stop-color="#475569"/>
+        </linearGradient>
+      </defs>
+      <rect width="120" height="120" rx="20" fill="url(#bg_mando)"/>
+      <path d="M38 32 C38 18, 82 18, 82 32 L84 66 C84 88, 72 100, 60 102 C48 100, 36 88, 36 66 Z" fill="url(#beskar_mando)" stroke="#cbd5e1" stroke-width="1.5"/>
+      <path d="M40 68 L50 82 L46 92 Z" fill="#1e293b" opacity="0.8"/>
+      <path d="M80 68 L70 82 L74 92 Z" fill="#1e293b" opacity="0.8"/>
+      <polygon points="44,50 76,50 75,56 63,56 63,84 57,84 57,56 45,56" fill="#020617" stroke="#0f172a" stroke-width="2"/>
+      <line x1="48" y1="52" x2="54" y2="52" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+    </svg>
