@@ -138,11 +138,11 @@ export async function getSyncHealth(): Promise<{ ok: boolean }> {
   }
 }
 
-export async function getSyncStatus(filename: string): Promise<SyncStatusResponse> {
+export async function getSyncStatus(filename: string, kind: 'movie' | 'show' = 'movie'): Promise<SyncStatusResponse> {
   if (DEMO || !filename) return syntheticReady(filename);
 
   try {
-    const res = await fetch(`${BASE}/sync/status/${encodeURIComponent(filename)}`, {
+    const res = await fetch(`${BASE}/sync/status/${encodeURIComponent(filename)}?kind=${kind}`, {
       credentials: 'include',
     });
     if (res.status === 404) return notCached(filename);

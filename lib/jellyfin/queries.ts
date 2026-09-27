@@ -87,12 +87,18 @@ export async function fetchRawItem(id: string): Promise<JellyfinBaseItem | null>
 /**
  * The on-disk filename for an item, used as the key for the Python Sync Manager
  * (which copies files from Google Drive -> local NVMe by filename). Returns the
- * basename of the item's `Path`, e.g. `Dune.2021.mkv`.
+ * path relative to the matching Drive library root, e.g.
+ * `Dune (2021)/Dune.2021.mkv`. Keeping the relative folders is important:
+ * rclone cannot find a file that lives in a Drive subfolder when given only
+ * its basename.
  */
 export async function fetchItemFilename(id: string): Promise<string | null> {
   const item = await jfFetch<JellyfinBaseItem>(`/Items/${id}`).catch(() => null);
   if (!item?.Path) return null;
-  const parts = item.Path.split(/[\\/]/);
+  const normalized = item.Path.replace(/\\/g, '/');
+  const marker = normalized.match(/\/(Movies|Shows)\/(.+)$/i);
+  if (marker?.[2]) return marker[2];
+  const parts = normalized.split('/');
   return parts[parts.length - 1] || null;
 }
 

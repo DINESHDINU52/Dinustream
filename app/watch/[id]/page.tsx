@@ -8,7 +8,7 @@ import { MediaItem, Episode, Season } from '@/types/cinema';
 import { fetchRawItem, fetchEpisodes, fetchItemFilename, isDolbyItem } from '@/lib/jellyfin/queries';
 import { mapToMediaItem, mapToEpisode } from '@/lib/jellyfin/mappers';
 import { startSync, getSyncStatus } from '@/lib/api/syncManager';
-import { DolbyAdOverlay } from '@/components/sync/DolbyAdOverlay';
+import { CacheAndPlayOverlay } from '@/components/sync/CacheAndPlayOverlay';
 import { Loader2, AlertTriangle, HardDriveDownload, CheckCircle2 } from 'lucide-react';
 
 function groupEpisodes(episodes: Episode[]): Season[] {
@@ -96,6 +96,7 @@ function WatchContent() {
   const [gate, setGate] = useState<'checking' | 'ad' | 'play'>('checking');
   const [isDolby, setIsDolby] = useState(false);
   const [isMovie, setIsMovie] = useState(false);
+  const [syncFilename, setSyncFilename] = useState<string | null>(null);
 
   // Decide the first-run gate for the *movie* being opened:
   //  - already on NVMe (or a permanent Dolby title) -> straight to playback
@@ -120,11 +121,12 @@ function WatchContent() {
 
         const filename = await fetchItemFilename(id).catch(() => null);
         if (cancelled) return;
+        setSyncFilename(filename);
         // Kick the background Drive -> SSD copy regardless of the ad path, so
-        // the next watch is instant.
+        // the Dolby overlay can cover the complete background copy.
         if (filename) void startSync(filename, isMovie ? 'movie' : 'show').catch(() => {});
 
-        if (!isMovie || isWatchParty || !filename || hasSeenAd(id)) {
+        if (!isMovie || isWatchParty || !filename) {
           setGate('play');
           return;
         }
@@ -136,9 +138,7 @@ function WatchContent() {
           setGate('play');
           return;
         }
-        // First run: remember it so the ad never plays for this title again,
-        // even if the SSD copy is still in flight next time.
-        markAdSeen(id);
+        // Keep the Dolby video visible until the background copy is complete.
         setGate('ad');
       } catch {
         if (!cancelled) setGate('play');
@@ -263,7 +263,14 @@ function WatchContent() {
   // First run, not on the SSD yet: play one random Dolby clip fully while the
   // Python daemon pulls the movie from Drive to SSD. Skip is always available.
   if (gate === 'ad') {
-    return <DolbyAdOverlay media={media} onComplete={() => setGate('play')} />;
+    return (
+      <CacheAndPlayOverlay
+        media={media}
+        filename={syncFilename}
+        onReady={() => setGate('play')}
+        onClose={() => setGate('play')}
+      />
+    );
   }
 
   // Brief "Preparing your stream" prelude while we resolve the cache state, so
