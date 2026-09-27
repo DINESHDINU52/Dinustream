@@ -118,6 +118,20 @@ export async function isDolbyItem(id: string): Promise<boolean> {
   return ancestors.some((a) => (a.Name ?? '').toLowerCase() === 'dolby');
 }
 
+/** Fetch a single Dolby library item to use as the Atmos bumper video. */
+export async function fetchDolbyBumper(): Promise<{ itemId: string } | null> {
+  const userId = getUserId();
+  if (!userId) return null;
+  const views = await jfFetch<JellyfinBaseItem[]>(`/Users/${userId}/Views`).catch(() => []);
+  const dolby = views.find((v) => (v.Name ?? '').toLowerCase() === 'dolby');
+  if (!dolby?.Id) return null;
+  const items = await jfFetch<JellyfinQueryResult>(
+    `/Users/${userId}/Items?ParentId=${dolby.Id}&Limit=1`
+  ).catch(() => null);
+  const first = items?.Items?.[0];
+  return first?.Id ? { itemId: first.Id } : null;
+}
+
 export async function fetchSeasons(seriesId: string): Promise<Season[]> {
   const data = await jfFetch<JellyfinQueryResult>(
     `/Shows/${seriesId}/Seasons${qs({ UserId: uid() || undefined, Fields: ITEM_FIELDS })}`

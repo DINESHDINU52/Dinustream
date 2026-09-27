@@ -12,6 +12,8 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import { fetchItemFilename, isDolbyItem } from '@/lib/jellyfin/queries';
 import { CacheStatus } from '@/components/sync/CacheStatus';
+import { CacheAndPlayOverlay } from '@/components/sync/CacheAndPlayOverlay';
+import { getSyncStatus } from '@/lib/api/syncManager';
 import { MediaItem } from '@/types/cinema';
 import { Clapperboard, AudioLines, Languages, HardDriveDownload } from 'lucide-react';
 
@@ -25,7 +27,28 @@ export default function MovieDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [filename, setFilename] = useState<string | null>(null);
   const [isDolby, setIsDolby] = useState(false);
+  const [cachePreparing, setCachePreparing] = useState(false);
   const { status: cacheStatus, triggerSync, syncing } = useSyncStatus(filename);
+
+  // "Sync & Play": if not cached yet, show a Dolby Atmos bumper that plays
+  // while the movie is pulled to NVMe — but only the FIRST time. If it's already
+  // cached (or a permanent Dolby title), go straight to playback.
+  const handlePlay = async () => {
+    if (isDolby || !filename) {
+      router.push(`/watch/${media.id}`);
+      return;
+    }
+    try {
+      const s = await getSyncStatus(filename);
+      if (s.state === 'ready' || s.percentage >= 100) {
+        router.push(`/watch/${media.id}`);
+        return;
+      }
+      setCachePreparing(true);
+    } catch {
+      router.push(`/watch/${media.id}`);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -90,10 +113,20 @@ export default function MovieDetailPage() {
 
   return (
     <CinemaShell>
+      {/* Cache-first Sync & Play: Dolby bumper plays while the movie is pulled to NVMe */}
+      {cachePreparing && (
+        <CacheAndPlayOverlay
+          media={media}
+          filename={filename}
+          onReady={() => router.push(`/watch/${media.id}`)}
+          onClose={() => setCachePreparing(false)}
+        />
+      )}
+
       <HeroBanner
         media={media}
         isSaved={isSaved}
-        onPlay={() => router.push(`/watch/${media.id}`)}
+        onPlay={() => void handlePlay()}
         onToggleSave={() => toggleMyList(media.id)}
         onOpenDetails={() => document.getElementById('movie-details')?.scrollIntoView({ behavior: 'smooth' })}
       />
