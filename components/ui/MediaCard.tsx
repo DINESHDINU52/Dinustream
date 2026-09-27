@@ -218,15 +218,15 @@ export const MediaCard: React.FC<MediaCardProps> = ({
         )}
 
         <div className="reveal-on-hover mt-2 flex items-center gap-1.5 sm:gap-2">
-          {/* Sync & Play */}
+          {/* Play / Watch */}
           <button
             onClick={handlePlay}
-            title="Sync & Play"
-            aria-label={`Sync & Play ${media.title}`}
+            title={media.type === 'series' ? 'Watch' : 'Play'}
+            aria-label={`${media.type === 'series' ? 'Watch' : 'Play'} ${media.title}`}
             className="flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg bg-white hover:bg-slate-100 text-slate-950 text-xs font-bold shadow-md transition-transform active:scale-95"
           >
             <Zap className="w-3.5 h-3.5 text-sky-500 fill-sky-500 shrink-0" />
-            <span className="tracking-tight truncate">Sync &amp; Play</span>
+            <span className="tracking-tight truncate">{media.type === 'series' ? 'Watch' : 'Play'}</span>
           </button>
 
           {/* Watchlist toggle */}

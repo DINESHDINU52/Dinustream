@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CinemaShell } from '@/components/layout/CinemaShell';
 import { AdminGuard } from '@/components/admin/AdminGuard';
 import { SystemHealthGauges } from '@/components/admin/SystemHealthGauges';
@@ -9,22 +9,61 @@ import { CacheManagerTable } from '@/components/admin/CacheManagerTable';
 import { SyncJobsTracker } from '@/components/admin/SyncJobsTracker';
 import { LivePlaybackTelemetry } from '@/components/admin/LivePlaybackTelemetry';
 import { adminService } from '@/lib/services/adminService';
-import { AdminTelemetrySummary } from '@/types/admin';
+import { listCachedFiles, deleteCachedFile } from '@/lib/api/syncManager';
+import { AdminTelemetrySummary, CachedMedia } from '@/types/admin';
 import { ShieldCheck, RefreshCw, Server } from 'lucide-react';
+
+/** "Dune.2021.2160p.mkv" -> "Dune 2021 2160p". */
+function prettyTitle(filename: string): string {
+  return filename.replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[._]+/g, ' ').trim() || filename;
+}
+
+/**
+ * Map one real cached file (from the Sync Manager) onto the table's row shape.
+ * Resolution / audio are unknown from the filename, so they show as "—"; the
+ * filename is the identity used for delete.
+ */
+function toCachedMedia(file: { filename: string; sizeBytes: number; modifiedAt: string }): CachedMedia {
+  let when = '—';
+  if (file.modifiedAt) {
+    const d = new Date(file.modifiedAt);
+    if (!Number.isNaN(d.getTime())) when = d.toLocaleString();
+  }
+  return {
+    id: file.filename,
+    title: prettyTitle(file.filename),
+    mediaType: 'movie',
+    sizeGb: Number((file.sizeBytes / 1e9).toFixed(2)),
+    resolution: '—',
+    audioFormat: '—',
+    cachedAt: when,
+    lastAccessed: when,
+    posterUrl: '',
+    cacheLocation: `/opt/dinustream/cache/movies/${file.filename}`,
+  };
+}
 
 export default function AdminPage() {
   const [telemetry, setTelemetry] = useState<AdminTelemetrySummary>(() =>
     adminService.getTelemetry()
   );
+  // Real SSD cache inventory (list + delete via the Python Sync Manager).
+  const [cachedMedia, setCachedMedia] = useState<CachedMedia[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const spinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadCache = useCallback(async () => {
+    const files = await listCachedFiles();
+    setCachedMedia(files.map(toCachedMedia));
+  }, []);
 
   useEffect(() => {
     const unsubscribe = adminService.subscribe(() => {
       setTelemetry(adminService.getTelemetry());
     });
+    void loadCache();
     return () => unsubscribe();
-  }, []);
+  }, [loadCache]);
 
   /* Clear the spinner timer on unmount so it cannot fire against a
      torn-down component. */
@@ -37,12 +76,15 @@ export default function AdminPage() {
   const handleManualRefresh = () => {
     setIsRefreshing(true);
     setTelemetry(adminService.getTelemetry());
+    void loadCache();
     if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
     spinTimerRef.current = setTimeout(() => setIsRefreshing(false), 600);
   };
 
-  const handleRemoveFromCache = (id: string) => {
-    adminService.removeCachedMedia(id);
+  const handleRemoveFromCache = async (id: string) => {
+    // id is the on-disk filename for real cache entries.
+    await deleteCachedFile(id);
+    await loadCache();
   };
 
   const handleRetryJob = (id: string) => {
@@ -124,7 +166,7 @@ export default function AdminPage() {
           {/* 3. Cache Manager (Cached Media, Sizes, Remove Action) */}
           <section className="space-y-3">
             <CacheManagerTable
-              cachedMedia={telemetry.cachedMedia}
+              cachedMedia={cachedMedia}
               onRemoveFromCache={handleRemoveFromCache}
             />
           </section>

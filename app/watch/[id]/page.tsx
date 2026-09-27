@@ -7,7 +7,9 @@ import { MediaDetailsSkeleton } from '@/components/media/MediaDetailsSkeleton';
 import { MediaItem, Episode, Season } from '@/types/cinema';
 import { fetchRawItem, fetchEpisodes, fetchItemFilename, isDolbyItem } from '@/lib/jellyfin/queries';
 import { mapToMediaItem, mapToEpisode } from '@/lib/jellyfin/mappers';
-import { startSync } from '@/lib/api/syncManager';
+import { startSync, getSyncStatus } from '@/lib/api/syncManager';
+import { DolbyBumper } from '@/components/sync/DolbyBumper';
+import { DolbyAdOverlay } from '@/components/sync/DolbyAdOverlay';
 import { Loader2, AlertTriangle, HardDriveDownload, CheckCircle2 } from 'lucide-react';
 
 function groupEpisodes(episodes: Episode[]): Season[] {
@@ -38,12 +40,44 @@ function pickEpisode(flat: Episode[], seasonParam?: string | null, episodeParam?
   return flat[0];
 }
 
+/*
+  The preshow ad runs on the FIRST run of a title only. Cache state alone is not
+  enough: if the viewer reopens before the Drive->SSD copy finishes, the title is
+  still "not cached" and the ad would replay. A per-title flag makes it strictly
+  once. (Keyed by item id; clearing site data resets it.)
+*/
+const AD_SEEN_PREFIX = 'dinustream:ad-seen:';
+
+function hasSeenAd(id: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(AD_SEEN_PREFIX + id) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markAdSeen(id: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(AD_SEEN_PREFIX + id, '1');
+  } catch {
+    /* private mode / storage disabled — the cache check still gates the ad */
+  }
+}
+
 function WatchContent() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
   const isGroupSync = searchParams.get('sync') === 'true';
   const groupId = searchParams.get('group') || 'group-movie-night';
+  /*
+    `?sync=true` is appended to *every* normal movie play (see playItem), so it
+    cannot mean "watch party". A real party carries a `room`/`group` invite param.
+    Only that should suppress the first-run ad — an ad mid-party would desync it.
+  */
+  const isWatchParty = searchParams.has('room') || searchParams.has('group');
 
   const [media, setMedia] = useState<MediaItem | null>(null);
   const [episode, setEpisode] = useState<Episode | undefined>();
@@ -53,41 +87,68 @@ function WatchContent() {
   const [prevEpisode, setPrevEpisode] = useState<Episode | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showPrelude, setShowPrelude] = useState(true);
+  /*
+    First-run gate:
+      checking -> we're deciding whether this title is already on the SSD
+      ad       -> not cached yet: play a random Dolby clip fully while the
+                  Python daemon pulls it from Drive to SSD
+      play     -> cached / Dolby / group sync / non-movie: go straight in
+  */
+  const [gate, setGate] = useState<'checking' | 'ad' | 'play'>('checking');
   const [isDolby, setIsDolby] = useState(false);
+  const [isMovie, setIsMovie] = useState(false);
 
-  // Dolby titles live permanently on NVMe (/opt/dinustream/cache/dolby) so they
-  // play instantly with no sync — the moment we enter /watch we detect that and
-  // skip the Google Drive cache kick entirely. Everything else gets a background
-  // NVMe copy so the *next* watch is fast.
+  // Decide the first-run gate for the *movie* being opened:
+  //  - already on NVMe (or a permanent Dolby title) -> straight to playback
+  //  - otherwise -> kick the Drive->SSD copy and play a Dolby ad meanwhile.
+  // Episodes and group (watch-party) playback always skip the ad.
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_DEMO_MODE === '1') return;
+    if (process.env.NEXT_PUBLIC_DEMO_MODE === '1') {
+      setGate('play');
+      return;
+    }
+    if (loading) return; // wait until we know whether this item is a movie
     let cancelled = false;
     (async () => {
       try {
-        const dolby = await isDolbyItem(id);
+        const dolby = await isDolbyItem(id).catch(() => false);
         if (cancelled) return;
         setIsDolby(dolby);
-        if (!dolby) {
-          const filename = await fetchItemFilename(id);
-          if (!cancelled && filename) void startSync(filename).catch(() => {});
+        if (dolby) {
+          setGate('play');
+          return;
         }
+
+        const filename = await fetchItemFilename(id).catch(() => null);
+        if (cancelled) return;
+        // Kick the background Drive -> SSD copy regardless of the ad path, so
+        // the next watch is instant.
+        if (filename) void startSync(filename).catch(() => {});
+
+        if (!isMovie || isWatchParty || !filename || hasSeenAd(id)) {
+          setGate('play');
+          return;
+        }
+
+        // Already cached? Skip the ad and play instantly.
+        const status = await getSyncStatus(filename).catch(() => null);
+        if (cancelled) return;
+        if (status && (status.state === 'ready' || status.percentage >= 100)) {
+          setGate('play');
+          return;
+        }
+        // First run: remember it so the ad never plays for this title again,
+        // even if the SSD copy is still in flight next time.
+        markAdSeen(id);
+        setGate('ad');
       } catch {
-        /* ignore */
+        if (!cancelled) setGate('play');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [id]);
-
-  // Fade out the "Preparing your stream" prelude a moment after data resolves,
-  // so the ffmpeg cold-start feels like an intentional transition.
-  useEffect(() => {
-    if (loading) return;
-    const timer = setTimeout(() => setShowPrelude(false), 900);
-    return () => clearTimeout(timer);
-  }, [loading]);
+  }, [id, loading, isMovie, isWatchParty]);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,7 +168,9 @@ function WatchContent() {
           setMedia(mapToMediaItem(raw));
           setEpisode(undefined);
           setSeasons(undefined);
+          setIsMovie(true);
         } else if (raw.Type === 'Episode') {
+          setIsMovie(false);
           const seriesId = raw.SeriesId;
           const [seriesRaw, eps] = await Promise.all([
             seriesId ? fetchRawItem(seriesId).catch(() => null) : Promise.resolve(null),
@@ -123,6 +186,7 @@ function WatchContent() {
           setPrevEpisode(idx > 0 ? flat[idx - 1] : undefined);
           setNextEpisode(idx >= 0 && idx < flat.length - 1 ? flat[idx + 1] : undefined);
         } else {
+          setIsMovie(false);
           const eps = await fetchEpisodes(id).catch(() => []);
           if (cancelled) return;
           const flat = eps.map(mapToEpisode);
@@ -197,18 +261,19 @@ function WatchContent() {
     );
   }
 
-  // Cinematic "Preparing your stream" prelude — makes the ffmpeg/HLS warm-up
-  // feel like an intentional transition instead of a hang. Starts the Python
-  // cache copy in the background for faster repeat watches.
-  if (showPrelude) {
+  // First run, not on the SSD yet: play one random Dolby clip fully while the
+  // Python daemon pulls the movie from Drive to SSD. Skip is always available.
+  if (gate === 'ad') {
+    return <DolbyAdOverlay media={media} onComplete={() => setGate('play')} />;
+  }
+
+  // Brief "Preparing your stream" prelude while we resolve the cache state, so
+  // the ffmpeg/HLS warm-up feels like an intentional transition instead of a hang.
+  if (gate === 'checking') {
     return (
       <div className="relative min-h-screen bg-[#06080d] flex flex-col items-center justify-center select-none overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={media.backdropUrl || media.posterUrl}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover opacity-25"
-        />
+        {/* Random Dolby clip as the prelude backdrop instead of a bare spine. */}
+        <DolbyBumper poster={media.backdropUrl || media.posterUrl} className="opacity-40" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#06080d] via-[#06080d]/70 to-[#06080d]/40" />
 
         <div className="relative z-10 text-center max-w-md px-6">
@@ -220,7 +285,7 @@ function WatchContent() {
 
           <div className="mt-6 flex items-center justify-center gap-2 text-slate-300 text-sm">
             <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
-            <span>{isDolby ? 'Reading from NVMe cache…' : 'Warming the pipeline…'}</span>
+            <span>{isDolby ? 'Reading from NVMe cache…' : 'Checking the SSD cache…'}</span>
           </div>
 
           <div
@@ -236,7 +301,7 @@ function WatchContent() {
             ) : (
               <>
                 <HardDriveDownload className="w-3 h-3 text-sky-400" />
-                Caching to SSD in background
+                Drive → SSD
               </>
             )}
           </div>

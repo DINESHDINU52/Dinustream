@@ -1,7 +1,7 @@
 'use client';
 
-// Full-screen "Sync & Play" prelude: while the Python Sync Manager pulls the
-// movie from Google Drive -> local NVMe, a Dolby Atmos clip plays as a cinematic
+// Full-screen prelude: while the Python Sync Manager pulls the movie from
+// Google Drive -> local NVMe, a randomly chosen Dolby clip plays as a cinematic
 // filler so the wait never feels dead. When the copy is done (or the viewer
 // skips), it hands off to the real movie.
 
@@ -9,8 +9,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { SyncStatusResponse, getSyncStatus, startSync } from '@/lib/api/syncManager';
-import { fetchDolbyBumper } from '@/lib/jellyfin/queries';
-import { HardDriveDownload, Loader2, Play, X } from 'lucide-react';
+import { DolbyBumper } from './DolbyBumper';
+import { HardDriveDownload, Play, X } from 'lucide-react';
 
 export interface CacheAndPlayOverlayProps {
   media: MediaItem;
@@ -21,26 +21,10 @@ export interface CacheAndPlayOverlayProps {
 
 export function CacheAndPlayOverlay({ media, filename, onReady, onClose }: CacheAndPlayOverlayProps) {
   const [status, setStatus] = useState<SyncStatusResponse | null>(null);
-  const [bumperUrl, setBumperUrl] = useState<string | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
-
-  // Grab the first Dolby library item as the Atmos bumper video.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const bumper = await fetchDolbyBumper();
-      if (!cancelled && bumper) {
-        setBumperUrl(`/jellyfin/Videos/${bumper.itemId}/stream?Static=true`);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Kick the cache copy + poll until ready, then hand off to the movie.
   useEffect(() => {
@@ -90,21 +74,8 @@ export function CacheAndPlayOverlay({ media, filename, onReady, onClose }: Cache
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 bg-black select-none overflow-hidden"
       >
-        {/* Dolby Atmos bumper — plays while the movie warms up */}
-        {bumperUrl ? (
-          <video
-            ref={videoRef}
-            src={bumperUrl}
-            autoPlay
-            muted
-            loop
-            playsInline
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-        ) : (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={artwork} alt="" className="absolute inset-0 w-full h-full object-cover opacity-40" />
-        )}
+        {/* Random Dolby clip — plays while the movie warms up */}
+        <DolbyBumper poster={artwork} />
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/60" />
 
         {/* Movie title + cache progress */}

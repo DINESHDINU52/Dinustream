@@ -58,6 +58,7 @@ import { useWatchTogether } from '@/hooks/useWatchTogether';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { GroupQueue } from '@/components/watch-together/GroupQueue';
 import { GroupMovieSelector } from '@/components/watch-together/GroupMovieSelector';
+import { DolbyBumper } from '@/components/sync/DolbyBumper';
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation';
 import { useTVNavigation } from '@/hooks/useTVNavigation';
 import {
@@ -1350,7 +1351,17 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
               transition={{ duration: 0.25 }}
               className="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none bg-black/40 backdrop-blur-[2px]"
             >
-              <div className="relative flex items-center justify-center">
+              {/* Random Dolby clip behind the spinner on the *first* load, so a
+                  new title never shows a bare black canvas while it negotiates
+                  and buffers. Mid-playback buffers keep the plain backdrop. */}
+              {currentTime === 0 && (
+                <>
+                  <DolbyBumper poster={media.backdropUrl || media.posterUrl} className="opacity-40" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/55 to-black/70" />
+                </>
+              )}
+
+              <div className="relative z-10 flex items-center justify-center">
                 {/* Ambient Pulsing Glow */}
                 <div className="absolute w-24 h-24 rounded-full bg-rose-500/20 blur-xl animate-pulse" />
                 {/* Outer Red Cinema Spinner Ring */}
@@ -1363,7 +1374,7 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
               <motion.div
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 border border-white/10 text-xs font-mono text-slate-300 tracking-wider uppercase shadow-xl"
+                className="relative z-10 mt-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 border border-white/10 text-xs font-mono text-slate-300 tracking-wider uppercase shadow-xl"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
                 <span>

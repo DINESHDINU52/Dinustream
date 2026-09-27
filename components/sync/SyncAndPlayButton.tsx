@@ -17,7 +17,7 @@ export interface SyncAndPlayButtonProps {
 }
 
 /**
- * "Sync & Play" — start a synchronized Watch Together session.
+ * "Play" / "Watch" — go straight to playback.
  *
  * WHAT CHANGED AND WHY
  * --------------------
@@ -74,7 +74,7 @@ export const SyncAndPlayButton: React.FC<SyncAndPlayButtonProps> = ({
       icon={<Zap className="w-4 h-4 text-sky-400 fill-sky-400" />}
       className={cn('relative', className)}
     >
-      <span>Sync &amp; Play</span>
+      <span>{media.type === 'series' ? 'Watch' : 'Play'}</span>
     </Button>
   );
 };

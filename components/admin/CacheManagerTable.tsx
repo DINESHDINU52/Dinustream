@@ -100,15 +100,21 @@ export const CacheManagerTable: React.FC<CacheManagerTableProps> = ({
                     {/* Media Title & Thumbnail */}
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-3">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={item.posterUrl}
-                          alt={item.title}
-                          className="w-9 h-12 rounded object-cover border border-white/10 shrink-0 bg-white/5"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.opacity = '0.3';
-                          }}
-                        />
+                        {item.posterUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={item.posterUrl}
+                            alt={item.title}
+                            className="w-9 h-12 rounded object-cover border border-white/10 shrink-0 bg-white/5"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.opacity = '0.3';
+                            }}
+                          />
+                        ) : (
+                          <span className="w-9 h-12 rounded border border-white/10 shrink-0 bg-white/5 flex items-center justify-center text-slate-500">
+                            <Film className="w-4 h-4" />
+                          </span>
+                        )}
                         <div>
                           <div className="flex items-center gap-1.5">
                             {getMediaIcon(item.mediaType)}
@@ -126,12 +132,20 @@ export const CacheManagerTable: React.FC<CacheManagerTableProps> = ({
                     {/* Audio & Video Format */}
                     <td className="py-3 px-3">
                       <div className="space-y-0.5">
-                        <span className="inline-block text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-300 border border-sky-400/20 mr-1">
-                          {item.resolution}
-                        </span>
-                        <span className="inline-block text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-400/20">
-                          {item.audioFormat}
-                        </span>
+                        {item.resolution && item.resolution !== '—' && (
+                          <span className="inline-block text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-300 border border-sky-400/20 mr-1">
+                            {item.resolution}
+                          </span>
+                        )}
+                        {item.audioFormat && item.audioFormat !== '—' && (
+                          <span className="inline-block text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-400/20">
+                            {item.audioFormat}
+                          </span>
+                        )}
+                        {(!item.resolution || item.resolution === '—') &&
+                          (!item.audioFormat || item.audioFormat === '—') && (
+                            <span className="text-slate-500">—</span>
+                          )}
                       </div>
                     </td>
 

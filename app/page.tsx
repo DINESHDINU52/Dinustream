@@ -317,7 +317,7 @@ export default function CinemaHomePage() {
                 }}
                 className="w-full sm:flex-1 justify-center"
               >
-                {selectedMedia.type === 'series' ? 'Browse Episodes' : 'Sync & Play'}
+                {selectedMedia.type === 'series' ? 'Browse Episodes' : 'Play'}
               </Button>
 
               <Button

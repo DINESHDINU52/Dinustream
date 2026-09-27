@@ -98,9 +98,9 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           </Badge>
         </div>
 
-        {/* Hero Actions: Play, Sync & Play, My List, More Info */}
+        {/* Hero Actions: Play/Watch, My List, More Info */}
         <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-3">
-          {/* ⚡ Sync & Play */}
+          {/* ⚡ Play / Watch */}
           <Button
             variant="silver"
             size="lg"
@@ -108,7 +108,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             onClick={onPlay}
             id="hero-action-play"
           >
-            Sync &amp; Play
+            {media.type === 'series' ? 'Watch' : 'Play'}
           </Button>
 
 

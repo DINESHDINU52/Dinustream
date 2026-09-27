@@ -281,7 +281,7 @@ export function WatchGroupLobby({
         </div>
       </div>
 
-      {/* ── Main: selected movie → one Sync & Play ─────────────────────── */}
+      {/* ── Main: selected movie → one Start Watch Party ───────────────── */}
       <motion.div
         layout
         className="relative rounded-2xl overflow-hidden border border-white/[0.08] bg-[#0a0f1c]/90 shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
@@ -320,7 +320,7 @@ export function WatchGroupLobby({
                 disabled={isLaunching}
                 id="watch-together-sync-play-btn"
               >
-                {isLaunching ? 'Starting…' : '⚡ Sync & Play Now'}
+                {isLaunching ? 'Starting…' : '⚡ Start Watch Party'}
               </Button>
             </div>
           </>

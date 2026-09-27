@@ -89,7 +89,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
             className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-semibold shadow-md transition-colors"
           >
             <Zap className="w-3 h-3 fill-current" />
-            <span>Sync &amp; Play</span>
+            <span>{media.type === 'series' ? 'Watch' : 'Play'}</span>
           </button>
 
           <button

@@ -109,27 +109,65 @@ export async function fetchItemAncestors(id: string): Promise<JellyfinAncestor[]
 }
 
 /**
- * True when an item belongs to the "Dolby" library — i.e. its file lives in
+ * Name of the Jellyfin library (folder) that holds the Dolby ad clips.
+ *
+ * The *folder* is the contract, never a single file: the ad reel is read live on
+ * every play, so clips can be renamed, replaced, added or removed in the library
+ * without touching code. Rename the library and override this without a rebuild:
+ *   NEXT_PUBLIC_DOLBY_ADS_LIBRARY="Dolby Ads"
+ */
+export const DOLBY_ADS_LIBRARY = process.env.NEXT_PUBLIC_DOLBY_ADS_LIBRARY || 'Dolby';
+
+/** Case-insensitive match against the configured ad folder name. */
+function isDolbyLibrary(name?: string | null): boolean {
+  return (name ?? '').trim().toLowerCase() === DOLBY_ADS_LIBRARY.trim().toLowerCase();
+}
+
+/**
+ * True when an item belongs to the Dolby folder — i.e. its file lives in
  * /opt/dinustream/cache/dolby (permanently cached on NVMe). Dolby titles are
  * played instantly and never need the Google Drive sync manager.
  */
 export async function isDolbyItem(id: string): Promise<boolean> {
   const ancestors = await fetchItemAncestors(id);
-  return ancestors.some((a) => (a.Name ?? '').toLowerCase() === 'dolby');
+  return ancestors.some((a) => isDolbyLibrary(a.Name));
 }
 
-/** Fetch a single Dolby library item to use as the Atmos bumper video. */
-export async function fetchDolbyBumper(): Promise<{ itemId: string } | null> {
+/**
+ * Every playable clip currently in the Dolby ad folder.
+ *
+ * Read fresh (never cached) and in full, so a clip added or swapped in the
+ * folder is picked up on the very next play. Empty array means the folder is
+ * missing or has no playable items — callers then skip the ad entirely.
+ */
+export async function fetchDolbyAdIds(): Promise<string[]> {
   const userId = getUserId();
-  if (!userId) return null;
+  if (!userId) return [];
   const views = await jfFetch<JellyfinBaseItem[]>(`/Users/${userId}/Views`).catch(() => []);
-  const dolby = views.find((v) => (v.Name ?? '').toLowerCase() === 'dolby');
-  if (!dolby?.Id) return null;
+  const folder = views.find((v) => isDolbyLibrary(v.Name));
+  if (!folder?.Id) return [];
   const items = await jfFetch<JellyfinQueryResult>(
-    `/Users/${userId}/Items?ParentId=${dolby.Id}&Limit=1`
+    `/Users/${userId}/Items${qs({
+      ParentId: folder.Id,
+      Recursive: true,
+      IncludeItemTypes: 'Movie,Episode,Video',
+      Fields: 'Path',
+      Limit: 500,
+    })}`
   ).catch(() => null);
-  const first = items?.Items?.[0];
-  return first?.Id ? { itemId: first.Id } : null;
+  return (items?.Items ?? [])
+    .map((i) => i.Id)
+    .filter((id): id is string => Boolean(id));
+}
+
+/**
+ * One random clip from the Dolby ad folder, or null when the folder is empty.
+ * Randomising per play keeps the first-run prelude from repeating.
+ */
+export async function fetchRandomDolbyAd(): Promise<{ itemId: string } | null> {
+  const ids = await fetchDolbyAdIds();
+  if (ids.length === 0) return null;
+  return { itemId: ids[Math.floor(Math.random() * ids.length)] };
 }
 
 export async function fetchSeasons(seriesId: string): Promise<Season[]> {
