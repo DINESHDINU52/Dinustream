@@ -8,7 +8,7 @@ import { MediaItem, Episode, Season } from '@/types/cinema';
 import { fetchRawItem, fetchEpisodes, fetchItemFilename, isDolbyItem } from '@/lib/jellyfin/queries';
 import { mapToMediaItem, mapToEpisode } from '@/lib/jellyfin/mappers';
 import { startSync, getSyncStatus } from '@/lib/api/syncManager';
-import { CacheAndPlayOverlay } from '@/components/sync/CacheAndPlayOverlay';
+import { DolbyAdOverlay } from '@/components/sync/DolbyAdOverlay';
 import { Loader2, AlertTriangle, HardDriveDownload, CheckCircle2 } from 'lucide-react';
 
 function groupEpisodes(episodes: Episode[]): Season[] {
@@ -264,12 +264,7 @@ function WatchContent() {
   // Python daemon pulls the movie from Drive to SSD. Skip is always available.
   if (gate === 'ad') {
     return (
-      <CacheAndPlayOverlay
-        media={media}
-        filename={syncFilename}
-        onReady={() => setGate('play')}
-        onClose={() => setGate('play')}
-      />
+      <DolbyAdOverlay media={media} filename={syncFilename} onComplete={() => setGate('play')} />
     );
   }
 
