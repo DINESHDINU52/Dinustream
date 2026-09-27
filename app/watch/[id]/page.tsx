@@ -5,9 +5,10 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { CinemaPlayer } from '@/components/player/CinemaPlayer';
 import { MediaDetailsSkeleton } from '@/components/media/MediaDetailsSkeleton';
 import { MediaItem, Episode, Season } from '@/types/cinema';
-import { fetchRawItem, fetchEpisodes } from '@/lib/jellyfin/queries';
+import { fetchRawItem, fetchEpisodes, fetchItemFilename } from '@/lib/jellyfin/queries';
 import { mapToMediaItem, mapToEpisode } from '@/lib/jellyfin/mappers';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { startSync } from '@/lib/api/syncManager';
+import { Loader2, AlertTriangle, HardDriveDownload } from 'lucide-react';
 
 function groupEpisodes(episodes: Episode[]): Season[] {
   const map = new Map<number, Episode[]>();
@@ -52,6 +53,30 @@ function WatchContent() {
   const [prevEpisode, setPrevEpisode] = useState<Episode | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showPrelude, setShowPrelude] = useState(true);
+
+  // Kick the Python cache manager in the background the instant we enter the
+  // page, so repeat views read from NVMe instead of Google Drive.
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_DEMO_MODE === '1') return;
+    let cancelled = false;
+    fetchItemFilename(id)
+      .then((filename) => {
+        if (!cancelled && filename) void startSync(filename).catch(() => {});
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // Fade out the "Preparing your stream" prelude a moment after data resolves,
+  // so the ffmpeg cold-start feels like an intentional transition.
+  useEffect(() => {
+    if (loading) return;
+    const timer = setTimeout(() => setShowPrelude(false), 900);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +182,41 @@ function WatchContent() {
         >
           Back to catalog
         </button>
+      </div>
+    );
+  }
+
+  // Cinematic "Preparing your stream" prelude — makes the ffmpeg/HLS warm-up
+  // feel like an intentional transition instead of a hang. Starts the Python
+  // cache copy in the background for faster repeat watches.
+  if (showPrelude) {
+    return (
+      <div className="relative min-h-screen bg-[#06080d] flex flex-col items-center justify-center select-none overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={media.backdropUrl || media.posterUrl}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover opacity-25"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#06080d] via-[#06080d]/70 to-[#06080d]/40" />
+
+        <div className="relative z-10 text-center max-w-md px-6">
+          <span className="text-[#38bdf8] font-black text-2xl tracking-wider">DINUSTREAM</span>
+          <h1 className="font-bold text-white text-lg sm:text-xl mt-2 tracking-tight">{media.title}</h1>
+          <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.25em] text-slate-400">
+            Preparing your stream
+          </p>
+
+          <div className="mt-6 flex items-center justify-center gap-2 text-slate-300 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+            <span>Warming the pipeline…</span>
+          </div>
+
+          <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.05] border border-white/10 text-[11px] font-mono text-slate-400">
+            <HardDriveDownload className="w-3 h-3 text-sky-400" />
+            Caching to SSD in background
+          </div>
+        </div>
       </div>
     );
   }
