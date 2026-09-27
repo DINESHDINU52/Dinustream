@@ -17,7 +17,16 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
   const [isPinUnlocked, setIsPinUnlocked] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
-  const isDinu = profile.id === 'dinu';
+  /*
+    Admin access: the Jellyfin administrator (Policy.IsAdministrator), or the
+    "dinu" profile by id/name, or the client-side Master PIN fallback.
+    (In real mode profile.id is a Jellyfin GUID, so checking id === 'dinu' alone
+    would lock the actual admin out.)
+  */
+  const isAdmin =
+    profile.isAdmin === true ||
+    profile.id === 'dinu' ||
+    (profile.name ?? '').trim().toLowerCase() === 'dinu';
 
   /*
     Switching profiles ends the session and returns to the login screen, because
@@ -48,7 +57,7 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
     }, 400);
   };
 
-  if (isDinu || isPinUnlocked) {
+  if (isAdmin || isPinUnlocked) {
     return <>{children}</>;
   }
 

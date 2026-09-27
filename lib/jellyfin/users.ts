@@ -54,5 +54,6 @@ export function mapUserToProfile(user: JellyfinUser): UserProfile {
     pinProtected: Boolean(user.HasPassword),
     statusMessage: 'Streaming from your private library',
     isGuest: false,
+    isAdmin: Boolean(user.Policy?.IsAdministrator),
   };
 }

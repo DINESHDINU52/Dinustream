@@ -13,6 +13,8 @@ export interface UserProfile {
   isGuest?: boolean;
   pinProtected?: boolean;
   lastSeen?: number;
+  /** True when this profile is a Jellyfin administrator (unlocks /admin). */
+  isAdmin?: boolean;
 }
 
 export type MediaBadge =

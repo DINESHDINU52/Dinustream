@@ -125,6 +125,11 @@ export interface JellyfinUser {
     SubtitleMode?: string;
     DisplayMissingEpisodes?: boolean;
   };
+  Policy?: {
+    IsAdministrator?: boolean;
+    IsHidden?: boolean;
+    IsDisabled?: boolean;
+  };
 }
 
 export interface JellyfinPlayState {
