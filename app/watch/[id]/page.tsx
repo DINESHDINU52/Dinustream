@@ -8,7 +8,6 @@ import { MediaItem, Episode, Season } from '@/types/cinema';
 import { fetchRawItem, fetchEpisodes, fetchItemFilename, isDolbyItem } from '@/lib/jellyfin/queries';
 import { mapToMediaItem, mapToEpisode } from '@/lib/jellyfin/mappers';
 import { startSync, getSyncStatus } from '@/lib/api/syncManager';
-import { DolbyBumper } from '@/components/sync/DolbyBumper';
 import { DolbyAdOverlay } from '@/components/sync/DolbyAdOverlay';
 import { Loader2, AlertTriangle, HardDriveDownload, CheckCircle2 } from 'lucide-react';
 
@@ -272,8 +271,12 @@ function WatchContent() {
   if (gate === 'checking') {
     return (
       <div className="relative min-h-screen bg-[#06080d] flex flex-col items-center justify-center select-none overflow-hidden">
-        {/* Random Dolby clip as the prelude backdrop instead of a bare spine. */}
-        <DolbyBumper poster={media.backdropUrl || media.posterUrl} className="opacity-40" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={media.backdropUrl || media.posterUrl}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover opacity-30"
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-[#06080d] via-[#06080d]/70 to-[#06080d]/40" />
 
         <div className="relative z-10 text-center max-w-md px-6">

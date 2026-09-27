@@ -6,16 +6,18 @@
 // Rules:
 //  - Random clip, read live from the folder (never a hard-coded file).
 //  - Plays fully once (no loop). "Skip ad" is always available.
-//  - Never traps the viewer: if the folder is empty, the clip can't be demuxed,
-//    or it stalls before starting, we hand off to the movie immediately.
-//
-// Autoplay is muted to satisfy browser policy; a sound toggle is provided.
+//  - Uses Jellyfin's PlaybackInfo negotiation + HLS (via usePlaybackSession /
+//    useHlsPlayer) exactly like the main player, so the clip always renders -
+//    even when the source MP4 is HEVC/10-bit that the browser can't direct-play.
+//  - Never traps the viewer: empty folder / negotiate error / stall -> hand off.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { fetchRandomDolbyAd } from '@/lib/jellyfin/queries';
-import { SkipForward, Volume2, VolumeX, HardDriveDownload } from 'lucide-react';
+import { usePlaybackSession } from '@/hooks/usePlaybackSession';
+import { useHlsPlayer } from '@/hooks/useHlsPlayer';
+import { SkipForward, Volume2, VolumeX, HardDriveDownload, Loader2 } from 'lucide-react';
 
 export interface DolbyAdOverlayProps {
   media: MediaItem;
@@ -24,7 +26,7 @@ export interface DolbyAdOverlayProps {
 }
 
 export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
-  const [adUrl, setAdUrl] = useState<string | null>(null);
+  const [adItemId, setAdItemId] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
   const [muted, setMuted] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -41,7 +43,17 @@ export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
     onCompleteRef.current();
   }, []);
 
-  // Resolve one random clip from the Dolby folder. Empty folder -> skip ad.
+  // Negotiate a playable stream for the ad (direct when possible, HLS/transcode
+  // otherwise) — identical to how the real movie is opened.
+  const session = usePlaybackSession({ itemId: adItemId ?? undefined });
+  const { isReady } = useHlsPlayer({
+    src: session.source?.url ?? null,
+    method: session.source?.method ?? 'direct',
+    videoRef,
+    onFatalError: finish,
+  });
+
+  // Pick one random clip from the Dolby folder. Empty folder -> skip ad.
   useEffect(() => {
     let cancelled = false;
     fetchRandomDolbyAd()
@@ -51,7 +63,7 @@ export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
           finish();
           return;
         }
-        setAdUrl(`/jellyfin/Videos/${ad.itemId}/stream?Static=true`);
+        setAdItemId(ad.itemId);
       })
       .catch(() => {
         if (!cancelled) finish();
@@ -64,13 +76,17 @@ export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
     };
   }, [finish]);
 
-  // Safety net: if the clip never actually starts (unsupported container or a
-  // stall), don't strand the viewer on black — go to the movie.
+  // If stream negotiation fails outright, don't strand the viewer.
   useEffect(() => {
-    if (!adUrl || started) return;
-    const timer = setTimeout(finish, 10000);
+    if (resolved && adItemId && session.resolveError) finish();
+  }, [resolved, adItemId, session.resolveError, finish]);
+
+  // Safety net: if playback never actually starts (stall), go to the movie.
+  useEffect(() => {
+    if (!session.source?.url || started) return;
+    const timer = setTimeout(finish, 15000);
     return () => clearTimeout(timer);
-  }, [adUrl, started, finish]);
+  }, [session.source?.url, started, finish]);
 
   const toggleMute = () => {
     const video = videoRef.current;
@@ -80,6 +96,7 @@ export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
   };
 
   const artwork = media.backdropUrl || media.posterUrl;
+  const showVideo = Boolean(session.source?.url);
 
   return (
     <motion.div
@@ -87,15 +104,13 @@ export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
       animate={{ opacity: 1 }}
       className="fixed inset-0 z-[60] bg-black select-none overflow-hidden"
     >
-      {adUrl ? (
+      {showVideo ? (
         <video
           ref={videoRef}
-          src={adUrl}
-          autoPlay
           muted
           playsInline
           preload="auto"
-          className="absolute inset-0 h-full w-full object-contain bg-black"
+          className="absolute inset-0 h-full w-full object-cover bg-black"
           onPlaying={() => setStarted(true)}
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
@@ -124,7 +139,7 @@ export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
       </button>
 
       {/* Sound toggle (autoplay starts muted by policy) */}
-      {adUrl && (
+      {showVideo && (
         <button
           onClick={toggleMute}
           className="absolute left-4 top-4 z-20 inline-flex items-center gap-2 rounded-full glass px-3 py-2 text-xs font-semibold text-white cinema-focus"
@@ -145,7 +160,13 @@ export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
             <HardDriveDownload className="h-3.5 w-3.5 text-sky-400" />
             Pulling from Drive to SSD for instant playback…
           </p>
-          {adUrl && (
+          {showVideo && !started && (
+            <p className="flex items-center justify-center gap-2 text-xs text-slate-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-400" />
+              Starting preshow…
+            </p>
+          )}
+          {showVideo && started && (
             <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-sky-300 to-emerald-400 transition-[width] duration-300"
