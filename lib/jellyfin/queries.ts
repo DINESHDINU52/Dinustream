@@ -96,6 +96,28 @@ export async function fetchItemFilename(id: string): Promise<string | null> {
   return parts[parts.length - 1] || null;
 }
 
+export interface JellyfinAncestor {
+  Id?: string;
+  Name?: string;
+  Type?: string;
+}
+
+/** Parent folders/collection the item lives in (e.g. the Dolby library). */
+export async function fetchItemAncestors(id: string): Promise<JellyfinAncestor[]> {
+  const data = await jfFetch<JellyfinAncestor[]>(`/Items/${id}/Ancestors`).catch(() => []);
+  return data ?? [];
+}
+
+/**
+ * True when an item belongs to the "Dolby" library — i.e. its file lives in
+ * /opt/dinustream/cache/dolby (permanently cached on NVMe). Dolby titles are
+ * played instantly and never need the Google Drive sync manager.
+ */
+export async function isDolbyItem(id: string): Promise<boolean> {
+  const ancestors = await fetchItemAncestors(id);
+  return ancestors.some((a) => (a.Name ?? '').toLowerCase() === 'dolby');
+}
+
 export async function fetchSeasons(seriesId: string): Promise<Season[]> {
   const data = await jfFetch<JellyfinQueryResult>(
     `/Shows/${seriesId}/Seasons${qs({ UserId: uid() || undefined, Fields: ITEM_FIELDS })}`

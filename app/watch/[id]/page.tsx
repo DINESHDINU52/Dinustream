@@ -5,10 +5,10 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { CinemaPlayer } from '@/components/player/CinemaPlayer';
 import { MediaDetailsSkeleton } from '@/components/media/MediaDetailsSkeleton';
 import { MediaItem, Episode, Season } from '@/types/cinema';
-import { fetchRawItem, fetchEpisodes, fetchItemFilename } from '@/lib/jellyfin/queries';
+import { fetchRawItem, fetchEpisodes, fetchItemFilename, isDolbyItem } from '@/lib/jellyfin/queries';
 import { mapToMediaItem, mapToEpisode } from '@/lib/jellyfin/mappers';
 import { startSync } from '@/lib/api/syncManager';
-import { Loader2, AlertTriangle, HardDriveDownload } from 'lucide-react';
+import { Loader2, AlertTriangle, HardDriveDownload, CheckCircle2 } from 'lucide-react';
 
 function groupEpisodes(episodes: Episode[]): Season[] {
   const map = new Map<number, Episode[]>();
@@ -54,17 +54,28 @@ function WatchContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPrelude, setShowPrelude] = useState(true);
+  const [isDolby, setIsDolby] = useState(false);
 
-  // Kick the Python cache manager in the background the instant we enter the
-  // page, so repeat views read from NVMe instead of Google Drive.
+  // Dolby titles live permanently on NVMe (/opt/dinustream/cache/dolby) so they
+  // play instantly with no sync — the moment we enter /watch we detect that and
+  // skip the Google Drive cache kick entirely. Everything else gets a background
+  // NVMe copy so the *next* watch is fast.
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_DEMO_MODE === '1') return;
     let cancelled = false;
-    fetchItemFilename(id)
-      .then((filename) => {
-        if (!cancelled && filename) void startSync(filename).catch(() => {});
-      })
-      .catch(() => {});
+    (async () => {
+      try {
+        const dolby = await isDolbyItem(id);
+        if (cancelled) return;
+        setIsDolby(dolby);
+        if (!dolby) {
+          const filename = await fetchItemFilename(id);
+          if (!cancelled && filename) void startSync(filename).catch(() => {});
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -204,17 +215,30 @@ function WatchContent() {
           <span className="text-[#38bdf8] font-black text-2xl tracking-wider">DINUSTREAM</span>
           <h1 className="font-bold text-white text-lg sm:text-xl mt-2 tracking-tight">{media.title}</h1>
           <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.25em] text-slate-400">
-            Preparing your stream
+            {isDolby ? 'Starting Dolby Studio Master' : 'Preparing your stream'}
           </p>
 
           <div className="mt-6 flex items-center justify-center gap-2 text-slate-300 text-sm">
             <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
-            <span>Warming the pipeline…</span>
+            <span>{isDolby ? 'Reading from NVMe cache…' : 'Warming the pipeline…'}</span>
           </div>
 
-          <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.05] border border-white/10 text-[11px] font-mono text-slate-400">
-            <HardDriveDownload className="w-3 h-3 text-sky-400" />
-            Caching to SSD in background
+          <div
+            className={`mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.05] border text-[11px] font-mono ${
+              isDolby ? 'border-emerald-400/30 text-emerald-300' : 'border-white/10 text-slate-400'
+            }`}
+          >
+            {isDolby ? (
+              <>
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                ◆ Dolby NVMe · Instant Playback
+              </>
+            ) : (
+              <>
+                <HardDriveDownload className="w-3 h-3 text-sky-400" />
+                Caching to SSD in background
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/Badge';
 import { mediaService } from '@/lib/services/mediaService';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
-import { fetchItemFilename } from '@/lib/jellyfin/queries';
+import { fetchItemFilename, isDolbyItem } from '@/lib/jellyfin/queries';
 import { CacheStatus } from '@/components/sync/CacheStatus';
 import { MediaItem } from '@/types/cinema';
 import { Clapperboard, AudioLines, Languages, HardDriveDownload } from 'lucide-react';
@@ -24,6 +24,7 @@ export default function MovieDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filename, setFilename] = useState<string | null>(null);
+  const [isDolby, setIsDolby] = useState(false);
   const { status: cacheStatus, triggerSync, syncing } = useSyncStatus(filename);
 
   useEffect(() => {
@@ -48,17 +49,20 @@ export default function MovieDetailPage() {
     };
   }, [id]);
 
-  // Resolve the on-disk filename for the Python cache manager.
+  // Resolve the on-disk filename + whether this is a permanent Dolby NVMe title.
   useEffect(() => {
     let cancelled = false;
     setFilename(null);
-    fetchItemFilename(id)
-      .then((name) => {
-        if (!cancelled) setFilename(name);
-      })
-      .catch(() => {
-        if (!cancelled) setFilename(null);
-      });
+    setIsDolby(false);
+    (async () => {
+      const [fn, dolby] = await Promise.all([
+        fetchItemFilename(id).catch(() => null),
+        isDolbyItem(id).catch(() => false),
+      ]);
+      if (cancelled) return;
+      setFilename(fn);
+      setIsDolby(dolby);
+    })();
     return () => {
       cancelled = true;
     };
@@ -99,23 +103,25 @@ export default function MovieDetailPage() {
         {filename && (
           <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
             <div className="flex items-center gap-3">
-              <CacheStatus state={cacheStatus?.state ?? 'not_cached'} />
+              <CacheStatus state={isDolby ? 'ready' : cacheStatus?.state ?? 'not_cached'} />
               <span className="text-xs font-mono text-slate-500 truncate max-w-[240px] sm:max-w-md" title={filename}>
-                {filename}
+                {isDolby ? '◆ Permanent Dolby NVMe cache' : filename}
               </span>
             </div>
             <button
               onClick={() => void triggerSync()}
-              disabled={syncing || cacheStatus?.state === 'ready'}
+              disabled={syncing || isDolby || cacheStatus?.state === 'ready'}
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <HardDriveDownload className="w-4 h-4" />
               <span>
-                {syncing
-                  ? 'Syncing…'
-                  : cacheStatus?.state === 'ready'
-                    ? 'Cached on NVMe'
-                    : 'Cache to SSD'}
+                {isDolby
+                  ? 'Dolby NVMe Cached'
+                  : syncing
+                    ? 'Syncing…'
+                    : cacheStatus?.state === 'ready'
+                      ? 'Cached on NVMe'
+                      : 'Cache to SSD'}
               </span>
             </button>
           </div>
