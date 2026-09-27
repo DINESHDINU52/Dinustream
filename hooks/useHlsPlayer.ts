@@ -1,14 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type Hls from 'hls.js';
-import type { ErrorData, Level, ManifestParsedData } from 'hls.js';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import type HlsType from 'hls.js';
 
-/** One selectable rung of the adaptive ladder. */
 export interface QualityLevel {
-  /** hls.js level index, or -1 for automatic. */
   id: number;
-  /** e.g. `1080p`, or `Auto`. */
   label: string;
   height?: number;
   bitrate?: number;
@@ -17,292 +13,176 @@ export interface QualityLevel {
 export const AUTO_QUALITY_ID = -1;
 
 export interface UseHlsPlayerOptions {
-  /** Resolved source URL. `null` while it is still being negotiated. */
   src: string | null;
-  /** `hls` attaches hls.js; `direct` assigns the URL to the element. */
   method: 'hls' | 'direct';
   videoRef: React.RefObject<HTMLVideoElement | null>;
-  /** Raised for unrecoverable failures, after hls.js has exhausted recovery. */
   onFatalError?: (message: string) => void;
 }
 
 export interface UseHlsPlayerResult {
   levels: QualityLevel[];
-  /** Currently selected level id (`-1` = auto). */
   selectedLevelId: number;
-  /** Level actually being played — differs from the selection while on auto. */
   activeLevelId: number;
   setLevel: (id: number) => void;
   isReady: boolean;
-  /** True while hls.js is recovering from a network or media error. */
   isRecovering: boolean;
 }
 
-function labelForLevel(level: Level): string {
-  if (level.height) return `${level.height}p`;
-  if (level.bitrate) return `${Math.round(level.bitrate / 1000)} kbps`;
-  return 'Unknown';
+function isNativeHls(video: HTMLVideoElement): boolean {
+  return video.canPlayType('application/vnd.apple.mpegurl') !== '';
 }
 
-/**
- * Attach an adaptive HLS stream to a video element.
- *
- * Three playback paths, in preference order:
- *
- *  1. **Native HLS** (Safari, iOS). Assigning an `.m3u8` to `video.src` gives
- *     hardware-accelerated HEVC and AirPlay, neither of which MSE can offer.
- *     hls.js is deliberately not used here even though it would work.
- *  2. **hls.js via MSE** (Chrome, Firefox, Edge), which also exposes the level
- *     ladder that the quality menu needs.
- *  3. **Direct assignment** for progressive direct-play sources.
- *
- * Error handling is explicit because this is the layer that used to fail
- * silently: a dead stream previously left a black rectangle with no message.
- */
-export function useHlsPlayer({
-  src,
-  method,
-  videoRef,
-  onFatalError,
-}: UseHlsPlayerOptions): UseHlsPlayerResult {
-  const hlsRef = useRef<Hls | null>(null);
+export function useHlsPlayer({ src, method, videoRef, onFatalError }: UseHlsPlayerOptions): UseHlsPlayerResult {
   const [levels, setLevels] = useState<QualityLevel[]>([]);
   const [selectedLevelId, setSelectedLevelId] = useState<number>(AUTO_QUALITY_ID);
   const [activeLevelId, setActiveLevelId] = useState<number>(AUTO_QUALITY_ID);
   const [isReady, setIsReady] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
 
-  /* Kept in a ref so the effect below does not need it as a dependency — a new
-     callback identity must not tear down and rebuild the whole HLS pipeline. */
-  const onFatalErrorRef = useRef(onFatalError);
-  useEffect(() => {
-    onFatalErrorRef.current = onFatalError;
-  }, [onFatalError]);
+  const hlsRef = useRef<HlsType | null>(null);
+
+  const destroy = useCallback(() => {
+    const hls = hlsRef.current;
+    if (hls) {
+      try {
+        hls.destroy();
+      } catch {
+        /* ignore */
+      }
+      hlsRef.current = null;
+    }
+  }, []);
+
+  const setLevel = useCallback(
+    (id: number) => {
+      setSelectedLevelId(id);
+      const hls = hlsRef.current;
+      if (!hls) return;
+      if (id === AUTO_QUALITY_ID) {
+        hls.currentLevel = -1;
+      } else {
+        const idx = levels.findIndex((l) => l.id === id);
+        if (idx >= 0) hls.currentLevel = idx;
+      }
+    },
+    [levels]
+  );
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !src) return;
+    if (!video || !src) {
+      setIsReady(false);
+      setLevels([]);
+      return;
+    }
 
     let cancelled = false;
-    let hls: Hls | null = null;
+    destroy();
+    setLevels([]);
+    setSelectedLevelId(AUTO_QUALITY_ID);
+    setActiveLevelId(AUTO_QUALITY_ID);
+    setIsReady(false);
 
-    const cleanUp = () => {
-      if (hls) {
-        hls.destroy();
-        hls = null;
+    const attachNative = () => {
+      if (video.src !== src) {
+        video.src = src;
+        video.load();
       }
-      hlsRef.current = null;
+      setIsReady(true);
     };
 
-    const attach = async () => {
-      // Progressive / direct play: nothing to negotiate.
-      if (method === 'direct') {
-        video.src = src;
-        try {
-          video.load();
-        } catch {}
+    if (method === 'direct') {
+      attachNative();
+      return () => {
+        cancelled = true;
+      };
+    }
 
-        const onDirectReady = () => {
-          if (!cancelled) {
-            setLevels([]);
-            setIsReady(true);
-          }
-        };
+    // HLS: prefer native support (Safari), otherwise MSE via hls.js.
+    if (isNativeHls(video)) {
+      attachNative();
+      return () => {
+        cancelled = true;
+      };
+    }
 
-        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-          onDirectReady();
-        } else {
-          video.addEventListener('loadedmetadata', onDirectReady, { once: true });
-          video.addEventListener('canplay', onDirectReady, { once: true });
-        }
-        return;
-      }
-
-      const nativeHls =
-        video.canPlayType('application/vnd.apple.mpegurl') !== '' ||
-        video.canPlayType('application/x-mpegURL') !== '';
-
-      /*
-        Prefer the platform player on Safari/iOS. MSE on those engines cannot
-        decode HEVC and cannot hand off to AirPlay, so routing through hls.js
-        would be a downgrade. The cost is that the level ladder is not
-        introspectable — the menu falls back to Auto only, which is why
-        `levels` is cleared here.
-      */
-      if (nativeHls) {
-        video.src = src;
-        try {
-          video.load();
-        } catch {}
-
-        const onNativeReady = () => {
-          if (!cancelled) {
-            setLevels([]);
-            setIsReady(true);
-          }
-        };
-
-        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-          onNativeReady();
-        } else {
-          video.addEventListener('loadedmetadata', onNativeReady, { once: true });
-          video.addEventListener('canplay', onNativeReady, { once: true });
-        }
-
-        const onNativeError = () => {
-          if (cancelled) return;
-          const err = video.error;
-          if (err && err.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-            onFatalErrorRef.current?.(
-              'This video format could not be played directly by Safari. The server is transcoding.'
-            );
-          }
-        };
-        video.addEventListener('error', onNativeError, { once: true });
-        return;
-      }
-
-      // Dynamically imported so hls.js stays out of the initial page bundle.
-      const { default: HlsCtor } = await import('hls.js');
-      if (cancelled) return;
-
-      if (!HlsCtor.isSupported()) {
-        onFatalErrorRef.current?.(
-          'This browser cannot play adaptive streams. Try Chrome, Edge, Firefox or Safari.'
-        );
-        return;
-      }
-
-      let mediaErrorCount = 0;
-      let networkErrorCount = 0;
-
-      hls = new HlsCtor({
-        // Keep a light forward buffer for Oracle Cloud on-demand transcoding
-        maxBufferLength: 15,
-        maxMaxBufferLength: 30,
-        backBufferLength: 15,
-        startLevel: -1,
-        capLevelToPlayerSize: true,
-        enableWorker: true,
-        startFragPrefetch: true,
-        lowLatencyMode: false,
-      });
-      hlsRef.current = hls;
-
-      hls.on(HlsCtor.Events.MANIFEST_PARSED, (_evt, data: ManifestParsedData) => {
-        if (cancelled) return;
-        setLevels(
-          data.levels.map((level, index) => ({
-            id: index,
-            label: labelForLevel(level),
-            height: level.height,
-            bitrate: level.bitrate,
-          }))
-        );
-        setIsReady(true);
-      });
-
-      hls.on(HlsCtor.Events.LEVEL_SWITCHED, (_evt, data) => {
-        if (!cancelled) setActiveLevelId(data.level);
-      });
-
-      hls.on(HlsCtor.Events.ERROR, (_evt, data: ErrorData) => {
-        if (cancelled) return;
-
-        if (!data.fatal) {
+    (async () => {
+      try {
+        const { default: Hls } = await import('hls.js');
+        if (cancelled || !Hls.isSupported()) {
+          // No MSE at all — fall back to native assignment and hope the browser
+          // can play the direct stream.
+          attachNative();
           return;
         }
 
-        switch (data.type) {
-          case HlsCtor.ErrorTypes.NETWORK_ERROR:
-            networkErrorCount += 1;
-            if (networkErrorCount <= 4) {
-              setIsRecovering(true);
-              setTimeout(() => {
-                if (!cancelled) hls?.startLoad();
-              }, 600 * networkErrorCount);
-            } else {
-              setIsRecovering(false);
-              onFatalErrorRef.current?.(
-                'Media server connection dropped. Please check connection to Oracle Cloud.'
-              );
-              cleanUp();
-            }
-            break;
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          backBufferLength: 30,
+          maxBufferLength: 30,
+        });
+        hlsRef.current = hls;
+        hls.attachMedia(video);
 
-          case HlsCtor.ErrorTypes.MEDIA_ERROR:
-            mediaErrorCount += 1;
-            if (mediaErrorCount === 1) {
-              setIsRecovering(true);
-              hls?.recoverMediaError();
-            } else if (mediaErrorCount === 2) {
-              setIsRecovering(true);
-              hls?.swapAudioCodec();
-              hls?.recoverMediaError();
-            } else {
-              setIsRecovering(false);
-              onFatalErrorRef.current?.(
-                'Video decoding error encountered with this format.'
-              );
-              cleanUp();
-            }
-            break;
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          hls.loadSource(src);
+        });
 
-          default:
-            setIsRecovering(false);
-            onFatalErrorRef.current?.(
-              data.reason || data.details || 'Playback failed and could not be recovered.'
-            );
-            cleanUp();
-        }
-      });
+        hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+          if (cancelled) return;
+          const mapped: QualityLevel[] = [
+            { id: AUTO_QUALITY_ID, label: 'Auto' },
+            ...data.levels.map((lvl, i) => ({
+              id: i,
+              label: lvl.height ? `${lvl.height}p` : `Level ${i + 1}`,
+              height: lvl.height,
+              bitrate: lvl.bitrate,
+            })),
+          ];
+          setLevels(mapped);
+          setIsReady(true);
+          hls.startLoad();
+        });
 
-      hls.on(HlsCtor.Events.FRAG_BUFFERED, () => {
+        hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
+          if (!cancelled) setActiveLevelId(data.level);
+        });
+
+        hls.on(Hls.Events.ERROR, (_e, data) => {
+          if (cancelled) return;
+          if (!data.fatal) return;
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            setIsRecovering(true);
+            hls.recoverMediaError();
+            return;
+          }
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            // One retry, then surface.
+            if (!hlsRef.current) return;
+            hls.startLoad();
+            return;
+          }
+          destroy();
+          onFatalError?.(data.details ?? 'Playback failed');
+        });
+
+        hls.on(Hls.Events.FRAG_BUFFERED, () => setIsRecovering(false));
+      } catch (err) {
         if (!cancelled) {
-          mediaErrorCount = 0;
-          networkErrorCount = 0;
-          setIsRecovering(false);
+          onFatalError?.(err instanceof Error ? err.message : 'Could not initialise HLS playback');
         }
-      });
-
-      hls.loadSource(src);
-      hls.attachMedia(video);
-    };
-
-    void attach();
+      }
+    })();
 
     return () => {
       cancelled = true;
-      cleanUp();
-      // Release the element so a stale source cannot keep downloading.
-      video.removeAttribute('src');
-      video.load();
+      destroy();
     };
-  }, [src, method, videoRef]);
-
-  /**
-   * Select a rung, or `-1` for automatic.
-   *
-   * `nextLevel` is used rather than `currentLevel`: it switches at the next
-   * segment boundary instead of flushing the buffer, so the picture does not
-   * blink when the viewer changes quality.
-   */
-  const setLevel = useCallback((id: number) => {
-    setSelectedLevelId(id);
-    const hls = hlsRef.current;
-    if (!hls) return;
-    hls.nextLevel = id;
-  }, []);
-
-  /** Auto plus every discovered rung, highest quality first. */
-  const qualityOptions = useMemo<QualityLevel[]>(() => {
-    if (levels.length === 0) return [];
-    const sorted = [...levels].sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
-    return [{ id: AUTO_QUALITY_ID, label: 'Auto' }, ...sorted];
-  }, [levels]);
+  }, [src, method, videoRef, destroy, onFatalError]);
 
   return {
-    levels: qualityOptions,
+    levels,
     selectedLevelId,
     activeLevelId,
     setLevel,

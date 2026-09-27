@@ -1,487 +1,116 @@
-import { UserProfileId } from '@/types/cinema';
-import {
-  ChatMessage,
-  ChatReaction,
-  ChatReplyTo,
-  TypingState,
-  PresenceState,
-  ParticipantPresence,
-} from '@/types/chat';
-import { UserProfile } from '@/types/cinema';
-import { firestore } from './config';
-import { sanitizeText, isValidMediaUrl } from '@/lib/security/validation';
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  setDoc,
-  doc,
-} from 'firebase/firestore';
+import { ChatMessage, ChatReplyTo, TypingState, PresenceState, ChatReaction } from '@/types/chat';
+import { UserProfile, UserProfileId } from '@/types/cinema';
+import { MOCK_CHAT_MESSAGES } from '@/lib/mock-data';
 
-const DEFAULT_MESSAGES: Record<string, ChatMessage[]> = {
-  'group-movie-night': [
-    {
-      id: 'msg-seed-1',
-      groupId: 'group-movie-night',
-      senderId: 'kanmani',
-      senderName: 'Kanmani',
-      senderAvatar: '/avatars/kanmani.png',
-      text: 'Got the salted caramel popcorn ready! 🍿 Ready for the film ❤️',
-      reactions: {
-        '❤️': { emoji: '❤️', users: ['dinu'], count: 1 },
-        '🍿': { emoji: '🍿', users: ['dinu', 'kanmani'], count: 2 },
-      },
-      timestamp: Date.now() - 1000 * 60 * 4,
-    },
-    {
-      id: 'msg-seed-2',
-      groupId: 'group-movie-night',
-      senderId: 'dinu',
-      senderName: 'Dinu',
-      senderAvatar: '/avatars/dinu.png',
-      text: 'Audio calibrated to Dolby Atmos TrueHD 7.1. Starting playback in 3... 2... 1... 🎬',
-      reactions: {
-        '🔥': { emoji: '🔥', users: ['kanmani'], count: 1 },
-      },
-      timestamp: Date.now() - 1000 * 60 * 2,
-    },
-  ],
-};
+let messagesStore: ChatMessage[] = [...MOCK_CHAT_MESSAGES];
+let typingStore: TypingState = { dinu: false, kanmani: false };
+let presenceStore: PresenceState = { dinu: 'Online', kanmani: 'Online' };
 
-class FirebaseChatService {
-  private channels: Map<string, BroadcastChannel> = new Map();
-  private messagesCache: Map<string, ChatMessage[]> = new Map();
-  private typingCache: Map<string, TypingState> = new Map();
-  private presenceCache: Map<string, PresenceState> = new Map();
+const messageListeners = new Set<(msgs: ChatMessage[]) => void>();
+const typingListeners = new Set<(t: TypingState) => void>();
+const presenceListeners = new Set<(p: PresenceState) => void>();
 
-  private getChannel(groupId: string): BroadcastChannel | null {
-    if (typeof window === 'undefined') return null;
-    if (!this.channels.has(groupId)) {
-      try {
-        const ch = new BroadcastChannel(`dinustream_chat_${groupId}`);
-        this.channels.set(groupId, ch);
-      } catch {
-        return null;
-      }
-    }
-    return this.channels.get(groupId) || null;
-  }
-
-  private getStoredMessages(groupId: string): ChatMessage[] {
-    if (this.messagesCache.has(groupId)) {
-      return this.messagesCache.get(groupId)!;
-    }
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(`dinustream_chat_msgs_${groupId}`);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          this.messagesCache.set(groupId, parsed);
-          return parsed;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    const initial = DEFAULT_MESSAGES[groupId] || [];
-    this.messagesCache.set(groupId, initial);
-    return initial;
-  }
-
-  private saveMessages(groupId: string, msgs: ChatMessage[]) {
-    this.messagesCache.set(groupId, msgs);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(`dinustream_chat_msgs_${groupId}`, JSON.stringify(msgs));
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  /**
-   * Subscribe to live chat messages for a Watch Together group
-   */
-  public subscribeMessages(
-    groupId: string,
-    callback: (messages: ChatMessage[]) => void
-  ): () => void {
-    // 1. Try real Firestore subscription if available
-    let unsubscribeFirestore: (() => void) | null = null;
-    if (firestore) {
-      try {
-        const q = query(
-          collection(firestore, 'watchGroups', groupId, 'messages'),
-          orderBy('timestamp', 'asc')
-        );
-        unsubscribeFirestore = onSnapshot(
-          q,
-          (snapshot) => {
-            if (!snapshot.empty) {
-              const list: ChatMessage[] = snapshot.docs.map((docSnap) => ({
-                id: docSnap.id,
-                ...(docSnap.data() as Omit<ChatMessage, 'id'>),
-              }));
-              this.saveMessages(groupId, list);
-              callback(list);
-            }
-          },
-          (error) => {
-            // Firestore error / offline / permission - fallback cleanly to local channel
-            console.warn('[FirebaseChat] Firestore messages listener fallback:', error.message);
-          }
-        );
-      } catch {
-        // Fall through to resilient local real-time sync
-      }
-    }
-
-    // 2. Local resilient real-time synchronization (BroadcastChannel + storage events)
-    const channel = this.getChannel(groupId);
-    const initialMessages = this.getStoredMessages(groupId);
-    callback(initialMessages);
-
-    const handleChannelMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'CHAT_MESSAGES_UPDATED') {
-        const updated = this.getStoredMessages(groupId);
-        callback(updated);
-      }
-    };
-
-    if (channel) {
-      channel.addEventListener('message', handleChannelMessage);
-    }
-
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === `dinustream_chat_msgs_${groupId}` && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          this.messagesCache.set(groupId, parsed);
-          callback(parsed);
-        } catch {
-          // ignore
-        }
-      }
-    };
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('storage', handleStorage);
-    }
-
+export const firebaseChat = {
+  subscribeMessages(groupId: string, callback: (msgs: ChatMessage[]) => void): () => void {
+    callback(messagesStore);
+    messageListeners.add(callback);
     return () => {
-      if (unsubscribeFirestore) unsubscribeFirestore();
-      if (channel) {
-        channel.removeEventListener('message', handleChannelMessage);
-      }
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('storage', handleStorage);
-      }
+      messageListeners.delete(callback);
     };
-  }
+  },
 
-  /**
-   * Send a new message to the group chat
-   */
-  public async sendMessage(
+  subscribeTyping(groupId: string, callback: (t: TypingState) => void): () => void {
+    callback(typingStore);
+    typingListeners.add(callback);
+    return () => {
+      typingListeners.delete(callback);
+    };
+  },
+
+  subscribePresence(groupId: string, callback: (p: PresenceState) => void): () => void {
+    callback(presenceStore);
+    presenceListeners.add(callback);
+    return () => {
+      presenceListeners.delete(callback);
+    };
+  },
+
+  async sendMessage(
     groupId: string,
-    sender: UserProfile,
+    profile: UserProfile,
     text: string,
     gifUrl?: string,
     replyTo?: ChatReplyTo
-  ): Promise<ChatMessage> {
-    const sanitizedText = sanitizeText(text, 1000);
-    const safeGifUrl = isValidMediaUrl(gifUrl) ? gifUrl : undefined;
-
-    const newMessage: ChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  ): Promise<void> {
+    const newMsg: ChatMessage = {
+      id: 'msg-' + Date.now(),
       groupId,
-      senderId: sender.id,
-      senderName: sender.name,
-      senderAvatar: sender.avatarUrl,
-      text: sanitizedText,
-      gifUrl: safeGifUrl,
+      senderId: profile.id,
+      senderName: profile.name,
+      senderAvatar: profile.avatarUrl,
+      text,
+      gifUrl,
       replyTo,
-      reactions: {},
       timestamp: Date.now(),
+      reactions: {},
     };
+    messagesStore = [...messagesStore, newMsg];
+    messageListeners.forEach((fn) => fn(messagesStore));
 
-    // 1. Try Firestore
-    if (firestore) {
-      try {
-        await addDoc(
-          collection(firestore, 'watchGroups', groupId, 'messages'),
-          newMessage
-        );
-      } catch {
-        // Handled below
-      }
+    // Optional simulated reply from companion
+    if (profile.id === 'dinu') {
+      setTimeout(() => {
+        const replies = [
+          'Agreed! The sound design in this scene is immaculate.',
+          'Haha yes, wait until you see the next sequence! 🔥',
+          'Watching together is so much better!',
+        ];
+        const companionMsg: ChatMessage = {
+          id: 'msg-' + Date.now(),
+          groupId,
+          senderId: 'kanmani',
+          senderName: 'Kanmani',
+          senderAvatar: '/avatars/characters/spider-man.svg',
+          text: replies[Math.floor(Math.random() * replies.length)],
+          timestamp: Date.now(),
+          reactions: {
+            '❤️': { emoji: '❤️', users: ['kanmani'], count: 1 },
+          },
+        };
+        messagesStore = [...messagesStore, companionMsg];
+        messageListeners.forEach((fn) => fn(messagesStore));
+      }, 1500);
     }
+  },
 
-    // 2. Real-time broadcast
-    const current = this.getStoredMessages(groupId);
-    const updated = [...current, newMessage];
-    this.saveMessages(groupId, updated);
-
-    const channel = this.getChannel(groupId);
-    if (channel) {
-      channel.postMessage({ type: 'CHAT_MESSAGES_UPDATED', groupId });
-    }
-
-    return newMessage;
-  }
-
-  /**
-   * Add or toggle an emoji reaction on a message
-   */
-  public async toggleReaction(
+  async toggleReaction(
     groupId: string,
     messageId: string,
     emoji: string,
     userId: UserProfileId
   ): Promise<void> {
-    const messages = this.getStoredMessages(groupId);
-    const targetMsg = messages.find((m) => m.id === messageId);
-    if (!targetMsg) return;
-
-    if (!targetMsg.reactions) {
-      targetMsg.reactions = {};
-    }
-
-    const currentReaction: ChatReaction = targetMsg.reactions[emoji] || {
-      emoji,
-      users: [],
-      count: 0,
-    };
-
-    const hasUserReacted = currentReaction.users.includes(userId);
-    if (hasUserReacted) {
-      // Remove reaction
-      currentReaction.users = currentReaction.users.filter((u) => u !== userId);
-      currentReaction.count = Math.max(0, currentReaction.count - 1);
-      if (currentReaction.count === 0) {
-        delete targetMsg.reactions[emoji];
-      } else {
-        targetMsg.reactions[emoji] = currentReaction;
-      }
-    } else {
-      // Add reaction
-      currentReaction.users.push(userId);
-      currentReaction.count += 1;
-      targetMsg.reactions[emoji] = currentReaction;
-    }
-
-    // 1. Try Firestore update
-    if (firestore) {
-      try {
-        const msgDoc = doc(firestore, 'watchGroups', groupId, 'messages', messageId);
-        await updateDoc(msgDoc, { reactions: targetMsg.reactions });
-      } catch {
-        // Fallback
-      }
-    }
-
-    this.saveMessages(groupId, messages);
-    const channel = this.getChannel(groupId);
-    if (channel) {
-      channel.postMessage({ type: 'CHAT_MESSAGES_UPDATED', groupId });
-    }
-  }
-
-  /**
-   * Set user typing status
-   */
-  public async setTyping(
-    groupId: string,
-    userId: UserProfileId,
-    isTyping: boolean
-  ): Promise<void> {
-    const channel = this.getChannel(groupId);
-    if (channel) {
-      channel.postMessage({
-        type: 'TYPING_UPDATE',
-        groupId,
-        userId,
-        isTyping,
-      });
-    }
-
-    if (firestore) {
-      try {
-        await setDoc(
-          doc(firestore, 'watchGroups', groupId, 'typing', userId),
-          { isTyping, timestamp: Date.now() },
-          { merge: true }
-        );
-      } catch {
-        // Safe fallback
-      }
-    }
-  }
-
-  /**
-   * Subscribe to typing indicators
-   */
-  public subscribeTyping(
-    groupId: string,
-    callback: (typing: TypingState) => void
-  ): () => void {
-    const current: TypingState = this.typingCache.get(groupId) || {
-      dinu: false,
-      kanmani: false,
-    };
-    callback(current);
-
-    const channel = this.getChannel(groupId);
-    const timeouts: Record<string, NodeJS.Timeout> = {};
-
-    let unsubscribeFirestore: (() => void) | null = null;
-    if (firestore) {
-      try {
-        unsubscribeFirestore = onSnapshot(
-          collection(firestore, 'watchGroups', groupId, 'typing'),
-          (snapshot) => {
-            snapshot.docs.forEach((docSnap) => {
-              const uId = docSnap.id as UserProfileId;
-              if (uId === 'dinu' || uId === 'kanmani') {
-                const data = docSnap.data();
-                current[uId] = Boolean(data?.isTyping);
-              }
-            });
-            callback({ ...current });
-          },
-          (error) => {
-            console.warn('[FirebaseChat] Firestore typing subscription fallback:', error.message);
-          }
-        );
-      } catch {
-        // Fallback
-      }
-    }
-
-    const handleChannelMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'TYPING_UPDATE' && event.data.groupId === groupId) {
-        const { userId, isTyping } = event.data;
-        current[userId as UserProfileId] = isTyping;
-        callback({ ...current });
-
-        if (isTyping) {
-          if (timeouts[userId]) clearTimeout(timeouts[userId]);
-          timeouts[userId] = setTimeout(() => {
-            current[userId as UserProfileId] = false;
-            callback({ ...current });
-          }, 3500);
+    messagesStore = messagesStore.map((msg) => {
+      if (msg.id !== messageId) return msg;
+      const reactions = { ...(msg.reactions || {}) };
+      const current = reactions[emoji];
+      if (current && current.users.includes(userId)) {
+        const updatedUsers = current.users.filter((u) => u !== userId);
+        if (updatedUsers.length === 0) {
+          delete reactions[emoji];
+        } else {
+          reactions[emoji] = { emoji, users: updatedUsers, count: updatedUsers.length };
         }
+      } else {
+        const nextUsers = current ? [...current.users, userId] : [userId];
+        reactions[emoji] = { emoji, users: nextUsers, count: nextUsers.length };
       }
-    };
+      return { ...msg, reactions };
+    });
+    messageListeners.forEach((fn) => fn(messagesStore));
+  },
 
-    if (channel) {
-      channel.addEventListener('message', handleChannelMessage);
-    }
-
-    return () => {
-      if (unsubscribeFirestore) unsubscribeFirestore();
-      if (channel) {
-        channel.removeEventListener('message', handleChannelMessage);
-      }
-      Object.values(timeouts).forEach(clearTimeout);
-    };
-  }
-
-  /**
-   * Update online presence for Watch Together chat
-   */
-  public async updatePresence(
-    groupId: string,
-    userId: UserProfileId,
-    status: ParticipantPresence
-  ): Promise<void> {
-    const channel = this.getChannel(groupId);
-    if (channel) {
-      channel.postMessage({
-        type: 'PRESENCE_UPDATE',
-        groupId,
-        userId,
-        status,
-      });
-    }
-
-    if (firestore) {
-      try {
-        await setDoc(
-          doc(firestore, 'watchGroups', groupId, 'presence', userId),
-          { status, timestamp: Date.now() },
-          { merge: true }
-        );
-      } catch {
-        // Safe fallback
-      }
-    }
-  }
-
-  /**
-   * Subscribe to online presence
-   */
-  public subscribePresence(
-    groupId: string,
-    callback: (presence: PresenceState) => void
-  ): () => void {
-    const current: PresenceState = this.presenceCache.get(groupId) || {
-      dinu: 'Online',
-      kanmani: 'Online',
-    };
-    callback(current);
-
-    let unsubscribeFirestore: (() => void) | null = null;
-    if (firestore) {
-      try {
-        unsubscribeFirestore = onSnapshot(
-          collection(firestore, 'watchGroups', groupId, 'presence'),
-          (snapshot) => {
-            snapshot.docs.forEach((docSnap) => {
-              const uId = docSnap.id as UserProfileId;
-              if (uId === 'dinu' || uId === 'kanmani') {
-                const data = docSnap.data();
-                if (data?.status) {
-                  current[uId] = data.status;
-                }
-              }
-            });
-            this.presenceCache.set(groupId, { ...current });
-            callback({ ...current });
-          },
-          (error) => {
-            console.warn('[FirebaseChat] Firestore presence subscription fallback:', error.message);
-          }
-        );
-      } catch {
-        // Fallback
-      }
-    }
-
-    const channel = this.getChannel(groupId);
-    const handleChannelMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'PRESENCE_UPDATE' && event.data.groupId === groupId) {
-        const { userId, status } = event.data;
-        current[userId as UserProfileId] = status;
-        this.presenceCache.set(groupId, current);
-        callback({ ...current });
-      }
-    };
-
-    if (channel) {
-      channel.addEventListener('message', handleChannelMessage);
-    }
-
-    return () => {
-      if (unsubscribeFirestore) unsubscribeFirestore();
-      if (channel) {
-        channel.removeEventListener('message', handleChannelMessage);
-      }
-    };
-  }
-}
-
-export const firebaseChat = new FirebaseChatService();
+  async setTyping(groupId: string, userId: string, isTyping: boolean): Promise<void> {
+    typingStore = { ...typingStore, [userId]: isTyping };
+    typingListeners.forEach((fn) => fn(typingStore));
+  },
+};

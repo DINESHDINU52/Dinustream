@@ -5,161 +5,158 @@ import { useRouter } from 'next/navigation';
 import { UserProfile, ContinueWatchingItem } from '@/types/cinema';
 import { UserPreferences, UserProfileData, WatchHistoryItem } from '@/types/profile';
 import { profileService } from '@/lib/services/profileService';
-import { presenceService, ProfilePresence } from '@/lib/services/presenceService';
+import { authService } from '@/lib/services/authService';
 import { PROFILES } from '@/lib/constants';
+import { fetchContinueWatching, fetchFavorites, setFavorite } from '@/lib/jellyfin/queries';
+
+const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === '1';
+
+const FRIENDS_AVATAR = '/avatars/characters/grogu.svg';
 
 export function useActiveProfile() {
   const router = useRouter();
-  const [activeId, setActiveId] = useState<string>(() => profileService.getActiveProfileId());
-  const [profileData, setProfileData] = useState<UserProfileData>(() =>
-    profileService.getActiveProfileData()
+  const [profile, setProfile] = useState<UserProfile>(() =>
+    DEMO ? profileService.getActiveProfileData().profile : PROFILES.guest
   );
-  const [allProfiles, setAllProfiles] = useState<UserProfile[]>(() =>
-    profileService.getAllProfiles()
-  );
-  const [presenceMap, setPresenceMap] = useState<Record<string, ProfilePresence>>({});
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [continueWatching, setContinueWatching] = useState<ContinueWatchingItem[]>([]);
+  const [myList, setMyList] = useState<string[]>([]);
+  const [settings, setSettings] = useState<UserPreferences>(() => profileService.getActiveProfileData().settings);
 
   useEffect(() => {
-    // 1. Subscribe to profile data updates
-    const unsubscribeProfile = profileService.subscribe(() => {
-      const currentActiveId = profileService.getActiveProfileId();
-      setActiveId(currentActiveId);
-      setProfileData(profileService.getActiveProfileData());
-      setAllProfiles(profileService.getAllProfiles());
-    });
+    if (DEMO) {
+      const syncFromStore = () => {
+        const data = profileService.getActiveProfileData();
+        setProfile(data.profile);
+        setContinueWatching(data.continueWatching);
+        setMyList(data.myList);
+        setSettings(data.settings);
+      };
+      syncFromStore();
+      return profileService.subscribe(syncFromStore);
+    }
 
-    // 2. Subscribe to live online/offline presence updates
-    const unsubscribePresence = presenceService.subscribe((presences) => {
-      setPresenceMap(presences);
-    });
+    let cancelled = false;
+    (async () => {
+      const status = await authService.status();
+      if (!status.authenticated) return;
+      const [prof, cw, favs] = await Promise.all([
+        authService.currentProfile().catch(() => null),
+        fetchContinueWatching(20).catch(() => []),
+        fetchFavorites(200).catch(() => []),
+      ]);
+      if (cancelled) return;
+      if (prof) {
+        setProfile(prof);
+        setSettings(profileService.getSettingsFor(prof.id));
+      }
+      setContinueWatching(cw);
+      setMyList(favs.map((f) => f.id));
+    })();
 
     return () => {
-      unsubscribeProfile();
-      unsubscribePresence();
+      cancelled = true;
     };
   }, []);
 
-  // Universal Logout function
   const logout = useCallback(async () => {
-    setIsLoggingOut(true);
-    try {
-      presenceService.stopHeartbeat();
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-    } catch (err) {
-      console.warn('Logout API error:', err);
-    } finally {
-      setIsLoggingOut(false);
-      router.push('/login');
-      router.refresh();
-    }
+    await authService.logout();
+    router.push('/login');
+    router.refresh();
   }, [router]);
 
-  /**
-   * Switch profile.
-   *
-   * By design this always routes through the login screen: the profile is
-   * carried in an HTTP-only session cookie, so it can only be changed by
-   * re-authenticating. It deliberately takes no target-profile argument —
-   * callers used to pass one (`switchProfile('kanmani')`) and reasonably
-   * expected an in-place swap, when in fact the value was ignored and the
-   * session was ended.
-   */
-  const switchProfile = useCallback(async () => {
-    await logout();
-  }, [logout]);
+  const switchProfile = useCallback(
+    (_targetId?: string) => {
+      router.push('/login');
+    },
+    [router]
+  );
 
   const updateSettings = useCallback(
     (partial: Partial<UserPreferences>) => {
-      profileService.updateSettings(activeId, partial);
+      setSettings((prev) => {
+        const next = { ...prev, ...partial };
+        profileService.updateSettings(profile.id, partial);
+        return next;
+      });
     },
-    [activeId]
+    [profile.id]
   );
 
   const toggleMyList = useCallback(
     (mediaId: string) => {
-      return profileService.toggleMyList(activeId, mediaId);
+      const exists = myList.includes(mediaId);
+      setMyList((prev) => (exists ? prev.filter((id) => id !== mediaId) : [...prev, mediaId]));
+      if (!DEMO) setFavorite(mediaId, !exists).catch(() => {});
+      return !exists;
     },
-    [activeId]
+    [myList]
   );
 
   const addToMyList = useCallback(
     (mediaId: string) => {
-      profileService.addToMyList(activeId, mediaId);
+      setMyList((prev) => (prev.includes(mediaId) ? prev : [...prev, mediaId]));
+      if (!DEMO) setFavorite(mediaId, true).catch(() => {});
     },
-    [activeId]
+    []
   );
 
   const removeFromMyList = useCallback(
     (mediaId: string) => {
-      profileService.removeFromMyList(activeId, mediaId);
+      setMyList((prev) => prev.filter((id) => id !== mediaId));
+      if (!DEMO) setFavorite(mediaId, false).catch(() => {});
     },
-    [activeId]
+    []
   );
 
-  const updateContinueWatching = useCallback(
-    (item: ContinueWatchingItem) => {
-      profileService.updateContinueWatching(activeId, item);
-    },
-    [activeId]
-  );
+  const updateContinueWatching = useCallback((item: ContinueWatchingItem) => {
+    setContinueWatching((prev) => [item, ...prev.filter((c) => c.id !== item.id)]);
+  }, []);
 
-  const removeFromContinueWatching = useCallback(
-    (mediaId: string) => {
-      profileService.removeFromContinueWatching(activeId, mediaId);
-    },
-    [activeId]
-  );
+  const removeFromContinueWatching = useCallback((mediaId: string) => {
+    setContinueWatching((prev) => prev.filter((c) => c.id !== mediaId));
+  }, []);
 
   const addWatchHistory = useCallback(
     (item: Omit<WatchHistoryItem, 'id' | 'watchedAt'>) => {
-      profileService.addWatchHistory(activeId, item);
+      profileService.addWatchHistory(profile.id, item);
     },
-    [activeId]
+    [profile.id]
   );
 
   const clearWatchHistory = useCallback(() => {
-    profileService.clearWatchHistory(activeId);
-  }, [activeId]);
+    profileService.clearWatchHistory(profile.id);
+  }, [profile.id]);
 
-  // Current active profile
-  const profile: UserProfile =
-    profileData?.profile || PROFILES[activeId] || PROFILES.guest || {
-      id: activeId,
-      name: activeId,
-      title: 'Cinema Guest',
-      avatarUrl: '/avatars/guest.svg',
-      accentColor: '#10b981',
-      glowColor: 'rgba(16, 185, 129, 0.35)',
-      favoriteGenre: 'Cinema Hits',
-      isOnline: true,
-      isGuest: true,
-    };
+  const companionProfile: UserProfile = {
+    ...profile,
+    id: 'friends',
+    name: 'Friends',
+    avatarUrl: FRIENDS_AVATAR,
+  };
 
-  const companionProfile: UserProfile =
-    activeId === 'dinu' ? PROFILES.kanmani : PROFILES.dinu;
-
-  const isCurrentOnline = presenceService.isProfileOnline(activeId);
+  const data: UserProfileData = {
+    profile,
+    continueWatching,
+    myList,
+    watchHistory: [],
+    settings,
+  };
 
   return {
     profile,
-    profileId: activeId,
+    profileId: profile.id,
     companionProfile,
-    allProfiles,
-    presenceMap,
-    isCurrentOnline,
+    allProfiles: [profile],
+    isCurrentOnline: true,
     logout,
     switchProfile,
-    isLoggingOut,
+    isLoggingOut: false,
     isReady: true,
-    data: profileData,
-    continueWatching: profileData?.continueWatching || [],
-    myList: profileData?.myList || [],
-    watchHistory: profileData?.watchHistory || [],
-    settings: profileData?.settings,
+    data,
+    continueWatching,
+    myList,
+    watchHistory: [],
+    settings,
     updateSettings,
     toggleMyList,
     addToMyList,

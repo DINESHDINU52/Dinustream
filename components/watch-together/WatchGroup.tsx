@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { UserProfileId } from '@/types/cinema';
 import { useWatchTogether } from '@/hooks/useWatchTogether';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -11,12 +12,32 @@ import { GlassPanel } from '@/components/ui/GlassPanel';
 import { Button } from '@/components/ui/Button';
 import { Sparkles, Heart, Lock } from 'lucide-react';
 
+const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === '1';
+
+/** Accepts either a raw group id or a full invite link (?room=<id>) and returns the code. */
+function extractRoomCode(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  try {
+    const url = new URL(trimmed, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    const room = url.searchParams.get('room');
+    if (room) return room;
+  } catch {
+    /* not a URL — treat the input as the raw code */
+  }
+  return trimmed;
+}
+
 export function WatchGroup() {
   const { profile, switchProfile } = useActiveProfile();
   const profiles = profileService.getAllProfiles();
+  const searchParams = useSearchParams();
+  const inviteRoom = searchParams.get('room');
+
   const {
     group,
     createGroup,
+    joinGroup,
     selectMovie,
     addToQueue,
     removeFromQueue,
@@ -29,10 +50,38 @@ export function WatchGroup() {
     addParticipant,
     removeParticipant,
     updateGroupName,
+    notifications,
+    dismissNotification,
   } = useWatchTogether();
 
   const [groupNameInput, setGroupNameInput] = useState('Movie Night ❤️');
   const [selectedHost, setSelectedHost] = useState<UserProfileId>(profile.id);
+  const [inviteCode, setInviteCode] = useState('');
+  const [joiningCode, setJoiningCode] = useState(false);
+
+  const handleJoinByCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = extractRoomCode(inviteCode);
+    if (!code) return;
+    setJoiningCode(true);
+    await joinGroup(code, profile.id);
+    setJoiningCode(false);
+  };
+
+  // Auto-join when arriving via an invite link: /watch-together?room=<groupId>
+  useEffect(() => {
+    if (DEMO || group || !inviteRoom) return;
+    let cancelled = false;
+    void joinGroup(inviteRoom, profile.id).then(() => {
+      if (!cancelled && !group) {
+        // fall through — group appears from the lobby's WS mirror
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteRoom]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +105,12 @@ export function WatchGroup() {
               Start an ultra-low latency synchronized room with Jellyfin SyncPlay.
             </p>
           </div>
+
+          {inviteRoom && (
+            <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-200 text-xs text-center font-mono">
+              Joining room {inviteRoom.slice(0, 8)}…
+            </div>
+          )}
 
           <form onSubmit={handleCreate} className="space-y-4">
             <div>
@@ -115,6 +170,37 @@ export function WatchGroup() {
               Initialize Screening Room
             </Button>
           </form>
+
+          {/* Join an existing room by invite code */}
+          <div className="border-t border-white/[0.08] pt-5">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+              <span className="text-xs font-mono uppercase tracking-wider text-slate-400">
+                Or join an existing room
+              </span>
+            </div>
+            <form onSubmit={handleJoinByCode} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                placeholder="Paste invite code or link"
+                className="flex-1 px-4 py-2.5 rounded-lg bg-[#0d1421] border border-white/[0.1] text-sm text-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all font-medium"
+              />
+              <Button
+                type="submit"
+                variant="secondary"
+                size="md"
+                disabled={joiningCode || !inviteCode.trim()}
+                className="shrink-0"
+              >
+                {joiningCode ? 'Joining…' : 'Join'}
+              </Button>
+            </form>
+            <p className="text-[11px] text-slate-500 mt-2">
+              The host&apos;s invite link contains the room code — paste it here or open the link.
+            </p>
+          </div>
         </GlassPanel>
       </div>
     );
@@ -139,6 +225,8 @@ export function WatchGroup() {
       onRemoveParticipant={removeParticipant}
       onUpdateGroupName={updateGroupName}
       onCreateGroup={createGroup}
+      notifications={notifications}
+      onDismissNotification={dismissNotification}
     />
   );
 }

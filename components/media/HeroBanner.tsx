@@ -50,7 +50,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             {media.rating}
           </Badge>
           <span className="text-slate-600">•</span>
-          <span className="font-mono text-emerald-400 font-semibold">{media.matchScore}% Match</span>
+          <span className="font-mono text-emerald-400 font-semibold">{media.matchScore ?? 0}% Match</span>
         </div>
 
         {/* Feature Title */}

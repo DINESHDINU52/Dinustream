@@ -5,23 +5,30 @@ import { useEffect, useState, useCallback } from 'react';
 const TV_MODE_STORAGE_KEY = 'dinustream_tv_mode';
 
 export function useTVNavigation(isEnabled = true) {
-  const [isTVMode, setIsTVMode] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(TV_MODE_STORAGE_KEY);
-      if (stored !== null) return stored === 'true';
-      // Auto-detect wide TV screen or TV browser
-      const userAgent = navigator.userAgent.toLowerCase();
-      const isTVBrowser =
-        userAgent.includes('smart-tv') ||
-        userAgent.includes('tizen') ||
-        userAgent.includes('webos') ||
-        userAgent.includes('googletv') ||
-        userAgent.includes('appletv') ||
-        window.innerWidth >= 2560;
-      return isTVBrowser;
+  // SSR-safe: the initial value MUST match what the server rendered (false).
+  // Reading localStorage/navigator in the initializer caused a hydration
+  // mismatch (server = "TV Mode", client = "TV Mode ON"). The real value is
+  // applied in an effect after mount instead.
+  const [isTVMode, setIsTVMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = localStorage.getItem(TV_MODE_STORAGE_KEY);
+    if (stored !== null) {
+      setIsTVMode(stored === 'true');
+      return;
     }
-    return false;
-  });
+    // Auto-detect wide TV screen or TV browser on first visit.
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isTVBrowser =
+      userAgent.includes('smart-tv') ||
+      userAgent.includes('tizen') ||
+      userAgent.includes('webos') ||
+      userAgent.includes('googletv') ||
+      userAgent.includes('appletv') ||
+      window.innerWidth >= 2560;
+    setIsTVMode(isTVBrowser);
+  }, []);
 
   // Apply data-tv-mode to <html> element
   useEffect(() => {

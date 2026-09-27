@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { MediaSegment } from '@/types/segments';
-import { mediaSegmentManager } from '@/lib/segments/segment-service';
+import { MOCK_SEGMENTS } from '@/lib/mock-data';
+import { fetchSegments } from '@/lib/jellyfin/queries';
 import { useSegmentSkipSettings } from './useSegmentSkipSettings';
+
+const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === '1';
 
 interface UseMediaSegmentsOptions {
   mediaId: string;
@@ -24,38 +27,36 @@ export function useMediaSegments({
 }: UseMediaSegmentsOptions) {
   const { skipBehavior, setSkipBehavior, isAutoSkip, isAskToSkip, isNeverSkip } = useSegmentSkipSettings();
 
-  // Lazy initialize segments synchronously so first frame has them without cascading render
-  const [segments, setSegments] = useState<MediaSegment[]>(() => {
-    if (!enabled) return [];
-    return mediaSegmentManager.getSegmentsSync(mediaId, episodeId, duration);
-  });
-
+  const [segments, setSegments] = useState<MediaSegment[]>([]);
   const lastAutoSkippedIdRef = useRef<string | null>(null);
+
+  // Segments belong to the episode for TV, else the movie. Fetch from Jellyfin
+  // (ticks -> seconds) or fall back to the mock markers in demo mode.
+  const segmentItemId = episodeId || mediaId;
+  useEffect(() => {
+    if (!enabled || !segmentItemId) {
+      setSegments([]);
+      return;
+    }
+    if (DEMO) {
+      setSegments(MOCK_SEGMENTS);
+      return;
+    }
+    let cancelled = false;
+    fetchSegments(segmentItemId)
+      .then((s) => {
+        if (!cancelled) setSegments(s);
+      })
+      .catch(() => {
+        if (!cancelled) setSegments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [segmentItemId, enabled]);
   const [autoSkipFeedback, setAutoSkipFeedback] = useState<MediaSegment | null>(null);
   const autoSkipTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Asynchronously resolve segments (supports future Jellyfin remote metadata fetches)
-  useEffect(() => {
-    if (!enabled) return;
-    let isSubscribed = true;
-
-    mediaSegmentManager
-      .fetchSegments(mediaId, episodeId, duration)
-      .then((res) => {
-        if (isSubscribed && Array.isArray(res)) {
-          setSegments(res);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load media segments:', err);
-      });
-
-    return () => {
-      isSubscribed = false;
-    };
-  }, [mediaId, episodeId, duration, enabled]);
-
-  // Determine active segment at current playback timestamp
   const activeSegment: MediaSegment | null = useMemo(() => {
     if (!segments || segments.length === 0) return null;
     return (
@@ -65,12 +66,10 @@ export function useMediaSegments({
     );
   }, [segments, currentTime]);
 
-  // Perform Skip Action
   const skipSegment = useCallback(
     (segmentToSkip?: MediaSegment) => {
       const targetSegment = segmentToSkip || activeSegment;
       if (!targetSegment) {
-        // Fallback: look for next segment coming up within 15 seconds
         const upcoming = segments.find(
           (seg) => seg.startSeconds > currentTime && seg.startSeconds - currentTime <= 15
         );
@@ -87,22 +86,14 @@ export function useMediaSegments({
     [activeSegment, segments, currentTime, duration, onSeek]
   );
 
-  // Handle Auto-Skip
   useEffect(() => {
-    if (!isAutoSkip || !activeSegment) {
-      return;
-    }
-
-    // Only auto-skip once per segment pass
-    if (lastAutoSkippedIdRef.current === activeSegment.id) {
-      return;
-    }
+    if (!isAutoSkip || !activeSegment) return;
+    if (lastAutoSkippedIdRef.current === activeSegment.id) return;
 
     lastAutoSkippedIdRef.current = activeSegment.id;
     const target = Math.min(duration, activeSegment.endSeconds + 0.5);
     onSeek(target);
 
-    // Asynchronously dispatch feedback banner
     const feedbackTimeout = setTimeout(() => {
       setAutoSkipFeedback(activeSegment);
     }, 0);
@@ -115,24 +106,11 @@ export function useMediaSegments({
     return () => clearTimeout(feedbackTimeout);
   }, [isAutoSkip, activeSegment, duration, onSeek]);
 
-  // Reset auto-skip tracker ref when user navigates away from the auto-skipped segment
-  useEffect(() => {
-    if (lastAutoSkippedIdRef.current) {
-      const currentSkippedId = lastAutoSkippedIdRef.current;
-      const seg = segments.find((s) => s.id === currentSkippedId);
-      if (seg && (currentTime < seg.startSeconds - 5 || currentTime > seg.endSeconds + 10)) {
-        lastAutoSkippedIdRef.current = null;
-      }
-    }
-  }, [currentTime, segments]);
-
-  // Dismiss feedback manually
   const dismissAutoSkipFeedback = useCallback(() => {
     if (autoSkipTimerRef.current) clearTimeout(autoSkipTimerRef.current);
     setAutoSkipFeedback(null);
   }, []);
 
-  // Whether the skip button should be visible on screen
   const shouldShowSkipButton = isAskToSkip && activeSegment !== null;
 
   return {

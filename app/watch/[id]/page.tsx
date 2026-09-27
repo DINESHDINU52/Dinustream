@@ -1,334 +1,193 @@
 'use client';
 
-import React, { useMemo, Suspense, useState, useEffect, useCallback } from 'react';
-import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import React, { Suspense, useEffect, useState, useCallback } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { CinemaPlayer } from '@/components/player/CinemaPlayer';
-import { Badge } from '@/components/ui/Badge';
-import { CacheStatus } from '@/components/sync/CacheStatus';
-import { getSyncStatus, SyncState } from '@/lib/api/syncManager';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { mediaService } from '@/lib/services/mediaService';
-import { Episode, MediaItem, Season } from '@/types/cinema';
-import { GroupChat } from '@/components/chat/GroupChat';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Sparkles, Users } from 'lucide-react';
+import { MediaDetailsSkeleton } from '@/components/media/MediaDetailsSkeleton';
+import { MediaItem, Episode, Season } from '@/types/cinema';
+import { fetchRawItem, fetchEpisodes } from '@/lib/jellyfin/queries';
+import { mapToMediaItem, mapToEpisode } from '@/lib/jellyfin/mappers';
+import { Loader2, AlertTriangle } from 'lucide-react';
 
-/** Default room used when no `group` query param is supplied. */
-const DEFAULT_GROUP_ID = 'group-movie-night';
-const DEFAULT_GROUP_NAME = 'Movie Night ❤️';
+function groupEpisodes(episodes: Episode[]): Season[] {
+  const map = new Map<number, Episode[]>();
+  for (const e of episodes) {
+    const arr = map.get(e.seasonNumber) ?? [];
+    arr.push(e);
+    map.set(e.seasonNumber, arr);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([seasonNumber, eps]) => ({
+      seasonNumber,
+      title: `Season ${seasonNumber}`,
+      episodeCount: eps.length,
+      episodes: eps.sort((a, b) => a.episodeNumber - b.episodeNumber),
+    }));
+}
+
+function pickEpisode(flat: Episode[], seasonParam?: string | null, episodeParam?: string | null): Episode | undefined {
+  if (flat.length === 0) return undefined;
+  if (seasonParam && episodeParam) {
+    const sn = parseInt(seasonParam, 10);
+    const en = parseInt(episodeParam, 10);
+    const found = flat.find((e) => e.seasonNumber === sn && e.episodeNumber === en);
+    if (found) return found;
+  }
+  return flat[0];
+}
 
 function WatchContent() {
-  const params = useParams();
-  const searchParams = useSearchParams();
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { companionProfile } = useActiveProfile();
-  const [cacheState, setCacheState] = useState<SyncState>('not_cached');
+  const searchParams = useSearchParams();
+  const isGroupSync = searchParams.get('sync') === 'true';
+  const groupId = searchParams.get('group') || 'group-movie-night';
+
   const [media, setMedia] = useState<MediaItem | null>(null);
-  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [episode, setEpisode] = useState<Episode | undefined>();
+  const [seasons, setSeasons] = useState<Season[] | undefined>();
+  const [allEpisodes, setAllEpisodes] = useState<Episode[]>([]);
+  const [nextEpisode, setNextEpisode] = useState<Episode | undefined>();
+  const [prevEpisode, setPrevEpisode] = useState<Episode | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
 
-  const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
-  const episodeId = searchParams.get('episode');
-  const roomParam = searchParams.get('room') || searchParams.get('group');
-  const isSyncMode = Boolean(roomParam) || searchParams.get('sync') === 'true';
-  const groupId = roomParam || (isSyncMode ? DEFAULT_GROUP_ID : '');
-
-  const loadSession = useCallback(async (mediaId: string) => {
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    try {
-      /*
-        Sequential on purpose. These used to run in a `Promise.all`, which meant
-        `getSeasonsForSeries` was called for movies too — and Jellyfin answers
-        `/Shows/{movieId}/Seasons` and `/Shows/{movieId}/Episodes` with 404. The
-        service swallowed them so playback still worked, but every movie logged
-        two upstream 404s and two error traces to the console, which buried the
-        real diagnostics.
-      */
-      const item = await mediaService.getMediaById(mediaId);
 
-      if (!item) {
-        setError('Media not found in private vault');
-        return;
+    (async () => {
+      try {
+        const raw = await fetchRawItem(id);
+        if (cancelled) return;
+        if (!raw) {
+          setError('This title could not be found.');
+          return;
+        }
+
+        if (raw.Type === 'Movie') {
+          setMedia(mapToMediaItem(raw));
+          setEpisode(undefined);
+          setSeasons(undefined);
+        } else if (raw.Type === 'Episode') {
+          const seriesId = raw.SeriesId;
+          const [seriesRaw, eps] = await Promise.all([
+            seriesId ? fetchRawItem(seriesId).catch(() => null) : Promise.resolve(null),
+            seriesId ? fetchEpisodes(seriesId).catch(() => []) : Promise.resolve([]),
+          ]);
+          if (cancelled) return;
+          const flat = eps.map(mapToEpisode);
+          const idx = flat.findIndex((e) => e.id === id);
+          setMedia(seriesRaw ? mapToMediaItem(seriesRaw) : mapToMediaItem(raw));
+          setEpisode(mapToEpisode(raw));
+          setSeasons(groupEpisodes(flat));
+          setAllEpisodes(flat);
+          setPrevEpisode(idx > 0 ? flat[idx - 1] : undefined);
+          setNextEpisode(idx >= 0 && idx < flat.length - 1 ? flat[idx + 1] : undefined);
+        } else {
+          const eps = await fetchEpisodes(id).catch(() => []);
+          if (cancelled) return;
+          const flat = eps.map(mapToEpisode);
+          const chosen = pickEpisode(flat, searchParams.get('season'), searchParams.get('episode'));
+          setMedia(mapToMediaItem(raw));
+          setSeasons(groupEpisodes(flat));
+          setAllEpisodes(flat);
+          setEpisode(chosen);
+          const idx = chosen ? flat.findIndex((e) => e.id === chosen.id) : -1;
+          setPrevEpisode(idx > 0 ? flat[idx - 1] : undefined);
+          setNextEpisode(idx >= 0 && idx < flat.length - 1 ? flat[idx + 1] : undefined);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load playback');
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setMedia(item);
-
-      const seasonList =
-        item.type === 'series' ? await mediaService.getSeasonsForSeries(mediaId) : [];
-      setSeasons(seasonList || []);
-    } catch (err) {
-      console.error('[WatchPage] Error loading item:', err);
-      setError('Failed to load playback session');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  /*
-    Deferred a microtask so the synchronous `setLoading(true)` inside
-    `loadSession` does not run in the effect body (react-hooks/
-    set-state-in-effect).
-  */
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    void Promise.resolve().then(() => {
-      if (!cancelled) void loadSession(id);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, loadSession]);
-
-  const allEpisodes: Episode[] = useMemo(() => {
-    return seasons.flatMap((s) => s.episodes);
-  }, [seasons]);
-
-  // Current Episode
-  const currentEpisode: Episode | undefined = useMemo(() => {
-    if (allEpisodes.length === 0) return undefined;
-    if (episodeId) {
-      const found = allEpisodes.find((e) => e.id === episodeId);
-      if (found) return found;
-    }
-    return allEpisodes[0];
-  }, [allEpisodes, episodeId]);
-
-  /* Poll the local cache state for the active file. Guarded against a late
-     response arriving after the user has already switched episodes. */
-  useEffect(() => {
-    if (!media) return;
-    let cancelled = false;
-    const filename = currentEpisode ? `${currentEpisode.id}.mkv` : `${media.id}.mkv`;
-
-    getSyncStatus(filename)
-      .then((res) => {
-        if (!cancelled) setCacheState(res.state);
-      })
-      .catch(() => {
-        if (!cancelled) setCacheState('not_cached');
-      });
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [media, currentEpisode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
-  const currentIndex = currentEpisode
-    ? allEpisodes.findIndex((e) => e.id === currentEpisode.id)
-    : -1;
+  const handleSelectEpisode = useCallback(
+    (episodeId: string) => {
+      const idx = allEpisodes.findIndex((e) => e.id === episodeId);
+      if (idx < 0) return;
+      setEpisode(allEpisodes[idx]);
+      setPrevEpisode(idx > 0 ? allEpisodes[idx - 1] : undefined);
+      setNextEpisode(idx < allEpisodes.length - 1 ? allEpisodes[idx + 1] : undefined);
+    },
+    [allEpisodes]
+  );
 
-  const prevEpisode = currentIndex > 0 ? allEpisodes[currentIndex - 1] : undefined;
-  const nextEpisode =
-    currentIndex >= 0 && currentIndex < allEpisodes.length - 1
-      ? allEpisodes[currentIndex + 1]
-      : undefined;
-
-  const handleNext = () => {
-    if (nextEpisode && media) {
-      const roomQ = groupId ? `&room=${encodeURIComponent(groupId)}` : '';
-      router.push(`/watch/${media.id}?episode=${nextEpisode.id}${roomQ}`);
+  const handleNextEpisode = useCallback(() => {
+    if (nextEpisode) {
+      const q = isGroupSync ? `?sync=true&group=${encodeURIComponent(groupId)}` : '';
+      router.replace(`/watch/${nextEpisode.id}${q}`);
     }
-  };
+  }, [nextEpisode, router, isGroupSync, groupId]);
 
-  const handlePrev = () => {
-    if (prevEpisode && media) {
-      const roomQ = groupId ? `&room=${encodeURIComponent(groupId)}` : '';
-      router.push(`/watch/${media.id}?episode=${prevEpisode.id}${roomQ}`);
+  const handlePrevEpisode = useCallback(() => {
+    if (prevEpisode) {
+      const q = isGroupSync ? `?sync=true&group=${encodeURIComponent(groupId)}` : '';
+      router.replace(`/watch/${prevEpisode.id}${q}`);
     }
-  };
-
-  const handleSelectEpisode = (epId: string) => {
-    if (media) {
-      const roomQ = groupId ? `&room=${encodeURIComponent(groupId)}` : '';
-      router.push(`/watch/${media.id}?episode=${epId}${roomQ}`);
-    }
-  };
-
-  const handleStartWatchTogether = () => {
-    if (!media) return;
-    const newRoomId = `cinema-${Math.random().toString(36).substring(2, 8)}`;
-    const epQuery = currentEpisode ? `&episode=${currentEpisode.id}` : '';
-    router.push(`/watch/${media.id}?room=${newRoomId}${epQuery}`);
-  };
-
-  const handleCopyInviteLink = () => {
-    if (typeof window === 'undefined') return;
-    navigator.clipboard.writeText(window.location.href);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
-  };
+  }, [prevEpisode, router, isGroupSync, groupId]);
 
   if (loading) {
     return (
-      <div className="min-h-screen-dynamic bg-black flex flex-col justify-center items-center text-white px-4 text-center">
-        <div className="w-10 h-10 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-4" />
-        <p className="text-xs text-slate-400 font-mono tracking-wider uppercase">
-          Initializing Cinema Session...
-        </p>
+      <div className="min-h-screen bg-[#06080d] flex items-center justify-center">
+        <MediaDetailsSkeleton />
       </div>
     );
   }
 
-  if (error || !media) {
+  if (!media) {
     return (
-      <div className="min-h-screen-dynamic bg-[#05070c] flex flex-col justify-center items-center p-4">
-        <div className="max-w-md w-full">
-          <ErrorState
-            title="Stream Unavailable"
-            message={error || 'Could not find this title in the library.'}
-            onRetry={() => (id ? loadSession(id) : router.push('/'))}
-          />
-          <div className="mt-6 text-center">
-            <Button
-              variant="secondary"
-              icon={<ArrowLeft className="w-4 h-4" />}
-              onClick={() => router.push('/')}
-            >
-              Back to Catalog
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (media.type === 'series' && allEpisodes.length === 0) {
-    return (
-      <div className="min-h-screen-dynamic bg-[#05070c] flex flex-col justify-center items-center p-4">
-        <div className="max-w-md w-full">
-          <ErrorState
-            title="Episodes Not Available"
-            message="No video files for this series are currently indexed in your media vault."
-            onRetry={() => (id ? loadSession(id) : router.push('/'))}
-          />
-          <div className="mt-6 text-center">
-            <Button
-              variant="secondary"
-              icon={<ArrowLeft className="w-4 h-4" />}
-              onClick={() => router.push('/')}
-            >
-              Back to Catalog
-            </Button>
-          </div>
-        </div>
+      <div className="min-h-screen bg-[#06080d] flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <AlertTriangle className="w-10 h-10 text-rose-400" />
+        <h2 className="text-xl font-bold text-white">Playback unavailable</h2>
+        <p className="text-slate-400 text-sm max-w-md">{error}</p>
+        <button
+          onClick={() => router.back()}
+          className="px-5 py-2.5 rounded-xl bg-white text-slate-950 text-sm font-semibold"
+        >
+          Back to catalog
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-screen-dynamic bg-[#05080f] text-white flex flex-col selection:bg-rose-500/30">
-      {/*
-        Floating player chrome. `pt-safe-flush`/`px-safe` keep the exit button
-        and the sync badge out of the notch and the rounded-display corners now
-        that the document viewport is `viewportFit: 'cover'`.
-      */}
-      <header className="absolute top-0 inset-x-0 z-40 flex items-start justify-between gap-2 p-3 sm:p-6 pt-safe-flush px-safe bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
-        <button
-          onClick={() => router.back()}
-          className="pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-full bg-[#0a0f18]/80 hover:bg-[#141f32] border border-slate-400/[0.12] text-xs font-medium text-slate-300 hover:text-white transition-all backdrop-blur-md cinema-focus shrink-0"
-          aria-label="Exit to cinema hall"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span className="hidden min-[380px]:inline">Exit Screen</span>
-        </button>
-
-        <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto min-w-0">
-          {isSyncMode ? (
-            <button
-              onClick={handleCopyInviteLink}
-              title="Click to copy invite link"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 hover:text-white text-[11px] sm:text-xs font-medium shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-rose-400 animate-pulse shrink-0" />
-              <span className="truncate">
-                {copiedLink ? 'Link Copied!' : `Watch Together: ${groupId}`}
-              </span>
-            </button>
-          ) : (
-            <button
-              onClick={handleStartWatchTogether}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#121927]/90 hover:bg-rose-500/20 border border-slate-700 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-[11px] sm:text-xs font-medium transition-all backdrop-blur-md cursor-pointer"
-            >
-              <Users className="w-3.5 h-3.5 text-rose-400" />
-              <span className="hidden sm:inline">Start Watch Together</span>
-              <span className="sm:hidden">Sync</span>
-            </button>
-          )}
-
-          <div className="hidden lg:flex items-center gap-2">
-            <CacheStatus state={cacheState} />
-          </div>
-        </div>
-      </header>
-
-      {/* Player */}
-      <main className="flex flex-col justify-center">
-        <CinemaPlayer
-          media={media}
-          episode={currentEpisode}
-          nextEpisode={nextEpisode}
-          prevEpisode={prevEpisode}
-          onNextEpisode={handleNext}
-          onPrevEpisode={handlePrev}
-          autoPlay
-          seasons={seasons}
-          onSelectEpisode={handleSelectEpisode}
-          isGroupSync={isSyncMode}
-          groupId={groupId}
-          groupName={DEFAULT_GROUP_NAME}
-          /* Dedicated playback route: fill the screen instead of letterboxing
-             a 16:9 box inside it. */
-          fillViewport
-        />
-      </main>
-
-      {/* Watch Together live chat */}
-      {isSyncMode && <GroupChat groupId={groupId} groupName={DEFAULT_GROUP_NAME} />}
-
-      {/* Feature context tray */}
-      <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-t border-slate-800/80 pt-6">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-white break-words">
-                {media.title}
-              </h1>
-              {currentEpisode && (
-                <Badge variant="sync" size="sm">
-                  S{currentEpisode.seasonNumber}:E{currentEpisode.episodeNumber}
-                </Badge>
-              )}
-            </div>
-            <p className="text-xs text-slate-400 font-light mt-1.5 max-w-2xl">
-              {currentEpisode ? currentEpisode.overview || media.overview : media.overview}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {media.badges.map((b) => (
-              <Badge
-                key={b}
-                variant={b === 'Dolby Atmos' || b === 'Spatial Audio' ? 'atmos' : 'midnight'}
-                size="sm"
-              >
-                {b}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      </footer>
-    </div>
+    <CinemaPlayer
+      media={media}
+      episode={episode}
+      seasons={seasons}
+      nextEpisode={nextEpisode}
+      prevEpisode={prevEpisode}
+      onNextEpisode={handleNextEpisode}
+      onPrevEpisode={handlePrevEpisode}
+      onSelectEpisode={handleSelectEpisode}
+      autoPlay
+      fillViewport
+      isGroupSync={isGroupSync}
+      groupId={groupId}
+    />
   );
 }
 
 export default function WatchPage() {
   return (
-    /* `useSearchParams` requires a Suspense boundary during prerendering. */
-    <Suspense fallback={<div className="min-h-screen-dynamic bg-[#05080f]" />}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#06080d] flex items-center justify-center text-white">
+          <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
+        </div>
+      }
+    >
       <WatchContent />
     </Suspense>
   );

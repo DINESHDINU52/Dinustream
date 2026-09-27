@@ -1,16 +1,12 @@
-import { ContinueWatchingItem, UserProfile } from '@/types/cinema';
+import { ContinueWatchingItem, UserProfile, UserProfileId } from '@/types/cinema';
 import { UserPreferences, UserProfileData, WatchHistoryItem } from '@/types/profile';
 import { PROFILES } from '@/lib/constants';
-import { presenceService } from './presenceService';
-import { firestore } from '@/lib/firebase/config';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { MOCK_CONTINUE_WATCHING, MOCK_MEDIA_ITEMS } from '@/lib/mock-data';
 
-const ACTIVE_PROFILE_KEY = 'dinustream_active_profile';
-const PROFILES_DATA_KEY = 'dinustream_user_profiles_v1';
-const GUEST_PROFILES_KEY = 'dinustream_guest_profiles_v1';
-const EVENT_NAME = 'dinustream:profile-data-changed';
+const ACTIVE_KEY = 'dinustream_ui_active_profile';
+const STORE_KEY = 'dinustream_ui_profiles_store';
 
-const DEFAULT_SETTINGS_DINU: UserPreferences = {
+const DEFAULT_SETTINGS: UserPreferences = {
   autoplayNextEpisode: true,
   autoSkipIntro: true,
   autoSkipRecap: true,
@@ -21,446 +17,270 @@ const DEFAULT_SETTINGS_DINU: UserPreferences = {
   reducedMotion: false,
 };
 
-const DEFAULT_SETTINGS_KANMANI: UserPreferences = {
-  autoplayNextEpisode: true,
-  autoSkipIntro: true,
-  autoSkipRecap: false,
-  autoSkipOutro: true,
-  defaultAudio: 'Dolby Digital Plus 5.1',
-  defaultSubtitles: 'Off',
-  playbackQuality: '1080p FHD',
-  reducedMotion: false,
-};
+function getStore(): Record<string, UserProfileData> {
+  if (typeof window === 'undefined') {
+    return {
+      dinu: {
+        profile: PROFILES.dinu,
+        continueWatching: MOCK_CONTINUE_WATCHING,
+        myList: ['dune-part-two', 'oppenheimer'],
+        watchHistory: [],
+        settings: { ...DEFAULT_SETTINGS },
+      },
+      kanmani: {
+        profile: PROFILES.kanmani,
+        continueWatching: MOCK_CONTINUE_WATCHING.slice(0, 2),
+        myList: ['spider-man-across-the-spider-verse'],
+        watchHistory: [],
+        settings: { ...DEFAULT_SETTINGS },
+      },
+      guest: {
+        profile: PROFILES.guest,
+        continueWatching: [],
+        myList: [],
+        watchHistory: [],
+        settings: { ...DEFAULT_SETTINGS },
+      },
+    };
+  }
 
-const DEFAULT_SETTINGS_GUEST: UserPreferences = {
-  autoplayNextEpisode: true,
-  autoSkipIntro: true,
-  autoSkipRecap: true,
-  autoSkipOutro: true,
-  defaultAudio: 'Dolby Digital Plus 5.1',
-  defaultSubtitles: 'Off',
-  playbackQuality: '1080p FHD',
-  reducedMotion: false,
-};
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
 
-function getInitialStore(): Record<string, UserProfileData> {
-  return {
+  const initial: Record<string, UserProfileData> = {
     dinu: {
       profile: PROFILES.dinu,
-      continueWatching: [],
-      myList: [],
+      continueWatching: MOCK_CONTINUE_WATCHING,
+      myList: ['dune-part-two', 'oppenheimer'],
       watchHistory: [],
-      settings: { ...DEFAULT_SETTINGS_DINU },
+      settings: { ...DEFAULT_SETTINGS },
     },
     kanmani: {
       profile: PROFILES.kanmani,
-      continueWatching: [],
-      myList: [],
+      continueWatching: MOCK_CONTINUE_WATCHING.slice(0, 2),
+      myList: ['spider-man-across-the-spider-verse'],
       watchHistory: [],
-      settings: { ...DEFAULT_SETTINGS_KANMANI },
+      settings: { ...DEFAULT_SETTINGS },
     },
     guest: {
       profile: PROFILES.guest,
       continueWatching: [],
       myList: [],
       watchHistory: [],
-      settings: { ...DEFAULT_SETTINGS_GUEST },
+      settings: { ...DEFAULT_SETTINGS },
     },
   };
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(initial));
+  } catch (e) {}
+  return initial;
 }
 
-class ProfileService {
-  private store: Record<string, UserProfileData>;
-  private guestProfiles: Record<string, UserProfile> = {};
-  private activeId: string = 'dinu';
-  private listeners: Set<() => void> = new Set();
+function saveStore(store: Record<string, UserProfileData>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(store));
+    window.dispatchEvent(new Event('dinustream:profile-data-changed'));
+  } catch (e) {}
+}
 
-  constructor() {
-    this.store = getInitialStore();
+export const profileService = {
+  getActiveProfileId(): UserProfileId {
+    if (typeof window === 'undefined') return 'dinu';
+    return (localStorage.getItem(ACTIVE_KEY) as UserProfileId) || 'dinu';
+  },
 
+  setActiveProfile(id: UserProfileId): void {
     if (typeof window !== 'undefined') {
-      // 1. Load active profile ID
-      const storedActive = localStorage.getItem(ACTIVE_PROFILE_KEY);
-      if (storedActive) {
-        this.activeId = storedActive;
-      }
-
-      // 2. Load custom guest profiles
-      const storedGuests = localStorage.getItem(GUEST_PROFILES_KEY);
-      if (storedGuests) {
-        try {
-          this.guestProfiles = JSON.parse(storedGuests);
-        } catch {
-          this.guestProfiles = {};
-        }
-      }
-
-      // 3. Load profiles data store
-      const rawStore = localStorage.getItem(PROFILES_DATA_KEY);
-      if (rawStore) {
-        try {
-          const parsed = JSON.parse(rawStore);
-          this.store = {
-            ...getInitialStore(),
-            ...parsed,
-          };
-        } catch {
-          this.store = getInitialStore();
-          this.save();
-        }
-      } else {
-        this.save();
-      }
-
-      // Ensure active profile entry exists
-      if (!this.store[this.activeId]) {
-        this.store[this.activeId] = {
-          profile: this.guestProfiles[this.activeId] || PROFILES[this.activeId] || {
-            id: this.activeId,
-            name: this.activeId,
-            title: 'Cinema Guest',
-            avatarUrl: '/avatars/guest.svg',
-            accentColor: '#10b981',
-            glowColor: 'rgba(16, 185, 129, 0.35)',
-            favoriteGenre: 'Cinema Hits',
-            isOnline: true,
-            isGuest: true,
-            pinProtected: false,
-          },
-          continueWatching: [],
-          myList: [],
-          watchHistory: [],
-          settings: { ...DEFAULT_SETTINGS_GUEST },
-        };
-      }
-
-      // Apply reduced motion
-      if (this.store[this.activeId]?.settings?.reducedMotion) {
-        this.applyReducedMotion(true);
-      }
-
-      // Start presence heartbeat for active profile
-      presenceService.startHeartbeat(this.activeId);
-
-      // Async fetch profile data from Firestore if available
-      this.syncFromFirestore(this.activeId);
-
-      // Cross-window storage events
-      window.addEventListener('storage', (e) => {
-        if (e.key === PROFILES_DATA_KEY && e.newValue) {
-          try {
-            this.store = { ...this.store, ...JSON.parse(e.newValue) };
-            this.notify();
-          } catch {}
-        }
-        if (e.key === GUEST_PROFILES_KEY && e.newValue) {
-          try {
-            this.guestProfiles = JSON.parse(e.newValue);
-            this.notify();
-          } catch {}
-        }
-        if (e.key === ACTIVE_PROFILE_KEY && e.newValue) {
-          this.activeId = e.newValue;
-          presenceService.startHeartbeat(this.activeId);
-          this.notify();
-        }
-      });
+      localStorage.setItem(ACTIVE_KEY, id);
+      window.dispatchEvent(new Event('dinustream:profile-data-changed'));
     }
-  }
+  },
 
-  private async syncFromFirestore(profileId: string) {
-    if (!firestore || typeof window === 'undefined') return;
-    try {
-      const docRef = doc(firestore, 'dinustream_profiles', profileId);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const cloudData = snap.data();
-        if (cloudData && this.store[profileId]) {
-          this.store[profileId] = {
-            ...this.store[profileId],
-            continueWatching: cloudData.continueWatching || this.store[profileId].continueWatching,
-            myList: cloudData.myList || this.store[profileId].myList,
-            watchHistory: cloudData.watchHistory || this.store[profileId].watchHistory,
-            settings: { ...this.store[profileId].settings, ...(cloudData.settings || {}) },
-          };
-          this.save(false); // save local without triggering cloud loop
-        }
+  switchProfile(id: UserProfileId): void {
+    this.setActiveProfile(id);
+  },
+
+  getActiveProfileData(): UserProfileData {
+    const pid = this.getActiveProfileId();
+    const store = getStore();
+    return (
+      store[pid] || {
+        profile: PROFILES[pid] || PROFILES.dinu,
+        continueWatching: MOCK_CONTINUE_WATCHING,
+        myList: [],
+        watchHistory: [],
+        settings: { ...DEFAULT_SETTINGS },
       }
-    } catch (err) {
-      console.warn('[ProfileService] Firestore sync error:', err);
-    }
-  }
+    );
+  },
 
-  private save(syncToCloud: boolean = true) {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(PROFILES_DATA_KEY, JSON.stringify(this.store));
-        localStorage.setItem(GUEST_PROFILES_KEY, JSON.stringify(this.guestProfiles));
-        localStorage.setItem(ACTIVE_PROFILE_KEY, this.activeId);
-        window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { activeId: this.activeId } }));
-      } catch {}
+  /** Per-user settings, defaulting to the base preferences for unknown users. */
+  getSettingsFor(id?: UserProfileId): UserPreferences {
+    const pid = id || this.getActiveProfileId();
+    const store = getStore();
+    return store[pid]?.settings || { ...DEFAULT_SETTINGS };
+  },
 
-      if (syncToCloud && firestore) {
-        try {
-          const docRef = doc(firestore, 'dinustream_profiles', this.activeId);
-          const activeData = this.store[this.activeId];
-          if (activeData) {
-            setDoc(
-              docRef,
-              {
-                continueWatching: activeData.continueWatching,
-                myList: activeData.myList,
-                watchHistory: activeData.watchHistory,
-                settings: activeData.settings,
-                lastUpdated: Date.now(),
-              },
-              { merge: true }
-            ).catch(() => {});
-          }
-        } catch {}
-      }
-    }
-    this.notify();
-  }
-
-  private notify() {
-    this.listeners.forEach((cb) => cb());
-  }
-
-  private applyReducedMotion(enabled: boolean) {
-    if (typeof document !== 'undefined') {
-      if (enabled) {
-        document.documentElement.classList.add('reduced-motion');
-      } else {
-        document.documentElement.classList.remove('reduced-motion');
-      }
-    }
-  }
-
-  subscribe(callback: () => void): () => void {
-    this.listeners.add(callback);
-    return () => {
-      this.listeners.delete(callback);
-    };
-  }
-
-  getActiveProfileId(): string {
-    return this.activeId;
-  }
+  getProfile(id?: UserProfileId): UserProfile {
+    const pid = id || this.getActiveProfileId();
+    const store = getStore();
+    return store[pid]?.profile || PROFILES[pid] || PROFILES.dinu;
+  },
 
   getAllProfiles(): UserProfile[] {
-    const list: UserProfile[] = [
-      PROFILES.dinu,
-      PROFILES.kanmani,
-      PROFILES.guest,
-    ];
-    Object.values(this.guestProfiles).forEach((guest) => {
-      list.push(guest);
-    });
-    return list;
-  }
+    const store = getStore();
+    return Object.values(store).map((s) => s.profile);
+  },
 
   createCustomProfile(
     name: string,
-    avatarUrl?: string,
-    accentColor: string = '#e50914',
-    pinProtected: boolean = false,
+    avatarUrl: string,
+    accentColor: string,
+    pinProtected: boolean,
     glowColor?: string
   ): UserProfile {
-    const id = `profile_${Date.now().toString(36)}`;
-    const cleanName = name.trim() || 'New Viewer';
-
+    const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now().toString().slice(-4);
     const newProfile: UserProfile = {
       id,
-      name: cleanName,
-      title: 'Cinema Member',
-      avatarUrl: avatarUrl || '/avatars/characters/iron-man.svg',
-      accentColor,
-      glowColor: glowColor || 'rgba(229, 9, 20, 0.45)',
-      favoriteGenre: 'Movies & Series',
-      isOnline: false,
-      statusMessage: 'Ready to stream',
-      isGuest: false,
+      name,
+      title: 'Cinema Enthusiast',
+      avatarUrl,
+      accentColor: accentColor || '#38bdf8',
+      glowColor: glowColor || 'rgba(56, 189, 248, 0.4)',
+      favoriteGenre: 'Cinema Blockbusters',
+      isOnline: true,
       pinProtected,
     };
-
-    this.guestProfiles[id] = newProfile;
-    this.store[id] = {
+    const store = getStore();
+    store[id] = {
       profile: newProfile,
       continueWatching: [],
       myList: [],
       watchHistory: [],
-      settings: { ...DEFAULT_SETTINGS_GUEST },
+      settings: { ...DEFAULT_SETTINGS },
     };
-
-    this.save();
+    saveStore(store);
     return newProfile;
-  }
+  },
 
-  updateProfileCustom(id: string, updates: Partial<UserProfile>) {
-    if (this.guestProfiles[id]) {
-      this.guestProfiles[id] = { ...this.guestProfiles[id], ...updates };
+  updateProfileCustom(id: string, updates: Partial<UserProfile>): void {
+    const store = getStore();
+    if (store[id]) {
+      store[id].profile = { ...store[id].profile, ...updates };
+      saveStore(store);
     }
-    if (PROFILES[id]) {
-      Object.assign(PROFILES[id], updates);
+  },
+
+  deleteProfile(id: string): void {
+    const store = getStore();
+    if (store[id]) {
+      delete store[id];
+      saveStore(store);
     }
-    if (this.store[id]) {
-      this.store[id].profile = { ...this.store[id].profile, ...updates };
+  },
+
+  updateProfile(id: UserProfileId, updates: Partial<UserProfile>): void {
+    const store = getStore();
+    if (store[id]) {
+      store[id].profile = { ...store[id].profile, ...updates };
+      saveStore(store);
     }
-    this.save(true);
-  }
+  },
 
-  deleteProfile(id: string) {
-    if (this.guestProfiles[id]) {
-      delete this.guestProfiles[id];
-      delete this.store[id];
-      if (this.activeId === id) {
-        this.activeId = 'dinu';
-      }
-      this.save();
-    }
-  }
+  updateProfileAvatar(id: UserProfileId, avatarUrl: string): void {
+    this.updateProfile(id, { avatarUrl });
+  },
 
-  addGuestProfile(name?: string, avatarUrl?: string): UserProfile {
-    return this.createCustomProfile(name || 'Guest', avatarUrl, '#10b981', false);
-  }
+  getContinueWatching(id?: UserProfileId): ContinueWatchingItem[] {
+    const pid = id || this.getActiveProfileId();
+    const store = getStore();
+    return store[pid]?.continueWatching || MOCK_CONTINUE_WATCHING;
+  },
 
-  removeGuestProfile(id: string) {
-    this.deleteProfile(id);
-  }
+  updateContinueWatching(id: UserProfileId, item: ContinueWatchingItem): void {
+    const store = getStore();
+    if (!store[id]) return;
+    const existing = store[id].continueWatching.filter((c) => c.id !== item.id);
+    store[id].continueWatching = [item, ...existing];
+    saveStore(store);
+  },
 
-  getActiveProfileData(): UserProfileData {
-    if (!this.store[this.activeId]) {
-      return getInitialStore().dinu;
-    }
-    return this.store[this.activeId];
-  }
+  removeFromContinueWatching(id: UserProfileId, mediaId: string): void {
+    const store = getStore();
+    if (!store[id]) return;
+    store[id].continueWatching = store[id].continueWatching.filter((c) => c.id !== mediaId);
+    saveStore(store);
+  },
 
-  getProfileData(id: string): UserProfileData {
-    return this.store[id] || getInitialStore().dinu;
-  }
+  getMyList(id?: UserProfileId): string[] {
+    const pid = id || this.getActiveProfileId();
+    const store = getStore();
+    return store[pid]?.myList || [];
+  },
 
-  switchProfile(newId: string) {
-    // Only called upon authenticating through the login page
-    this.activeId = newId;
-    if (!this.store[newId]) {
-      const p = this.guestProfiles[newId] || PROFILES[newId] || {
-        id: newId,
-        name: newId,
-        title: 'Cinema Guest',
-        avatarUrl: '/avatars/guest.svg',
-        accentColor: '#10b981',
-        glowColor: 'rgba(16, 185, 129, 0.35)',
-        favoriteGenre: 'Cinema Hits',
-        isOnline: true,
-        isGuest: true,
-        pinProtected: false,
-      };
-      this.store[newId] = {
-        profile: p,
-        continueWatching: [],
-        myList: [],
-        watchHistory: [],
-        settings: { ...DEFAULT_SETTINGS_GUEST },
-      };
-    }
-
-    presenceService.startHeartbeat(newId);
-    this.applyReducedMotion(this.store[newId].settings?.reducedMotion || false);
-    this.save();
-    this.syncFromFirestore(newId);
-  }
-
-  
-  updateProfileAvatar(id: string, avatarUrl: string) {
-    if (this.store[id]) {
-      this.store[id].profile.avatarUrl = avatarUrl;
-    }
-    if (PROFILES[id]) {
-      PROFILES[id].avatarUrl = avatarUrl;
-    }
-    if (this.guestProfiles[id]) {
-      this.guestProfiles[id].avatarUrl = avatarUrl;
-    }
-    this.save(true);
-  }
-
-  updateSettings(id: string, partial: Partial<UserPreferences>) {
-    if (!this.store[id]) return;
-    this.store[id].settings = {
-      ...this.store[id].settings,
-      ...partial,
-    };
-    if (id === this.activeId && typeof partial.reducedMotion !== 'undefined') {
-      this.applyReducedMotion(partial.reducedMotion);
-    }
-    this.save();
-  }
-
-  toggleMyList(id: string, mediaId: string): boolean {
-    if (!this.store[id]) return false;
-    const list = this.store[id].myList;
-    const exists = list.includes(mediaId);
+  toggleMyList(id: UserProfileId, mediaId: string): boolean {
+    const store = getStore();
+    if (!store[id]) return false;
+    const exists = store[id].myList.includes(mediaId);
     if (exists) {
-      this.store[id].myList = list.filter((m) => m !== mediaId);
+      store[id].myList = store[id].myList.filter((m) => m !== mediaId);
     } else {
-      this.store[id].myList = [mediaId, ...list];
+      store[id].myList.push(mediaId);
     }
-    this.save();
+    saveStore(store);
     return !exists;
-  }
+  },
 
-  addToMyList(id: string, mediaId: string) {
-    if (!this.store[id]) return;
-    if (!this.store[id].myList.includes(mediaId)) {
-      this.store[id].myList = [mediaId, ...this.store[id].myList];
-      this.save();
+  addToMyList(id: UserProfileId, mediaId: string): void {
+    const store = getStore();
+    if (store[id] && !store[id].myList.includes(mediaId)) {
+      store[id].myList.push(mediaId);
+      saveStore(store);
     }
-  }
+  },
 
-  removeFromMyList(id: string, mediaId: string) {
-    if (!this.store[id]) return;
-    this.store[id].myList = this.store[id].myList.filter((m) => m !== mediaId);
-    this.save();
-  }
+  removeFromMyList(id: UserProfileId, mediaId: string): void {
+    const store = getStore();
+    if (store[id]) {
+      store[id].myList = store[id].myList.filter((m) => m !== mediaId);
+      saveStore(store);
+    }
+  },
 
-  updateContinueWatching(id: string, item: ContinueWatchingItem) {
-    if (!this.store[id]) return;
-    const list = this.store[id].continueWatching.filter((m) => m.id !== item.id);
-    this.store[id].continueWatching = [item, ...list];
-    this.save();
-  }
+  updateSettings(id: UserProfileId, updates: Partial<UserPreferences>): void {
+    const store = getStore();
+    if (store[id]) {
+      store[id].settings = { ...store[id].settings, ...updates };
+      saveStore(store);
+    }
+  },
 
-  removeFromContinueWatching(id: string, mediaId: string) {
-    if (!this.store[id]) return;
-    this.store[id].continueWatching = this.store[id].continueWatching.filter((m) => m.id !== mediaId);
-    this.save();
-  }
-
-  addWatchHistory(id: string, item: Omit<WatchHistoryItem, 'id' | 'watchedAt'>) {
-    if (!this.store[id]) return;
-    const newEntry: WatchHistoryItem = {
+  addWatchHistory(id: UserProfileId, item: Omit<WatchHistoryItem, 'id' | 'watchedAt'>): void {
+    const store = getStore();
+    if (!store[id]) return;
+    const historyItem: WatchHistoryItem = {
       ...item,
-      id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: 'history-' + Date.now(),
       watchedAt: Date.now(),
     };
-    this.store[id].watchHistory = [newEntry, ...this.store[id].watchHistory].slice(0, 30);
-    this.save();
-  }
+    store[id].watchHistory = [historyItem, ...store[id].watchHistory.slice(0, 49)];
+    saveStore(store);
+  },
 
-  clearWatchHistory(id: string) {
-    if (!this.store[id]) return;
-    this.store[id].watchHistory = [];
-    this.save();
-  }
-
-  resetProfileDefaults(id: string) {
-    const defaults = getInitialStore();
-    if (defaults[id]) {
-      this.store[id] = defaults[id];
-      this.save();
+  clearWatchHistory(id: UserProfileId): void {
+    const store = getStore();
+    if (store[id]) {
+      store[id].watchHistory = [];
+      saveStore(store);
     }
-  }
-}
+  },
 
-export const profileService = new ProfileService();
+  subscribe(callback: () => void): () => void {
+    if (typeof window === 'undefined') return () => {};
+    window.addEventListener('dinustream:profile-data-changed', callback);
+    return () => window.removeEventListener('dinustream:profile-data-changed', callback);
+  },
+};

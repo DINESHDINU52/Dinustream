@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { CinemaShell } from '@/components/layout/CinemaShell';
 import { WatchGroup } from '@/components/watch-together/WatchGroup';
+import { Loader2 } from 'lucide-react';
 
-export default function WatchTogetherPage() {
+function WatchTogetherContent() {
   return (
     <CinemaShell>
       {/*
@@ -16,5 +17,19 @@ export default function WatchTogetherPage() {
         <WatchGroup />
       </div>
     </CinemaShell>
+  );
+}
+
+export default function WatchTogetherPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[70vh] flex items-center justify-center text-white">
+          <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
+        </div>
+      }
+    >
+      <WatchTogetherContent />
+    </Suspense>
   );
 }

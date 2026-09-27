@@ -1,187 +1,87 @@
 import { SearchFilters, SearchResultItem } from '@/types/search';
-import { searchJellyfin, getMovies, getSeries, JellyfinItem } from '@/lib/api/jellyfin';
-import { MediaBadge } from '@/types/cinema';
+import { MOCK_MEDIA_ITEMS } from '@/lib/mock-data';
+import { searchHints } from '@/lib/jellyfin/queries';
 
-const RECENT_SEARCHES_KEY = 'dinustream_recent_searches';
+const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === '1';
+const RECENT_KEY = 'dinustream_recent_searches';
 
-class SearchService {
-  /**
-   * Search Jellyfin catalog with full filter support
-   */
-  async search(query: string, filters: SearchFilters): Promise<SearchResultItem[]> {
-    const trimmed = query.trim();
+let recentSearchesStore: string[] = [];
 
-    try {
-      let jellyfinItems: JellyfinItem[] = [];
-
-      if (trimmed) {
-        // Query Jellyfin with the user query
-        jellyfinItems = await searchJellyfin(trimmed, 'Movie,Series,Episode');
-      } else {
-        // Empty query: fetch popular / default items from Jellyfin
-        const [moviesRes, seriesRes] = await Promise.all([
-          getMovies(25).catch(() => ({ Items: [] })),
-          getSeries(15).catch(() => ({ Items: [] })),
-        ]);
-        jellyfinItems = [...(moviesRes?.Items || []), ...(seriesRes?.Items || [])];
-      }
-
-      // Adapt into SearchResultItem
-      let results = jellyfinItems.map((j) => this.adaptJellyfinItem(j));
-
-      // Apply client-side filters
-      results = results.filter((item) => {
-        // Category filter
-        if (filters.category !== 'all' && item.type !== filters.category) {
-          return false;
-        }
-
-        // Genre filter
-        if (filters.genre !== 'all') {
-          if (!item.genres.some((g) => g.toLowerCase() === filters.genre.toLowerCase())) {
-            return false;
-          }
-        }
-
-        // Resolution filter
-        if (filters.resolution !== 'all') {
-          if (item.resolution && item.resolution !== filters.resolution) {
-            return false;
-          }
-        }
-
-        // Audio format filter
-        if (filters.audio !== 'all') {
-          if (item.audioFormat && !item.audioFormat.toLowerCase().includes(filters.audio.toLowerCase())) {
-            return false;
-          }
-        }
-
-        return true;
-      });
-
-      return results;
-    } catch (err) {
-      console.error('[SearchService] search error:', err);
-      return [];
-    }
+function loadRecent(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    if (raw) return JSON.parse(raw) as string[];
+  } catch {
+    /* ignore */
   }
+  return [];
+}
 
-  private adaptJellyfinItem(j: JellyfinItem): SearchResultItem {
-    const type: 'movie' | 'series' | 'episode' | 'music' =
-      j.Type === 'Movie'
-        ? 'movie'
-        : j.Type === 'Series'
-        ? 'series'
-        : j.Type === 'Episode'
-        ? 'episode'
-        : 'music';
-
-    const badges: MediaBadge[] = [];
-    const video = j.MediaStreams?.find((s) => s.Type === 'Video');
-    let resolution: '4K UHD' | '1080p FHD' | '720p HD' = '1080p FHD';
-    if (
-      (video?.Height && video.Height >= 2160) ||
-      (video?.Width && video.Width >= 3840) ||
-      video?.DisplayTitle?.includes('4K')
-    ) {
-      badges.push('4K UHD');
-      resolution = '4K UHD';
-    }
-
-    if (
-      video?.DisplayTitle?.toLowerCase().includes('hdr') ||
-      video?.DisplayTitle?.toLowerCase().includes('dolby vision')
-    ) {
-      badges.push('Dolby Vision');
-    }
-
-    const hasAtmos = j.MediaStreams?.some(
-      (s) =>
-        s.Type === 'Audio' &&
-        (s.DisplayTitle?.toLowerCase().includes('atmos') || s.Codec?.toLowerCase() === 'truehd')
-    );
-    let audioFormat: 'Dolby Atmos' | 'Dolby Digital Plus 5.1' | 'Spatial Audio' | 'Stereo' = 'Stereo';
-    if (hasAtmos) {
-      badges.push('Dolby Atmos');
-      audioFormat = 'Dolby Atmos';
-    } else if (j.MediaStreams?.some((s) => s.Type === 'Audio' && s.Codec?.includes('eac3'))) {
-      audioFormat = 'Dolby Digital Plus 5.1';
-    }
-
-    const posterUrl = `/api/jellyfin/items/${encodeURIComponent(j.Id)}/Images/Primary`;
-    const backdropUrl = j.BackdropImageTags && j.BackdropImageTags.length > 0
-      ? `/api/jellyfin/items/${encodeURIComponent(j.Id)}/Images/Backdrop`
-      : posterUrl;
-
-    return {
-      id: j.Id,
-      title: j.Name,
-      type,
-      overview: j.Overview || 'Masterfully calibrated private presentation for Dinu & Kanmani.',
-      posterUrl,
-      backdropUrl,
-      releaseYear: j.ProductionYear || new Date().getFullYear(),
-      rating: j.CommunityRating ? `${j.CommunityRating.toFixed(1)}/10` : 'NR',
-      runtime: j.RunTimeTicks ? `${Math.round(j.RunTimeTicks / 600000000)}m` : '2h',
-      genres: j.Genres || [],
-      badges,
-      resolution,
-      audioFormat,
-      seriesId: j.SeriesId,
-      seriesTitle: j.SeriesName,
-      seasonNumber: j.ParentIndexNumber,
-      episodeNumber: j.IndexNumber,
-    };
-  }
-
-  // --- RECENT SEARCHES ---
-
-  getRecentSearches(): string[] {
-    if (typeof window === 'undefined') return [];
-    try {
-      const stored = localStorage.getItem(RECENT_SEARCHES_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return [];
-  }
-
-  addRecentSearch(query: string) {
-    const trimmed = query.trim();
-    if (!trimmed || typeof window === 'undefined') return;
-
-    try {
-      const current = this.getRecentSearches().filter((q) => q.toLowerCase() !== trimmed.toLowerCase());
-      const updated = [trimmed, ...current].slice(0, 8);
-      localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
-    } catch {
-      // ignore
-    }
-  }
-
-  removeRecentSearch(query: string) {
-    if (typeof window === 'undefined') return;
-    try {
-      const current = this.getRecentSearches().filter((q) => q !== query);
-      localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(current));
-    } catch {
-      // ignore
-    }
-  }
-
-  clearRecentSearches() {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.removeItem(RECENT_SEARCHES_KEY);
-    } catch {
-      // ignore
-    }
+function persistRecent(list: string[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+  } catch {
+    /* ignore */
   }
 }
 
-export const searchService = new SearchService();
+export const searchService = {
+  getRecentSearches(): string[] {
+    return recentSearchesStore.length ? recentSearchesStore : loadRecent();
+  },
+
+  addRecentSearch(term: string): void {
+    if (!term.trim()) return;
+    recentSearchesStore = [term, ...recentSearchesStore.filter((s) => s.toLowerCase() !== term.toLowerCase())].slice(0, 10);
+    persistRecent(recentSearchesStore);
+  },
+
+  removeRecentSearch(term: string): void {
+    recentSearchesStore = recentSearchesStore.filter((s) => s !== term);
+    persistRecent(recentSearchesStore);
+  },
+
+  clearRecentSearches(): void {
+    recentSearchesStore = [];
+    persistRecent([]);
+  },
+
+  async search(query: string, filters?: SearchFilters): Promise<SearchResultItem[]> {
+    if (DEMO) {
+      if (!query.trim()) return [];
+      const q = query.toLowerCase();
+      return MOCK_MEDIA_ITEMS.filter(
+        (m) =>
+          m.title.toLowerCase().includes(q) ||
+          m.overview.toLowerCase().includes(q) ||
+          m.genres?.some((g) => g.toLowerCase().includes(q)) ||
+          m.cast?.some((c) => c.toLowerCase().includes(q))
+      ).map((m) => ({
+        id: m.id,
+        title: m.title,
+        type: m.type,
+        releaseYear: m.releaseYear || 2024,
+        runtime: m.runtime || '',
+        posterUrl: m.posterUrl,
+        backdropUrl: m.backdropUrl,
+        genres: m.genres,
+        badges: m.badges,
+        overview: m.overview,
+      }));
+    }
+
+    try {
+      const results = await searchHints(query);
+      // Hint results carry little metadata; filter by category when requested.
+      const category = filters?.category;
+      if (category && category !== 'all') {
+        return results.filter((r) => r.type === category);
+      }
+      return results;
+    } catch {
+      return [];
+    }
+  },
+};

@@ -1,31 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  reportPlaybackProgress,
-  reportPlaybackStart,
-  reportPlaybackStopped,
-} from '@/lib/api/jellyfin';
-import {
-  ResolvedStreamSource,
-  buildFallbackSource,
-  buildSubtitleUrl,
-  getDeviceId,
-  resolveStreamSource,
-} from '@/lib/player/streamSource';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { jfFetch, jfUrl, getJellyfinBaseUrl, TICKS_PER_SECOND } from '@/lib/jellyfin/client';
+import { buildDeviceProfile } from '@/lib/player/deviceProfile';
+import { JellyfinPlaybackInfoResponse, JellyfinMediaSource, JellyfinMediaStream, JellyfinBaseItem } from '@/lib/jellyfin/types';
 
-/** A subtitle track the viewer can select. */
 export interface SubtitleTrackOption {
-  /** Jellyfin stream index, or `-1` for Off. */
   index: number;
   label: string;
   language?: string;
-  /** WebVTT URL, absent for burned-in (bitmap) tracks and for Off. */
   src?: string;
   isDefault?: boolean;
 }
 
-/** An audio track the viewer can select. */
 export interface AudioTrackOption {
   index: number;
   label: string;
@@ -35,308 +22,303 @@ export interface AudioTrackOption {
 
 export const SUBTITLES_OFF = -1;
 
-/** How often to report position to Jellyfin while playing. */
-const PROGRESS_REPORT_INTERVAL_MS = 10_000;
-
-/** Bitmap subtitle codecs cannot become text, so they are burned into the video. */
-const BITMAP_SUBTITLE_CODECS = new Set(['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'dvb_subtitle', 'xsub']);
-
 export interface UsePlaybackSessionOptions {
-  /** The Jellyfin item being played (episode id for series). */
   itemId: string | undefined;
-  /** Skip everything when the item already carries a direct video URL. */
   externalUrl?: string;
   enabled?: boolean;
 }
 
 export interface UsePlaybackSessionResult {
-  source: ResolvedStreamSource | null;
+  source: {
+    url: string;
+    method: 'direct' | 'hls';
+    directPlay: boolean;
+    playSessionId: string;
+    transcodingUrl?: string;
+    transcodeReasons?: string[];
+  } | null;
   isResolving: boolean;
   resolveError: string | null;
-  /** Re-negotiate, e.g. after switching audio track. */
+  resumeSeconds: number;
   reload: () => void;
-
   audioTracks: AudioTrackOption[];
   selectedAudioIndex: number | undefined;
+  setAudioTrack: (index: number) => void;
   selectAudioTrack: (index: number) => void;
-
   subtitleTracks: SubtitleTrackOption[];
   selectedSubtitleIndex: number;
+  setSubtitleTrack: (index: number) => void;
   selectSubtitle: (index: number) => void;
-
-  /** Server-side resume position in seconds (0 when none). */
-  resumeSeconds: number;
-
-  /** Progress reporting — call these from the player's transport. */
+  selectedSubtitleSrc: string | null;
+  reportProgress: (positionSeconds: number, isPaused: boolean) => void;
+  reportStart: (positionSeconds: number) => void;
+  reportStop: (positionSeconds: number) => void;
   notifyStarted: (positionSeconds: number) => void;
   notifyProgress: (positionSeconds: number, isPaused: boolean) => void;
-  notifyStopped: (positionSeconds: number) => void;
 }
 
-const secondsToTicks = (seconds: number) => Math.max(0, Math.floor(seconds * 10_000_000));
+function isTextSubtitle(stream: JellyfinMediaStream): boolean {
+  // Only Encode (burn-in) subtitles lack a fetchable text URL.
+  return stream.DeliveryMethod !== 'Encode';
+}
 
-/**
- * Owns everything that has to be negotiated with Jellyfin for one playback:
- * which stream URL to use, which audio/subtitle tracks exist, where to resume
- * from, and reporting position back.
- *
- * It lives outside CinemaPlayer because all four are coupled — changing the
- * audio track requires a new transcode, which means a new source URL, a new
- * play session id, and therefore new progress reports against that id.
- */
-export function usePlaybackSession({
-  itemId,
-  externalUrl,
-  enabled = true,
-}: UsePlaybackSessionOptions): UsePlaybackSessionResult {
-  const [negotiated, setNegotiated] = useState<ResolvedStreamSource | null>(null);
+export function usePlaybackSession(options: UsePlaybackSessionOptions): UsePlaybackSessionResult {
+  const { itemId, externalUrl, enabled = true } = options;
+
+  const [source, setSource] = useState<UsePlaybackSessionResult['source'] | null>(null);
   const [isResolving, setIsResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
-  const [reloadToken, setReloadToken] = useState(0);
-
-  const [selectedAudioIndex, setSelectedAudioIndex] = useState<number | undefined>(undefined);
-  const [selectedSubtitleIndex, setSelectedSubtitleIndex] = useState<number>(SUBTITLES_OFF);
   const [resumeSeconds, setResumeSeconds] = useState(0);
+  const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
+  const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrackOption[]>([]);
+  const [selectedAudioIndex, setAudioIndexState] = useState<number | undefined>(undefined);
+  const [selectedSubtitleIndex, setSubtitleIndexState] = useState<number>(SUBTITLES_OFF);
+  const [reloadCounter, setReloadCounter] = useState(0);
 
-  const deviceId = useMemo(() => getDeviceId(), []);
+  // Overrides for re-negotiation (audio/subtitle switch).
+  const audioIndexRef = useRef<number | undefined>(undefined);
+  const subtitleIndexRef = useRef<number>(SUBTITLES_OFF);
 
-  /**
-   * The source to expose.
-   *
-   * Derived rather than stored so that disabling the hook, or an item that
-   * carries its own URL, resolves to `null` without writing state from an effect.
-   */
-  const source = enabled && itemId && !externalUrl ? negotiated : null;
+  const mediaSourceRef = useRef<JellyfinMediaSource | null>(null);
+  const playSessionIdRef = useRef<string>(`dinustream-${crypto?.randomUUID?.() ?? 'session'}`);
+  const lastReportedRef = useRef<{ ticks: number; at: number }>({ ticks: 0, at: 0 });
 
-  /* Latest source in a ref so the progress reporters and the unmount cleanup can
-     read it without being re-created on every negotiation. */
-  const sourceRef = useRef<ResolvedStreamSource | null>(null);
+  const setAudioTrack = useCallback((index: number) => {
+    audioIndexRef.current = index;
+    setAudioIndexState(index);
+    setReloadCounter((c) => c + 1);
+  }, []);
+
+  const setSubtitleTrack = useCallback((index: number) => {
+    subtitleIndexRef.current = index;
+    setSubtitleIndexState(index);
+    setReloadCounter((c) => c + 1);
+  }, []);
+
+  const reload = useCallback(() => setReloadCounter((c) => c + 1), []);
+
   useEffect(() => {
-    sourceRef.current = source;
-  }, [source]);
+    if (!enabled) return;
+    if (!itemId) {
+      setSource(null);
+      return;
+    }
 
-  const lastReportRef = useRef(0);
-  const hasStartedRef = useRef(false);
-
-  /*
-    Negotiate the stream.
-
-    Re-runs when the item, the chosen audio track, or `reloadToken` changes.
-    Notably it does NOT re-run when the subtitle selection changes: external VTT
-    tracks are attached client-side, so switching them must not restart the
-    transcode. Burned-in tracks are the exception and are handled by an explicit
-    `reload()` from the caller.
-  */
-  useEffect(() => {
-    // Nothing to negotiate. Deliberately does not clear `source` from the effect
-    // body — that is a cascading render; the exported value is derived instead.
-    if (!enabled || !itemId || externalUrl) return;
+    if (externalUrl) {
+      // Curated/demo item: bypass negotiation entirely.
+      setSource({
+        url: externalUrl,
+        method: 'direct',
+        directPlay: true,
+        playSessionId: playSessionIdRef.current,
+      });
+      setResumeSeconds(0);
+      setIsResolving(false);
+      return;
+    }
 
     let cancelled = false;
-
-    void Promise.resolve().then(async () => {
-      if (cancelled) return;
+    (async () => {
       setIsResolving(true);
       setResolveError(null);
-
       try {
-        const resolved = await resolveStreamSource(itemId, {
-          deviceId,
-          audioStreamIndex: selectedAudioIndex,
-          subtitleStreamIndex: selectedSubtitleIndex,
+        // Cap the transcode ladder so a small VM (1 OCPU) can keep up. Defaults
+        // to 20 Mbps; set NEXT_PUBLIC_DEFAULT_MAX_BITRATE lower (e.g. 8-10 Mbps
+        // ≈ 1080p) on constrained hosts for smoother streaming.
+        const maxBitrate = Number(process.env.NEXT_PUBLIC_DEFAULT_MAX_BITRATE) || undefined;
+        const deviceProfile = buildDeviceProfile(maxBitrate ? { maxBitrate } : undefined);
+        const audioIndex = audioIndexRef.current;
+        const subtitleIndex = subtitleIndexRef.current;
+
+        const [info, item] = await Promise.all([
+          jfFetch<JellyfinPlaybackInfoResponse>(`/Items/${itemId}/PlaybackInfo`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              DeviceProfile: deviceProfile,
+              AudioStreamIndex: audioIndex ?? null,
+              SubtitleStreamIndex: subtitleIndex !== SUBTITLES_OFF ? subtitleIndex : null,
+              MaxStreamingBitrate: null,
+              StartTimeTicks: 0,
+              EnableDirectPlay: true,
+              EnableDirectStream: true,
+              EnableTranscoding: true,
+            }),
+          }).catch(() => null),
+          jfFetch<JellyfinBaseItem>(`/Items/${itemId}`).catch(() => null),
+        ]);
+
+        if (cancelled) return;
+
+        const mediaSource = info?.MediaSources?.[0] ?? null;
+        if (!mediaSource) {
+          setSource(null);
+          setResolveError('No playable media source was returned by the server.');
+          return;
+        }
+
+        mediaSourceRef.current = mediaSource;
+        if (info?.PlaySessionId) playSessionIdRef.current = info.PlaySessionId;
+
+        const streams = mediaSource.MediaStreams ?? [];
+        const audio = streams
+          .filter((s) => s.Type === 'Audio')
+          .map((s) => ({
+            index: s.Index ?? 0,
+            label: s.DisplayTitle ?? s.Language ?? `Audio ${(s.Index ?? 0) + 1}`,
+            language: s.Language,
+            isDefault: s.IsDefault,
+          }));
+        const subs = streams
+          .filter((s) => s.Type === 'Subtitle')
+          .map((s) => ({
+            index: s.Index ?? 0,
+            label: s.DisplayTitle ?? s.Language ?? `Subtitle ${(s.Index ?? 0) + 1}`,
+            language: s.Language,
+            isDefault: s.IsDefault,
+            src: isTextSubtitle(s)
+              ? jfUrl(`/Videos/${itemId}/${mediaSource.Id}/Subtitles/${s.Index}/Stream.vtt`)
+              : undefined,
+          }));
+
+        setAudioTracks(audio);
+        setSubtitleTracks(subs);
+
+        // Default audio track selection.
+        if (audioIndexRef.current === undefined) {
+          const defaultIndex = mediaSource.DefaultAudioStreamIndex ?? audio[0]?.index ?? 0;
+          setAudioIndexState(defaultIndex);
+          audioIndexRef.current = defaultIndex;
+        }
+
+        let url: string;
+        let method: 'direct' | 'hls';
+        let directPlay: boolean;
+        let transcodingUrl: string | undefined;
+        const transcodeReasons = mediaSource.TranscodingUrl ? ['Container or codec requires transcoding'] : [];
+
+        if (mediaSource.TranscodingUrl) {
+          method = 'hls';
+          directPlay = false;
+          transcodingUrl = mediaSource.TranscodingUrl;
+          url = getJellyfinBaseUrl() + mediaSource.TranscodingUrl;
+        } else {
+          method = 'direct';
+          directPlay = Boolean(mediaSource.SupportsDirectPlay);
+          url = jfUrl(
+            `/Videos/${itemId}/stream?Static=true&MediaSourceId=${mediaSource.Id}`
+          );
+        }
+
+        setSource({
+          url,
+          method,
+          directPlay,
+          playSessionId: playSessionIdRef.current,
+          transcodingUrl,
+          transcodeReasons,
         });
-        if (cancelled) return;
-        setNegotiated(resolved);
+
+        const positionTicks = item?.UserData?.PlaybackPositionTicks ?? 0;
+        setResumeSeconds(Math.round(positionTicks / TICKS_PER_SECOND));
       } catch (err) {
-        if (cancelled) return;
-        console.error('[PlaybackSession] Stream negotiation failed:', err);
-        /*
-          Fall back to direct play rather than showing nothing. An MP4 will often
-          still work, and if it does not the player's error surface reports it —
-          which is strictly better than the previous silent black frame.
-        */
-        setNegotiated(buildFallbackSource(itemId, deviceId));
-        setResolveError(
-          err instanceof Error ? err.message : 'Could not negotiate a stream with the media server'
-        );
+        if (!cancelled) {
+          setSource(null);
+          setResolveError(err instanceof Error ? err.message : 'Failed to negotiate playback');
+        }
       } finally {
         if (!cancelled) setIsResolving(false);
       }
-    });
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [enabled, itemId, externalUrl, deviceId, selectedAudioIndex, reloadToken]);
+  }, [itemId, externalUrl, enabled, reloadCounter]);
 
-  /* Server-side resume position. */
-  useEffect(() => {
-    if (!enabled || !itemId) return;
-    let cancelled = false;
-
-    void fetch(`/api/jellyfin/items/${encodeURIComponent(itemId)}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((item) => {
-        if (cancelled || !item) return;
-        const ticks = item?.UserData?.PlaybackPositionTicks ?? 0;
-        setResumeSeconds(Math.floor(ticks / 10_000_000));
-      })
-      .catch(() => {
-        /* No resume information available. */
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, itemId]);
-
-  /** Derive the selectable audio tracks from the negotiated source. */
-  const audioTracks = useMemo<AudioTrackOption[]>(() => {
-    const streams = source?.mediaStreams ?? [];
-    return streams
-      .filter((s) => s.Type === 'Audio')
-      .map((s) => ({
-        index: s.Index,
-        label: s.DisplayTitle || s.Title || s.Language?.toUpperCase() || `Audio ${s.Index}`,
-        language: s.Language,
-        isDefault: s.IsDefault,
-      }));
-  }, [source]);
-
-  /**
-   * Subtitle options, always led by Off.
-   *
-   * Text-based tracks get a WebVTT URL that becomes a `<track>` element. Bitmap
-   * tracks (PGS on Blu-ray rips, DVBSUB on broadcast captures) have no text to
-   * extract, so they carry no `src` — the player marks them as requiring a
-   * restart and re-negotiates with Jellyfin burning them into the picture.
-   */
-  const subtitleTracks = useMemo<SubtitleTrackOption[]>(() => {
-    const off: SubtitleTrackOption = { index: SUBTITLES_OFF, label: 'Off' };
-    if (!source || !itemId) return [off];
-
-    const tracks = source.mediaStreams
-      .filter((s) => s.Type === 'Subtitle')
-      .map<SubtitleTrackOption>((s) => {
-        const codec = (s.Codec || '').toLowerCase();
-        const isBitmap = BITMAP_SUBTITLE_CODECS.has(codec);
-        return {
-          index: s.Index,
-          label: s.DisplayTitle || s.Title || s.Language?.toUpperCase() || `Subtitle ${s.Index}`,
-          language: s.Language,
-          isDefault: s.IsDefault,
-          src: isBitmap ? undefined : buildSubtitleUrl(itemId, source.mediaSourceId, s.Index),
-        };
-      });
-
-    return [off, ...tracks];
-  }, [source, itemId]);
-
-  const selectAudioTrack = useCallback((index: number) => {
-    // Triggers re-negotiation: a different audio track is a different transcode.
-    setSelectedAudioIndex(index);
-  }, []);
-
-  const selectSubtitle = useCallback((index: number) => {
-    setSelectedSubtitleIndex(index);
-  }, []);
-
-  const reload = useCallback(() => setReloadToken((t) => t + 1), []);
-
-  const notifyStarted = useCallback(
-    (positionSeconds: number) => {
-      const current = sourceRef.current;
-      if (!itemId || !current || hasStartedRef.current) return;
-      hasStartedRef.current = true;
-      void reportPlaybackStart({
-        itemId,
-        positionTicks: secondsToTicks(positionSeconds),
-        playSessionId: current.playSessionId,
-        mediaSourceId: current.mediaSourceId,
-        audioStreamIndex: selectedAudioIndex,
-        subtitleStreamIndex: selectedSubtitleIndex >= 0 ? selectedSubtitleIndex : undefined,
-      });
+  // -------------------------------------------------------------------------
+  // Playstate reporting (debounced progress, immediate start/stop)
+  // -------------------------------------------------------------------------
+  const postPlaystate = useCallback(
+    (path: string, body: Record<string, unknown>) => {
+      const ms = mediaSourceRef.current;
+      if (!itemId) return;
+      jfFetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ItemId: itemId,
+          MediaSourceId: ms?.Id ?? null,
+          PlaySessionId: playSessionIdRef.current,
+          PlayMethod: source?.method === 'hls' ? 'Transcode' : 'DirectPlay',
+          ...body,
+        }),
+      }).catch(() => {});
     },
-    [itemId, selectedAudioIndex, selectedSubtitleIndex]
+    [itemId, source?.method]
   );
 
-  const notifyProgress = useCallback(
-    (positionSeconds: number, isPaused: boolean) => {
-      const current = sourceRef.current;
-      if (!itemId || !current) return;
+  const reportStart = useCallback(
+    (positionSeconds: number) => {
+      postPlaystate('/Sessions/Playing', {
+        PositionTicks: Math.round(positionSeconds * TICKS_PER_SECOND),
+        CanSeek: true,
+        IsPaused: false,
+      });
+    },
+    [postPlaystate]
+  );
 
-      // Throttled: `timeupdate` fires ~4x/second and Jellyfin does not need that.
+  const reportStop = useCallback(
+    (positionSeconds: number) => {
+      postPlaystate('/Sessions/Playing/Stopped', {
+        PositionTicks: Math.round(positionSeconds * TICKS_PER_SECOND),
+      });
+    },
+    [postPlaystate]
+  );
+
+  const reportProgress = useCallback(
+    (positionSeconds: number, isPaused: boolean) => {
+      const ticks = Math.round(positionSeconds * TICKS_PER_SECOND);
       const now = Date.now();
-      if (!isPaused && now - lastReportRef.current < PROGRESS_REPORT_INTERVAL_MS) return;
-      lastReportRef.current = now;
-
-      void reportPlaybackProgress(
-        itemId,
-        secondsToTicks(positionSeconds),
-        isPaused,
-        current.playSessionId,
-        current.mediaSourceId
-      );
+      const last = lastReportedRef.current;
+      // Throttle to once per 5s, always flush on pause.
+      if (!isPaused && now - last.at < 5000) return;
+      lastReportedRef.current = { ticks, at: now };
+      postPlaystate('/Sessions/Playing/Progress', {
+        PositionTicks: ticks,
+        IsPaused: isPaused,
+        EventName: 'timeupdate',
+      });
     },
-    [itemId]
+    [postPlaystate]
   );
 
-  const notifyStopped = useCallback(
-    (positionSeconds: number) => {
-      const current = sourceRef.current;
-      if (!itemId || !current) return;
-      hasStartedRef.current = false;
-      void reportPlaybackStopped(itemId, secondsToTicks(positionSeconds), current.playSessionId);
-    },
-    [itemId]
-  );
-
-  /*
-    Tear the server-side session down on unmount.
-
-    Read from refs because this must run exactly once, at unmount, with whatever
-    the final position was — adding them as dependencies would fire a "stopped"
-    report on every position change.
-  */
-  const finalPositionRef = useRef(0);
-  const notifyStoppedRef = useRef(notifyStopped);
-  useEffect(() => {
-    notifyStoppedRef.current = notifyStopped;
-  }, [notifyStopped]);
-
-  useEffect(() => {
-    return () => {
-      notifyStoppedRef.current(finalPositionRef.current);
-    };
-  }, []);
-
-  /* Expose a setter for the latest position without causing renders. */
-  const trackFinalPosition = useCallback((positionSeconds: number) => {
-    finalPositionRef.current = positionSeconds;
-  }, []);
-
-  const notifyProgressAndTrack = useCallback(
-    (positionSeconds: number, isPaused: boolean) => {
-      trackFinalPosition(positionSeconds);
-      notifyProgress(positionSeconds, isPaused);
-    },
-    [notifyProgress, trackFinalPosition]
-  );
+  const selectedSubtitleSrc = useMemo(() => {
+    const track = subtitleTracks.find((t) => t.index === selectedSubtitleIndex);
+    return track?.src ?? null;
+  }, [subtitleTracks, selectedSubtitleIndex]);
 
   return {
     source,
     isResolving,
     resolveError,
+    resumeSeconds,
     reload,
     audioTracks,
     selectedAudioIndex,
-    selectAudioTrack,
+    setAudioTrack,
+    selectAudioTrack: setAudioTrack,
     subtitleTracks,
     selectedSubtitleIndex,
-    selectSubtitle,
-    resumeSeconds,
-    notifyStarted,
-    notifyProgress: notifyProgressAndTrack,
-    notifyStopped,
+    setSubtitleTrack,
+    selectSubtitle: setSubtitleTrack,
+    selectedSubtitleSrc,
+    reportProgress,
+    reportStart,
+    reportStop,
+    notifyStarted: reportStart,
+    notifyProgress: reportProgress,
   };
 }

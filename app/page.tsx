@@ -17,6 +17,7 @@ import { CinemaHomeSkeleton } from '@/components/media/CinemaHomeSkeleton';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { mediaService } from '@/lib/services/mediaService';
 import { mediaCache } from '@/lib/cache/mediaCache';
+import { refreshLibrary } from '@/lib/jellyfin/queries';
 import { MediaItem } from '@/types/cinema';
 import { Play, Zap, Film, Sparkles, Tv, Star, Flame, Bookmark, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -82,6 +83,11 @@ export default function CinemaHomePage() {
     }
     setError(null);
     try {
+      // "Refresh Vault" = ask Jellyfin to rescan libraries first, so newly
+      // added titles actually appear (movies are never auto-discovered).
+      if (forceRefresh && process.env.NEXT_PUBLIC_DEMO_MODE !== '1') {
+        await refreshLibrary().catch(() => {});
+      }
       const [featured, moviesData, seriesData, recentData, newMoviesData] = await Promise.all([
         mediaService.getFeaturedItems(7, forceRefresh),
         mediaService.getMovies(50, forceRefresh),

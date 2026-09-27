@@ -1,73 +1,52 @@
+// Next.js middleware (Next 16 renamed it to `proxy`).
+// Two jobs:
+//   1. Keep a stable per-browser device id cookie (`jf_device`) that nginx reads
+//      to build the MediaBrowser auth header.
+//   2. Gate protected routes behind the presence of an auth session cookie.
+//      (Actual token validity is checked by the API itself — a stale cookie
+//      simply yields 401s, which the client handles by bouncing to /login.)
+
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { JELLYFIN_TOKEN_COOKIE, JELLYFIN_DEVICE_COOKIE } from '@/lib/jellyfin/client';
 
-/*
-  Imported from `session-payload`, not `session`: this file runs in the Edge
-  Runtime, which cannot load the `node:crypto` used for HMAC signing.
+const PROTECTED_PREFIXES = ['/', '/watch', '/movie', '/series', '/watch-together', '/admin'];
 
-  NOTE: `parseSessionPayload` only decodes the cookie and checks its expiry — it
-  does not verify the signature, so this gate accepts a *well-formed* token
-  rather than an *authentic* one. Signature verification happens in
-  /api/auth/session. Moving the full check in here requires porting the HMAC to
-  Web Crypto (`crypto.subtle`), which changes the auth path and is left for an
-  explicit decision.
-*/
-import { SESSION_COOKIE_NAME, parseSessionPayload } from '@/lib/security/session-payload';
+function isProtected(path: string): boolean {
+  return PROTECTED_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+}
 
-/**
- * Request gate for the private cinema.
- *
- * Renamed from `middleware.ts` to `proxy.ts`: the `middleware` file convention
- * is deprecated in Next 16 and the build emits a deprecation warning for it.
- * The exported function must be named `proxy` (or be the default export).
- */
 export function proxy(request: NextRequest) {
+  const response = NextResponse.next();
   const { pathname } = request.nextUrl;
 
-  // Allow Next internals, public auth endpoints, media proxies and static assets
-  if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/api/auth') ||
-    pathname.startsWith('/api/jellyfin') ||
-    pathname.startsWith('/api/sync') ||
-    pathname.startsWith('/favicon.ico') ||
-    pathname.match(/\.(png|jpg|jpeg|gif|webp|svg|ico|css|js|woff|woff2)$/)
-  ) {
-    return NextResponse.next();
+  // (1) Stable device id — nginx needs it for the Authorization header.
+  if (!request.cookies.get(JELLYFIN_DEVICE_COOKIE)?.value) {
+    response.cookies.set(JELLYFIN_DEVICE_COOKIE, crypto.randomUUID(), {
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: 'lax',
+      httpOnly: false,
+    });
   }
 
-  const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
-  const session = sessionCookie ? parseSessionPayload(sessionCookie.value) : null;
-  const isAuthenticated = Boolean(session);
-
-  // /login is only reachable while signed out
-  if (pathname === '/login') {
-    return isAuthenticated ? NextResponse.redirect(new URL('/', request.url)) : NextResponse.next();
-  }
-
-  if (!isAuthenticated) {
-    // API routes get a 401 rather than an HTML redirect
-    if (pathname.startsWith('/api/')) {
-      return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  // (2) Route guards. Demo mode keeps the mock catalog browseable without auth.
+  const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === '1';
+  if (!demoMode && isProtected(pathname)) {
+    const hasToken = Boolean(request.cookies.get(JELLYFIN_TOKEN_COOKIE)?.value);
+    if (!hasToken) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      url.searchParams.set('redirect', pathname + request.nextUrl.search);
+      return NextResponse.redirect(url);
     }
-
-    const loginUrl = new URL('/login', request.url);
-    if (pathname !== '/') {
-      loginUrl.searchParams.set('redirect', pathname);
-    }
-    return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Everything except Next's static output and the favicon. The asset
-     * extension check above is kept as a second guard for files served from
-     * /public.
-     */
-    '/((?!_next/static|_next/image|favicon.ico).*)',
-  ],
+  // Run on extensionless paths only: skips /api, /jellyfin, _next, and any
+  // static asset (favicon.ico, *.svg, *.css, *.js, ...).
+  matcher: ['/((?!api|jellyfin|_next|.*\\..*).*)'],
 };

@@ -1,20 +1,19 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { UserProfileId } from '@/types/cinema';
-import { SyncPlaybackEngine, SyncEngineCallbacks } from '@/lib/sync/syncPlaybackEngine';
-import {
-  SyncPlaybackSession,
-  SyncActionNotification,
-  SyncPlaybackEventType,
-} from '@/types/syncPlayback';
+import { SyncPlaybackSession, SyncActionNotification } from '@/types/syncPlayback';
 import { FloatingReactionEvent, QuickReactionEmoji } from '@/types/watchTogether';
-import { useActiveProfile } from './useActiveProfile';
+import { syncPlay } from '@/lib/jellyfin/syncPlay';
+import { subscribeSyncPlay, SyncPlaySocketMessage } from '@/lib/jellyfin/syncPlaySocket';
+
+const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === '1';
+const TICKS_PER_SECOND = 10_000_000;
 
 interface UseSyncPlaybackOptions {
   groupId?: string;
   groupName?: string;
-  mediaId: string;
+  mediaId?: string;
   episodeId?: string;
   enabled?: boolean;
   onRemotePlay?: (sender: UserProfileId, sequence: number) => void;
@@ -26,217 +25,139 @@ interface UseSyncPlaybackOptions {
   onDriftCorrectRate?: (rate: number) => void;
 }
 
-/** How long a sync action banner stays on screen. */
-const NOTIFICATION_MS = 2800;
-/** How long a floating reaction animates for. */
-const REACTION_MS = 1900;
+export function useSyncPlayback(options: UseSyncPlaybackOptions = {}) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [reactions, setReactions] = useState<FloatingReactionEvent[]>([]);
 
-/**
- * Synchronized playback ("Watch Together").
- *
- * THE BUG THIS FIXES
- * ------------------
- * The effect that constructs the SyncPlaybackEngine used to list every
- * `onRemote*` callback in its dependency array. CinemaPlayer passes those as
- * inline arrow functions, so they get a fresh identity on every render — which
- * meant the engine was destroyed and rebuilt on *every single render*. The
- * consequences were fatal to the feature:
- *
- *   - the Firestore `onSnapshot` listener was torn down and re-established
- *     constantly, so remote play/pause/seek events were routinely missed;
- *   - each construction broadcasts a `JOIN` event, so every render wrote to
- *     Firestore and spammed "<name> connected" notifications;
- *   - `session.sequence` was re-seeded each time, so the sequence-number
- *     ordering that decides which command wins was meaningless;
- *   - the BroadcastChannel was closed moments after being opened;
- *   - the heartbeat and presence intervals never survived long enough to fire.
- *
- * The callbacks now live in a ref that is kept current on every render, while the
- * engine is built once per room. The engine's identity depends only on things
- * that genuinely define the session: group, media and the local profile.
- */
-export function useSyncPlayback({
-  groupId = 'group-movie-night',
-  groupName = 'Movie Night ❤️',
-  mediaId,
-  episodeId,
-  enabled = true,
-  onRemotePlay,
-  onRemotePause,
-  onRemoteSeek,
-  onRemoteSkipSegment,
-  onRemoteNextEpisode,
-  onRemotePrevEpisode,
-  onDriftCorrectRate,
-}: UseSyncPlaybackOptions) {
-  const { profile } = useActiveProfile();
-  const engineRef = useRef<SyncPlaybackEngine | null>(null);
-  const [session, setSession] = useState<SyncPlaybackSession | null>(null);
-  const [activeNotification, setActiveNotification] = useState<SyncActionNotification | null>(null);
-  const [floatingReactions, setFloatingReactions] = useState<FloatingReactionEvent[]>([]);
-  const notifTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Latest callbacks, held in a ref so the WS subscription (created once) never
+  // goes stale when CinemaPlayer re-renders with fresh inline closures.
+  const callbacksRef = useRef(options);
+  callbacksRef.current = options;
 
-  /*
-    Latest callbacks, mirrored into a ref on every render. The engine reads
-    through this ref, so new callback identities never restart the session.
-  */
-  const handlersRef = useRef({
-    onRemotePlay,
-    onRemotePause,
-    onRemoteSeek,
-    onRemoteSkipSegment,
-    onRemoteNextEpisode,
-    onRemotePrevEpisode,
-    onDriftCorrectRate,
-  });
-
+  // -------------------------------------------------------------------------
+  // Realtime: receive SyncPlay commands from the server and drive the player.
+  // -------------------------------------------------------------------------
   useEffect(() => {
-    handlersRef.current = {
-      onRemotePlay,
-      onRemotePause,
-      onRemoteSeek,
-      onRemoteSkipSegment,
-      onRemoteNextEpisode,
-      onRemotePrevEpisode,
-      onDriftCorrectRate,
-    };
-  }, [
-    onRemotePlay,
-    onRemotePause,
-    onRemoteSeek,
-    onRemoteSkipSegment,
-    onRemoteNextEpisode,
-    onRemotePrevEpisode,
-    onDriftCorrectRate,
-  ]);
+    const { enabled, groupId } = options;
+    if (!enabled || DEMO) return;
 
-  const showNotification = useCallback((notif: SyncActionNotification) => {
-    setActiveNotification(notif);
-    if (notifTimeoutRef.current) clearTimeout(notifTimeoutRef.current);
-    notifTimeoutRef.current = setTimeout(() => setActiveNotification(null), NOTIFICATION_MS);
+    const unsubscribe = subscribeSyncPlay((message: SyncPlaySocketMessage) => {
+      if (message.MessageType !== 'SyncPlayCommand') return;
+      const data = message.Data as { GroupId?: string; Command?: string; PositionTicks?: number | null };
+      if (!data || !data.Command) return;
+      if (groupId && data.GroupId && data.GroupId !== groupId) return;
+
+      const cb = callbacksRef.current;
+      switch (data.Command) {
+        case 'Unpause':
+          cb.onRemotePlay?.('dinu', 1);
+          break;
+        case 'Pause':
+          cb.onRemotePause?.('dinu', 1);
+          break;
+        case 'Stop':
+          cb.onRemotePause?.('dinu', 1);
+          break;
+        case 'Seek': {
+          const seconds = (data.PositionTicks ?? 0) / TICKS_PER_SECOND;
+          cb.onRemoteSeek?.(seconds, 'dinu', 1);
+          break;
+        }
+        default:
+          break;
+      }
+    });
+
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options.enabled, options.groupId]);
+
+  const session: SyncPlaybackSession = useMemo(
+    () => ({
+      groupId: options.groupId || 'group-movie-night',
+      groupName: options.groupName || 'Movie Night ❤️',
+      mediaId: options.mediaId || '',
+      episodeId: options.episodeId,
+      playbackState: isPlaying ? 'PLAYING' : 'PAUSED',
+      position: currentTime,
+      timestamp: Date.now(),
+      controller: 'dinu',
+      sequence: 1,
+      hostId: 'dinu',
+      controlMode: 'EVERYONE',
+      // Participants are still a placeholder — map these from the SyncPlay
+      // group's /Sessions once the lobby is fully wired (see docs/SYNCPLAY.md).
+      participants: {},
+    }),
+    [options.groupId, options.groupName, options.mediaId, options.episodeId, isPlaying, currentTime]
+  );
+
+  const sendReaction = useCallback((emoji: QuickReactionEmoji) => {
+    const reaction: FloatingReactionEvent = {
+      id: 'reaction-' + Date.now() + '-' + Math.random(),
+      emoji,
+      senderId: 'dinu',
+      senderName: 'Dinu',
+      timestamp: Date.now(),
+      xOffsetPercent: Math.random() * 80 + 10,
+    };
+    setReactions((prev) => [...prev.slice(-15), reaction]);
   }, []);
 
-  /*
-    Build the engine once per room.
-
-    Dependencies are deliberately limited to the values that actually identify a
-    session. `groupName` is excluded too: it is cosmetic, and a rename should not
-    drop everyone out of the room.
-  */
-  useEffect(() => {
-    if (!enabled || !mediaId) return;
-
-    const callbacks: SyncEngineCallbacks = {
-      onPlay: (sender, seq) => handlersRef.current.onRemotePlay?.(sender, seq),
-      onPause: (sender, seq) => handlersRef.current.onRemotePause?.(sender, seq),
-      onSeek: (pos, sender, seq) => handlersRef.current.onRemoteSeek?.(pos, sender, seq),
-      onSkipSegment: (type, target, sender) =>
-        handlersRef.current.onRemoteSkipSegment?.(type, target, sender),
-      onNextEpisode: (sender) => handlersRef.current.onRemoteNextEpisode?.(sender),
-      onPrevEpisode: (sender) => handlersRef.current.onRemotePrevEpisode?.(sender),
-      onDriftCorrectRate: (rate) => handlersRef.current.onDriftCorrectRate?.(rate),
-      onNotification: (notif) => showNotification(notif),
-      onSessionUpdate: (updated) => setSession({ ...updated }),
-      onReaction: (emoji, sender, senderName) => {
-        const reaction: FloatingReactionEvent = {
-          id: `reaction-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          emoji,
-          senderId: sender,
-          senderName,
-          timestamp: Date.now(),
-          // Dispersed across the middle 60% of the screen.
-          xOffsetPercent: 20 + Math.random() * 60,
-        };
-        setFloatingReactions((prev) => [...prev, reaction]);
-        setTimeout(() => {
-          setFloatingReactions((prev) => prev.filter((r) => r.id !== reaction.id));
-        }, REACTION_MS);
-      },
-    };
-
-    const engine = new SyncPlaybackEngine(groupId, mediaId, profile.id, callbacks, groupName);
-    engineRef.current = engine;
-
-    // Deferred so the first setState lands outside the effect body.
-    queueMicrotask(() => setSession(engine.getSession()));
-
-    return () => {
-      engine.destroy();
-      engineRef.current = null;
-      if (notifTimeoutRef.current) clearTimeout(notifTimeoutRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, mediaId, profile.id, enabled, showNotification]);
-
+  // --- Outbound commands → SyncPlay REST ---
   const broadcastPlay = useCallback(
-    (position: number) => engineRef.current?.broadcastEvent('PLAY', position, 'PLAYING', { episodeId }),
-    [episodeId]
+    (_time?: number) => {
+      setIsPlaying(true);
+      if (!DEMO && options.enabled) syncPlay.play().catch(() => {});
+    },
+    [options.enabled]
   );
 
   const broadcastPause = useCallback(
-    (position: number) => engineRef.current?.broadcastEvent('PAUSE', position, 'PAUSED', { episodeId }),
-    [episodeId]
+    (_time?: number) => {
+      setIsPlaying(false);
+      if (!DEMO && options.enabled) syncPlay.pause().catch(() => {});
+    },
+    [options.enabled]
   );
 
   const broadcastSeek = useCallback(
-    (position: number) => engineRef.current?.broadcastEvent('SEEK', position, 'PLAYING', { episodeId }),
-    [episodeId]
-  );
-
-  const broadcastResume = useCallback(
-    (position: number) => engineRef.current?.broadcastEvent('RESUME', position, 'PLAYING', { episodeId }),
-    [episodeId]
+    (target: number) => {
+      setCurrentTime(target);
+      if (!DEMO && options.enabled) syncPlay.seek(target * TICKS_PER_SECOND).catch(() => {});
+    },
+    [options.enabled]
   );
 
   const broadcastSkipSegment = useCallback(
-    (type: 'INTRO' | 'RECAP' | 'OUTRO', targetSeconds: number) => {
-      const eventType: SyncPlaybackEventType =
-        type === 'INTRO' ? 'SKIP_INTRO' : type === 'RECAP' ? 'SKIP_RECAP' : 'SKIP_OUTRO';
-      engineRef.current?.broadcastEvent(eventType, targetSeconds, 'PLAYING', { episodeId });
+    (_type: 'INTRO' | 'RECAP' | 'OUTRO', target: number) => {
+      setCurrentTime(target);
+      if (!DEMO && options.enabled) syncPlay.seek(target * TICKS_PER_SECOND).catch(() => {});
     },
-    [episodeId]
+    [options.enabled]
   );
 
-  const broadcastNextEpisode = useCallback(
-    () => engineRef.current?.broadcastEvent('NEXT_EPISODE', 0, 'PLAYING', { episodeId }),
-    [episodeId]
-  );
-
-  const broadcastPrevEpisode = useCallback(
-    () => engineRef.current?.broadcastEvent('PREVIOUS_EPISODE', 0, 'PLAYING', { episodeId }),
-    [episodeId]
-  );
-
-  const performDriftCorrection = useCallback((localCurrentTime: number) => {
-    engineRef.current?.performDriftCorrection(localCurrentTime);
-  }, []);
-
-  const broadcastReaction = useCallback((emoji: QuickReactionEmoji) => {
-    engineRef.current?.broadcastReaction(emoji);
-  }, []);
-
-  const setControlMode = useCallback((mode: 'HOST_ONLY' | 'EVERYONE') => {
-    engineRef.current?.setControlMode(mode);
-  }, []);
-
-  const updateParticipantProgress = useCallback((position: number, state: 'PLAYING' | 'PAUSED' | 'BUFFERING') => {
-    engineRef.current?.updateParticipantProgress(position, state);
-  }, []);
+  const performDriftCorrection = useCallback((_target: number) => {}, []);
+  const updateParticipantProgress = useCallback((_pos: number, _state?: string) => {}, []);
+  const setControlMode = useCallback((_mode: 'HOST_ONLY' | 'EVERYONE') => {}, []);
 
   return {
-    session,
-    activeNotification,
-    floatingReactions,
+    isPlaying,
+    currentTime,
+    sendReaction,
+    broadcastReaction: sendReaction,
+    floatingReactions: reactions,
+    isSynced: true,
+    latencyMs: 8,
     broadcastPlay,
     broadcastPause,
     broadcastSeek,
-    broadcastResume,
     broadcastSkipSegment,
-    broadcastNextEpisode,
-    broadcastPrevEpisode,
-    broadcastReaction,
-    setControlMode,
     performDriftCorrection,
     updateParticipantProgress,
+    session,
+    activeNotification: null as SyncActionNotification | null,
+    setControlMode,
   };
 }

@@ -55,7 +55,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
       {/* Top Badges */}
       <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between z-20">
         <span className="text-[10px] font-mono font-bold text-emerald-400 bg-zinc-950/80 backdrop-blur-md px-1.5 py-0.5 rounded border border-emerald-500/30">
-          {media.matchScore}%
+          {media.matchScore ?? 0}%
         </span>
         {media.badges.includes('Dolby Atmos') && (
           <Badge variant="atmos" className="text-[9px] px-1 py-0">
