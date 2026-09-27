@@ -122,7 +122,7 @@ function WatchContent() {
         if (cancelled) return;
         // Kick the background Drive -> SSD copy regardless of the ad path, so
         // the next watch is instant.
-        if (filename) void startSync(filename).catch(() => {});
+        if (filename) void startSync(filename, isMovie ? 'movie' : 'show').catch(() => {});
 
         if (!isMovie || isWatchParty || !filename || hasSeenAd(id)) {
           setGate('play');

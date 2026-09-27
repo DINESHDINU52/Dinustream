@@ -23,23 +23,29 @@ function prettyTitle(filename: string): string {
  * Resolution / audio are unknown from the filename, so they show as "—"; the
  * filename is the identity used for delete.
  */
-function toCachedMedia(file: { filename: string; sizeBytes: number; modifiedAt: string }): CachedMedia {
+function toCachedMedia(file: {
+  filename: string;
+  kind: 'movie' | 'show';
+  sizeBytes: number;
+  modifiedAt: string;
+}): CachedMedia {
   let when = '—';
   if (file.modifiedAt) {
     const d = new Date(file.modifiedAt);
     if (!Number.isNaN(d.getTime())) when = d.toLocaleString();
   }
+  const isShow = file.kind === 'show';
   return {
     id: file.filename,
     title: prettyTitle(file.filename),
-    mediaType: 'movie',
+    mediaType: isShow ? 'series' : 'movie',
     sizeGb: Number((file.sizeBytes / 1e9).toFixed(2)),
     resolution: '—',
     audioFormat: '—',
     cachedAt: when,
     lastAccessed: when,
     posterUrl: '',
-    cacheLocation: `/opt/dinustream/cache/movies/${file.filename}`,
+    cacheLocation: `/opt/dinustream/cache/${isShow ? 'shows' : 'movies'}/${file.filename}`,
   };
 }
 
@@ -83,7 +89,10 @@ export default function AdminPage() {
 
   const handleRemoveFromCache = async (id: string) => {
     // id is the on-disk filename for real cache entries.
-    await deleteCachedFile(id);
+    const entry = cachedMedia.find((m) => m.id === id);
+    const kind: 'movie' | 'show' =
+      entry?.mediaType === 'series' || entry?.mediaType === 'episode' ? 'show' : 'movie';
+    await deleteCachedFile(id, kind);
     await loadCache();
   };
 

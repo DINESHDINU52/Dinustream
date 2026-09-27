@@ -154,14 +154,14 @@ export async function getSyncStatus(filename: string): Promise<SyncStatusRespons
   }
 }
 
-export async function startSync(filename: string): Promise<boolean> {
+export async function startSync(filename: string, kind: 'movie' | 'show' = 'movie'): Promise<boolean> {
   if (DEMO || !filename) return true;
   try {
     const res = await fetch(`${BASE}/sync/movie`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename }),
+      body: JSON.stringify({ filename, kind }),
     });
     return res.ok;
   } catch {
@@ -170,17 +170,18 @@ export async function startSync(filename: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// Cache inventory (admin panel): list + delete the movies on the local SSD.
+// Cache inventory (admin panel): list + delete the movies/shows on the SSD.
 // ---------------------------------------------------------------------------
 
 export interface CachedFile {
   filename: string;
+  kind: 'movie' | 'show';
   sizeBytes: number;
   modifiedAt: string;
 }
 
 /**
- * Every movie currently cached on the local SSD (daemon `GET /cache/list`).
+ * Every file currently cached on the local SSD (daemon `GET /cache/list`).
  * Returns [] in demo mode or when the daemon is unreachable, so the admin
  * panel shows an empty state instead of throwing.
  */
@@ -195,6 +196,7 @@ export async function listCachedFiles(): Promise<CachedFile[]> {
       .filter((i: Record<string, unknown>) => typeof i?.filename === 'string')
       .map((i: Record<string, unknown>) => ({
         filename: String(i.filename),
+        kind: String(i.kind ?? 'movie') === 'show' ? 'show' : 'movie',
         sizeBytes: Number(i.sizeBytes ?? 0),
         modifiedAt: String(i.modifiedAt ?? ''),
       }));
@@ -203,15 +205,15 @@ export async function listCachedFiles(): Promise<CachedFile[]> {
   }
 }
 
-/** Delete one cached movie so the next play re-pulls it from Drive. */
-export async function deleteCachedFile(filename: string): Promise<boolean> {
+/** Delete one cached file so the next play re-pulls it from Drive. */
+export async function deleteCachedFile(filename: string, kind: 'movie' | 'show' = 'movie'): Promise<boolean> {
   if (DEMO || !filename) return true;
   try {
     const res = await fetch(`${BASE}/cache/delete`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename }),
+      body: JSON.stringify({ filename, kind }),
     });
     return res.ok;
   } catch {
