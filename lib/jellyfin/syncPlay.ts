@@ -96,6 +96,29 @@ export const syncPlay = {
     return post('PreviousItem', { PlaylistItemId: playlistItemId });
   },
 
+  // --- group wait & readiness (prevents Jellyfin's 30s group wait deadline) ---
+  setIgnoreWait(ignoreWait = true): Promise<void> {
+    return post('SetIgnoreWait', { IgnoreWait: ignoreWait });
+  },
+
+  ready(positionTicks = 0, isPlaying = true, playlistItemId?: string): Promise<void> {
+    return post('Ready', {
+      When: new Date().toISOString(),
+      PositionTicks: Math.round(positionTicks),
+      IsPlaying: isPlaying,
+      PlaylistItemId: playlistItemId || '00000000-0000-0000-0000-000000000000',
+    });
+  },
+
+  buffering(isBuffering: boolean, positionTicks = 0, isPlaying = true): Promise<void> {
+    return post('Buffering', {
+      When: new Date().toISOString(),
+      PositionTicks: Math.round(positionTicks),
+      IsPlaying: isPlaying,
+      PlaylistItemId: '00000000-0000-0000-0000-000000000000',
+    });
+  },
+
   ping(pingMs: number): Promise<void> {
     return post('Ping', { Ping: pingMs });
   },

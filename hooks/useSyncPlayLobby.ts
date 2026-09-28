@@ -148,6 +148,7 @@ export function useSyncPlayLobby(onEvent?: SyncPlayLobbyListener) {
       setGroupInfo(info);
       setServerState(info.State);
       emit({ type: 'host_created', message: `You created "${info.GroupName}". Share the invite link to bring others in.` });
+      void syncPlay.setIgnoreWait(true).catch(() => {});
       return info;
     },
     [emit]
@@ -158,6 +159,7 @@ export function useSyncPlayLobby(onEvent?: SyncPlayLobbyListener) {
       await syncPlay.joinGroup(gid);
       groupIdRef.current = gid;
       setGroupId(gid);
+      void syncPlay.setIgnoreWait(true).catch(() => {});
       void refresh(gid);
     },
     [refresh]

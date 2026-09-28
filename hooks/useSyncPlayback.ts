@@ -45,15 +45,23 @@ export function useSyncPlayback(options: UseSyncPlaybackOptions = {}) {
     const gid = options.groupId;
     let active = true;
 
-    syncPlay.joinGroup(gid).catch((err) => {
-      console.warn('[useSyncPlayback] Failed to join SyncPlay group:', err);
-    });
+    syncPlay
+      .joinGroup(gid)
+      .then(() => {
+        return Promise.all([
+          syncPlay.setIgnoreWait(true),
+          syncPlay.ready(0, true),
+        ]);
+      })
+      .catch((err) => {
+        console.warn('[useSyncPlayback] Failed to join SyncPlay group:', err);
+      });
 
     const pingInterval = setInterval(() => {
       if (active) {
         syncPlay.ping(20).catch(() => {});
       }
-    }, 10_000);
+    }, 5_000);
 
     return () => {
       active = false;
@@ -266,7 +274,20 @@ export function useSyncPlayback(options: UseSyncPlaybackOptions = {}) {
   );
 
   const performDriftCorrection = useCallback((_target: number) => {}, []);
-  const updateParticipantProgress = useCallback((_pos: number, _state?: string) => {}, []);
+  const updateParticipantProgress = useCallback(
+    (pos: number, state?: string) => {
+      if (!DEMO && options.enabled && options.groupId) {
+        if (state === 'PLAYING') {
+          syncPlay.ready(pos * TICKS_PER_SECOND, true).catch(() => {});
+        } else if (state === 'BUFFERING') {
+          syncPlay.buffering(true, pos * TICKS_PER_SECOND, false).catch(() => {});
+        } else if (state === 'PAUSED') {
+          syncPlay.ready(pos * TICKS_PER_SECOND, false).catch(() => {});
+        }
+      }
+    },
+    [options.enabled, options.groupId]
+  );
   const setControlMode = useCallback((_mode: 'HOST_ONLY' | 'EVERYONE') => {}, []);
 
   return {

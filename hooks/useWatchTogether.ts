@@ -11,6 +11,7 @@ import {
 import { MediaItem, UserProfileId } from '@/types/cinema';
 import { MOCK_WATCH_GROUP } from '@/lib/mock-data';
 import { useSyncPlayLobby, SyncPlayLobbyEvent } from './useSyncPlayLobby';
+import { syncPlay } from '@/lib/jellyfin/syncPlay';
 
 const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === '1';
 
@@ -316,15 +317,7 @@ export function useWatchTogether(groupId: string = 'cinema-suite-alpha') {
       const movieId = group?.selectedMovie?.id || group?.queue?.[0]?.movieId;
       const gid = group?.id;
 
-      if (!DEMO && movieId) {
-        try {
-          await lobby.queueItems([movieId]);
-          await lobby.play();
-        } catch (err) {
-          console.warn('[useWatchTogether] SyncPlay launch failed:', err);
-        }
-      }
-
+      // 1. Immediately broadcast and navigate so the UI responds in 0ms with no lobby delay
       if (gid && typeof window !== 'undefined') {
         try {
           const ch = new BroadcastChannel(`dinustream_sync_${gid}`);
@@ -337,6 +330,19 @@ export function useWatchTogether(groupId: string = 'cinema-suite-alpha') {
 
       if (movieId && gid) {
         onLaunch?.(movieId, gid);
+      }
+
+      // 2. Perform backend SyncPlay registration in the background
+      if (!DEMO && movieId) {
+        void (async () => {
+          try {
+            await syncPlay.setIgnoreWait(true).catch(() => {});
+            await lobby.queueItems([movieId]);
+            await lobby.play();
+          } catch (err) {
+            console.warn('[useWatchTogether] SyncPlay launch failed:', err);
+          }
+        })();
       }
     },
     [group, lobby]

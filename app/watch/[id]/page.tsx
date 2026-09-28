@@ -84,23 +84,17 @@ function WatchContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /*
-    First-run gate:
-      checking -> brief transition while resolving stream metadata
-      ad       -> optional Dolby prelude
-      play     -> stream directly
+    Playback gate: default to 'play' so the player mounts instantly when media metadata resolves.
+    Background Drive -> SSD sync runs concurrently without holding up the video stream.
   */
-  const [gate, setGate] = useState<'checking' | 'ad' | 'play'>('checking');
+  const [gate, setGate] = useState<'checking' | 'ad' | 'play'>('play');
   const [isDolby, setIsDolby] = useState(false);
   const [isMovie, setIsMovie] = useState(false);
   const [syncFilename, setSyncFilename] = useState<string | null>(null);
 
-  // Background cache kick + unblock playback immediately so the user is never
-  // stuck on a dead caching screen.
+  // Background cache kick — warms NVMe cache in background while streaming starts immediately.
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_DEMO_MODE === '1') {
-      setGate('play');
-      return;
-    }
+    if (process.env.NEXT_PUBLIC_DEMO_MODE === '1') return;
     if (loading) return;
     let cancelled = false;
     (async () => {
@@ -115,11 +109,8 @@ function WatchContent() {
 
         // Kick the background Drive -> SSD copy so the file is cached on NVMe
         if (filename) void startSync(filename, isMovie ? 'movie' : 'show').catch(() => {});
-
-        // Allow immediate playback via Jellyfin's streaming pipeline
-        if (!cancelled) setGate('play');
       } catch {
-        if (!cancelled) setGate('play');
+        /* background sync failure should never stop playback */
       }
     })();
     return () => {

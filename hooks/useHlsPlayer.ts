@@ -119,8 +119,11 @@ export function useHlsPlayer({ src, method, videoRef, onFatalError }: UseHlsPlay
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
+          startFragPrefetch: true,
           backBufferLength: 30,
           maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          highBufferWatchdogPeriod: 2,
           xhrSetup: (xhr) => {
             xhr.withCredentials = true;
           },
