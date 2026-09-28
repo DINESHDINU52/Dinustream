@@ -15,22 +15,25 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { fetchRandomDolbyAd } from '@/lib/jellyfin/queries';
+import { getSyncStatus } from '@/lib/api/syncManager';
 import { usePlaybackSession } from '@/hooks/usePlaybackSession';
 import { useHlsPlayer } from '@/hooks/useHlsPlayer';
 import { SkipForward, Volume2, VolumeX, HardDriveDownload, Loader2 } from 'lucide-react';
 
 export interface DolbyAdOverlayProps {
   media: MediaItem;
+  filename: string | null;
   /** Called when the ad finishes, is skipped, or cannot play. */
   onComplete: () => void;
 }
 
-export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
+export function DolbyAdOverlay({ media, filename, onComplete }: DolbyAdOverlayProps) {
   const [adItemId, setAdItemId] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
   const [muted, setMuted] = useState(true);
   const [progress, setProgress] = useState(0);
   const [started, setStarted] = useState(false);
+  const [cacheReady, setCacheReady] = useState(!filename);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const finishedRef = useRef(false);
@@ -76,6 +79,25 @@ export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
     };
   }, [finish]);
 
+  // Keep the preshow on screen until the cache finishes, but never treat a
+  // failed sync as a reason to trap the viewer.
+  useEffect(() => {
+    if (!filename || cacheReady) return;
+    let cancelled = false;
+    const check = async () => {
+      const status = await getSyncStatus(filename).catch(() => null);
+      if (!cancelled && status && (status.state === 'ready' || status.percentage >= 100 || status.state === 'error')) {
+        setCacheReady(true);
+      }
+    };
+    void check();
+    const timer = setInterval(() => void check(), 1200);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [filename, cacheReady]);
+
   // If stream negotiation fails outright, don't strand the viewer.
   useEffect(() => {
     if (resolved && adItemId && session.resolveError) finish();
@@ -116,7 +138,16 @@ export function DolbyAdOverlay({ media, onComplete }: DolbyAdOverlayProps) {
             const v = e.currentTarget;
             if (v.duration) setProgress((v.currentTime / v.duration) * 100);
           }}
-          onEnded={finish}
+           onEnded={() => {
+             if (cacheReady) finish();
+             else {
+               videoRef.current?.pause();
+               if (videoRef.current) {
+                 videoRef.current.currentTime = 0;
+                 void videoRef.current.play().catch(() => {});
+               }
+             }
+           }}
           onError={finish}
         />
       ) : (

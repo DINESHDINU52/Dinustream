@@ -127,9 +127,10 @@ export function buildDeviceProfile(options?: {
   if (caps.eac3) directAudio.push('eac3');
   if (caps.flac) directAudio.push('flac');
 
-  const directVideo = ['h264', 'vp8', 'vp9'];
-  if (caps.hevc) directVideo.push('hevc', 'h265');
-  if (caps.av1) directVideo.push('av1');
+  // Keep the web path conservative. Some browsers report HEVC support but can
+  // decode only its audio track, resulting in sound with a frozen/black frame.
+  // Jellyfin will transcode unsupported sources to H.264/AAC below.
+  const directVideo = ['h264'];
 
   return {
     Name: 'DinuStream Web',
@@ -164,8 +165,8 @@ export function buildDeviceProfile(options?: {
       {
         Container: 'ts',
         Type: 'Video',
-        VideoCodec: caps.hevc ? 'copy,h264,hevc' : 'copy,h264',
-        AudioCodec: 'copy,aac,mp3',
+        VideoCodec: 'h264',
+        AudioCodec: 'aac',
         Protocol: 'hls',
         Context: 'Streaming',
         MaxAudioChannels: String(maxAudioChannels),
@@ -175,8 +176,8 @@ export function buildDeviceProfile(options?: {
       {
         Container: 'mp4',
         Type: 'Video',
-        VideoCodec: caps.hevc ? 'copy,h264,hevc' : 'copy,h264',
-        AudioCodec: 'copy,aac,mp3',
+        VideoCodec: 'h264',
+        AudioCodec: 'aac',
         Protocol: 'hls',
         Context: 'Streaming',
         MaxAudioChannels: String(maxAudioChannels),

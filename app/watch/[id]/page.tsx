@@ -8,7 +8,7 @@ import { MediaItem, Episode, Season } from '@/types/cinema';
 import { fetchRawItem, fetchEpisodes, fetchItemFilename, isDolbyItem } from '@/lib/jellyfin/queries';
 import { mapToMediaItem, mapToEpisode } from '@/lib/jellyfin/mappers';
 import { startSync, getSyncStatus } from '@/lib/api/syncManager';
-import { CacheAndPlayOverlay } from '@/components/sync/CacheAndPlayOverlay';
+import { DolbyAdOverlay } from '@/components/sync/DolbyAdOverlay';
 import { Loader2, AlertTriangle, HardDriveDownload, CheckCircle2 } from 'lucide-react';
 
 function groupEpisodes(episodes: Episode[]): Season[] {
@@ -87,7 +87,7 @@ function WatchContent() {
     Playback gate: default to 'play' so the player mounts instantly when media metadata resolves.
     Background Drive -> SSD sync runs concurrently without holding up the video stream.
   */
-  const [gate, setGate] = useState<'checking' | 'ad' | 'play'>('play');
+  const [gate, setGate] = useState<'checking' | 'ad' | 'play'>('checking');
   const [isDolby, setIsDolby] = useState(false);
   const [isMovie, setIsMovie] = useState(false);
   const [syncFilename, setSyncFilename] = useState<string | null>(null);
@@ -107,8 +107,17 @@ function WatchContent() {
         if (cancelled) return;
         setSyncFilename(filename);
 
-        // Kick the background Drive -> SSD copy so the file is cached on NVMe
+        // Kick the Drive -> SSD copy before showing the Dolby preshow.
         if (filename) void startSync(filename, isMovie ? 'movie' : 'show').catch(() => {});
+
+        if (isMovie && !isWatchParty && filename) {
+          const status = await getSyncStatus(filename).catch(() => null);
+          if (!cancelled && !(status?.state === 'ready' || status?.percentage >= 100)) {
+            setGate('ad');
+            return;
+          }
+        }
+        if (!cancelled) setGate('play');
       } catch {
         /* background sync failure should never stop playback */
       }
@@ -233,12 +242,7 @@ function WatchContent() {
   // Python daemon pulls the movie from Drive to SSD. Skip is always available.
   if (gate === 'ad') {
     return (
-      <CacheAndPlayOverlay
-        media={media}
-        filename={syncFilename}
-        onReady={() => setGate('play')}
-        onClose={() => setGate('play')}
-      />
+      <DolbyAdOverlay media={media} filename={syncFilename} onComplete={() => setGate('play')} />
     );
   }
 
