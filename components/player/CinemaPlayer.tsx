@@ -417,16 +417,23 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
       const clamped = Math.min(duration, Math.max(0, targetSeconds));
       if (videoRef.current) {
         const diff = Math.abs(videoRef.current.currentTime - clamped);
-        if (diff > 0.5) {
+        // Only hard-seek on substantial manual jumps (> 2.5s) to avoid buffer stalls
+        if (diff > 2.5) {
           videoRef.current.currentTime = clamped;
           setCurrentTime(clamped);
+        } else if (diff > 0.5) {
+          // Micro-drift: gently adjust playbackRate to converge smoothly without re-buffering
+          videoRef.current.playbackRate = videoRef.current.currentTime < clamped ? 1.05 : 0.95;
+          setTimeout(() => {
+            if (videoRef.current) videoRef.current.playbackRate = 1.0;
+          }, 1500);
         }
       } else {
         setCurrentTime(clamped);
       }
       setTimeout(() => {
         isApplyingRemoteSync.current = false;
-      }, 400);
+      }, 500);
     },
     onRemoteSkipSegment: (_type, targetSeconds) => {
       isApplyingRemoteSync.current = true;
@@ -720,25 +727,16 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
         }
       }
       notifyProgress(video.currentTime, video.paused);
-      if (isGroupSync) {
-        updateParticipantProgress(video.currentTime, video.paused ? 'PAUSED' : 'PLAYING');
-      }
     };
 
     const handleWaiting = () => {
       setIsBuffering(true);
-      if (isGroupSync) {
-        updateParticipantProgress(video.currentTime, 'BUFFERING');
-      }
     };
 
     const handlePlaying = () => {
       setIsBuffering(false);
       setIsPlaying(true);
       notifyStarted(video.currentTime);
-      if (isGroupSync) {
-        updateParticipantProgress(video.currentTime, 'PLAYING');
-      }
     };
 
     const handleCanPlay = () => {
@@ -756,9 +754,6 @@ export const CinemaPlayer: React.FC<CinemaPlayerProps> = ({
     const handlePause = () => {
       setIsPlaying(false);
       notifyProgress(video.currentTime, true);
-      if (isGroupSync) {
-        updateParticipantProgress(video.currentTime, 'PAUSED');
-      }
     };
 
     const handleLoadedMetadata = () => {

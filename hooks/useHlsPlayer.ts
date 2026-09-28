@@ -121,9 +121,12 @@ export function useHlsPlayer({ src, method, videoRef, onFatalError }: UseHlsPlay
           lowLatencyMode: false,
           startFragPrefetch: true,
           backBufferLength: 30,
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-          highBufferWatchdogPeriod: 2,
+          maxBufferLength: 60,
+          maxMaxBufferLength: 120,
+          maxBufferSize: 60 * 1000 * 1000,
+          fragLoadingMaxRetry: 6,
+          manifestLoadingMaxRetry: 6,
+          levelLoadingMaxRetry: 6,
           xhrSetup: (xhr) => {
             xhr.withCredentials = true;
           },
