@@ -16,6 +16,7 @@ import { motion } from 'framer-motion';
 import { MediaItem } from '@/types/cinema';
 import { fetchRandomDolbyAd } from '@/lib/jellyfin/queries';
 import { getSyncStatus } from '@/lib/api/syncManager';
+import type { SyncStatusResponse } from '@/lib/api/syncManager';
 import { usePlaybackSession } from '@/hooks/usePlaybackSession';
 import { useHlsPlayer } from '@/hooks/useHlsPlayer';
 import { SkipForward, Volume2, VolumeX, HardDriveDownload, Loader2 } from 'lucide-react';
@@ -34,6 +35,7 @@ export function DolbyAdOverlay({ media, filename, onComplete }: DolbyAdOverlayPr
   const [progress, setProgress] = useState(0);
   const [started, setStarted] = useState(false);
   const [cacheReady, setCacheReady] = useState(!filename);
+  const [cacheStatus, setCacheStatus] = useState<SyncStatusResponse | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const finishedRef = useRef(false);
@@ -86,8 +88,11 @@ export function DolbyAdOverlay({ media, filename, onComplete }: DolbyAdOverlayPr
     let cancelled = false;
     const check = async () => {
       const status = await getSyncStatus(filename).catch(() => null);
-      if (!cancelled && status && (status.state === 'ready' || status.percentage >= 100 || status.state === 'error')) {
-        setCacheReady(true);
+      if (!cancelled && status) {
+        setCacheStatus(status);
+        if (status.state === 'ready' || status.percentage >= 100 || status.state === 'error') {
+          setCacheReady(true);
+        }
       }
     };
     void check();
@@ -191,6 +196,25 @@ export function DolbyAdOverlay({ media, filename, onComplete }: DolbyAdOverlayPr
             <HardDriveDownload className="h-3.5 w-3.5 text-sky-400" />
             Pulling from Drive to SSD for instant playback…
           </p>
+          {!cacheReady && cacheStatus && (
+            <div className="mx-auto w-full max-w-md space-y-1.5 text-left">
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-[width] duration-500"
+                  style={{ width: `${Math.min(100, Math.max(0, cacheStatus.percentage))}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[11px] font-mono text-slate-400">
+                <span>{Math.round(cacheStatus.percentage)}% cached</span>
+                <span>
+                  {cacheStatus.speedFormatted !== '—' ? `${cacheStatus.speedFormatted}` : ''}
+                  {cacheStatus.etaFormatted !== '0s' && cacheStatus.etaFormatted !== '—'
+                    ? ` • ${cacheStatus.etaFormatted} left`
+                    : ''}
+                </span>
+              </div>
+            </div>
+          )}
           {showVideo && !started && (
             <p className="flex items-center justify-center gap-2 text-xs text-slate-400">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-400" />
