@@ -56,16 +56,17 @@ function readCookie(name: string): string {
 }
 
 function buildSocketUrl(): string | null {
-  const secure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  if (typeof window === 'undefined') return null;
+  const secure = window.location.protocol === 'https:';
   const proto = secure ? 'wss' : 'ws';
 
-  if (process.env.NODE_ENV === 'production') {
-    const host = typeof window !== 'undefined' ? window.location.host : 'localhost';
-    return `${proto}://${host}/jellyfin/socket`;
+  // In production or when accessed via domain / reverse proxy:
+  const isLocalDevPort = window.location.port === '3000' || window.location.port === '3001';
+  if (process.env.NODE_ENV === 'production' || !isLocalDevPort) {
+    return `${proto}://${window.location.host}/jellyfin/socket`;
   }
 
-  // Dev fallback: direct + ApiKey. If there's no key yet (not logged in), we
-  // decline to connect rather than spam failed WebSocket errors.
+  // Dev fallback: direct + ApiKey
   const apiKey = readCookie(JELLYFIN_API_KEY_COOKIE);
   if (!apiKey) {
     if (!warnedMissingApiKey) {
@@ -75,8 +76,9 @@ function buildSocketUrl(): string | null {
     return null;
   }
   const server = getServerUrl();
-  const host = server.replace(/^https?:\/\//, '');
-  return `${proto}://${host}/socket?ApiKey=${encodeURIComponent(apiKey)}`;
+  const host = server.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const path = host.endsWith('/jellyfin') ? '/socket' : '/jellyfin/socket';
+  return `${proto}://${host}${path}?ApiKey=${encodeURIComponent(apiKey)}`;
 }
 
 function dispatch(message: SyncPlaySocketMessage) {

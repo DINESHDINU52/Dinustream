@@ -121,6 +121,9 @@ export function useHlsPlayer({ src, method, videoRef, onFatalError }: UseHlsPlay
           lowLatencyMode: false,
           backBufferLength: 30,
           maxBufferLength: 30,
+          xhrSetup: (xhr) => {
+            xhr.withCredentials = true;
+          },
         });
         hlsRef.current = hls;
         hls.attachMedia(video);

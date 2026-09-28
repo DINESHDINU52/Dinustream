@@ -8,7 +8,7 @@ import { MediaItem, Episode, Season } from '@/types/cinema';
 import { fetchRawItem, fetchEpisodes, fetchItemFilename, isDolbyItem } from '@/lib/jellyfin/queries';
 import { mapToMediaItem, mapToEpisode } from '@/lib/jellyfin/mappers';
 import { startSync, getSyncStatus } from '@/lib/api/syncManager';
-import { DolbyAdOverlay } from '@/components/sync/DolbyAdOverlay';
+import { CacheAndPlayOverlay } from '@/components/sync/CacheAndPlayOverlay';
 import { Loader2, AlertTriangle, HardDriveDownload, CheckCircle2 } from 'lucide-react';
 
 function groupEpisodes(episodes: Episode[]): Season[] {
@@ -69,14 +69,11 @@ function WatchContent() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isGroupSync = searchParams.get('sync') === 'true';
-  const groupId = searchParams.get('group') || 'group-movie-night';
-  /*
-    `?sync=true` is appended to *every* normal movie play (see playItem), so it
-    cannot mean "watch party". A real party carries a `room`/`group` invite param.
-    Only that should suppress the first-run ad — an ad mid-party would desync it.
-  */
-  const isWatchParty = searchParams.has('room') || searchParams.has('group');
+  const roomParam = searchParams.get('room');
+  const groupParam = searchParams.get('group');
+  const isWatchParty = Boolean(roomParam || groupParam);
+  const isGroupSync = isWatchParty && searchParams.get('sync') === 'true';
+  const groupId = roomParam || groupParam || '';
 
   const [media, setMedia] = useState<MediaItem | null>(null);
   const [episode, setEpisode] = useState<Episode | undefined>();
@@ -88,58 +85,39 @@ function WatchContent() {
   const [error, setError] = useState<string | null>(null);
   /*
     First-run gate:
-      checking -> we're deciding whether this title is already on the SSD
-      ad       -> not cached yet: play a random Dolby clip fully while the
-                  Python daemon pulls it from Drive to SSD
-      play     -> cached / Dolby / group sync / non-movie: go straight in
+      checking -> brief transition while resolving stream metadata
+      ad       -> optional Dolby prelude
+      play     -> stream directly
   */
   const [gate, setGate] = useState<'checking' | 'ad' | 'play'>('checking');
   const [isDolby, setIsDolby] = useState(false);
   const [isMovie, setIsMovie] = useState(false);
   const [syncFilename, setSyncFilename] = useState<string | null>(null);
 
-  // Decide the first-run gate for the *movie* being opened:
-  //  - already on NVMe (or a permanent Dolby title) -> straight to playback
-  //  - otherwise -> kick the Drive->SSD copy and play a Dolby ad meanwhile.
-  // Episodes and group (watch-party) playback always skip the ad.
+  // Background cache kick + unblock playback immediately so the user is never
+  // stuck on a dead caching screen.
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_DEMO_MODE === '1') {
       setGate('play');
       return;
     }
-    if (loading) return; // wait until we know whether this item is a movie
+    if (loading) return;
     let cancelled = false;
     (async () => {
       try {
         const dolby = await isDolbyItem(id).catch(() => false);
         if (cancelled) return;
         setIsDolby(dolby);
-        if (dolby) {
-          setGate('play');
-          return;
-        }
 
         const filename = await fetchItemFilename(id).catch(() => null);
         if (cancelled) return;
         setSyncFilename(filename);
-        // Kick the background Drive -> SSD copy regardless of the ad path, so
-        // the Dolby overlay can cover the complete background copy.
+
+        // Kick the background Drive -> SSD copy so the file is cached on NVMe
         if (filename) void startSync(filename, isMovie ? 'movie' : 'show').catch(() => {});
 
-        if (!isMovie || isWatchParty || !filename) {
-          setGate('play');
-          return;
-        }
-
-        // Already cached? Skip the ad and play instantly.
-        const status = await getSyncStatus(filename).catch(() => null);
-        if (cancelled) return;
-        if (status && (status.state === 'ready' || status.percentage >= 100)) {
-          setGate('play');
-          return;
-        }
-        // Keep the Dolby video visible until the background copy is complete.
-        setGate('ad');
+        // Allow immediate playback via Jellyfin's streaming pipeline
+        if (!cancelled) setGate('play');
       } catch {
         if (!cancelled) setGate('play');
       }
@@ -264,7 +242,12 @@ function WatchContent() {
   // Python daemon pulls the movie from Drive to SSD. Skip is always available.
   if (gate === 'ad') {
     return (
-      <DolbyAdOverlay media={media} filename={syncFilename} onComplete={() => setGate('play')} />
+      <CacheAndPlayOverlay
+        media={media}
+        filename={syncFilename}
+        onReady={() => setGate('play')}
+        onClose={() => setGate('play')}
+      />
     );
   }
 

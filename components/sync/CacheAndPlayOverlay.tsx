@@ -45,14 +45,6 @@ export function CacheAndPlayOverlay({ media, filename, onReady, onClose }: Cache
         if (cancelled) return;
         setStatus(s);
         setPollError(null);
-        // Do not leave the viewer trapped at 0% when rclone cannot find or
-        // read the source file. Playback can still continue from Jellyfin's
-        // remote mount while the error is reported in the sync logs.
-        if (s.state === 'error') {
-          if (timer) clearInterval(timer);
-          onReadyRef.current();
-          return;
-        }
         if (s.state === 'ready' || s.percentage >= 100) {
           if (timer) clearInterval(timer);
           onReadyRef.current();

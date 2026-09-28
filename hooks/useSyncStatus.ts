@@ -4,15 +4,15 @@ import { useEffect, useState, useCallback } from 'react';
 import { SyncStatusResponse, getSyncStatus, startSync } from '@/lib/api/syncManager';
 
 /** Poll the Python Sync Manager for a file's cache state. */
-export function useSyncStatus(filename: string | null) {
+export function useSyncStatus(filename: string | null, kind: 'movie' | 'show' = 'movie') {
   const [status, setStatus] = useState<SyncStatusResponse | null>(null);
   const [syncing, setSyncing] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!filename) return;
-    const s = await getSyncStatus(filename);
+    const s = await getSyncStatus(filename, kind);
     setStatus(s);
-  }, [filename]);
+  }, [filename, kind]);
 
   useEffect(() => {
     if (!filename) {
@@ -27,10 +27,10 @@ export function useSyncStatus(filename: string | null) {
   const triggerSync = useCallback(async () => {
     if (!filename) return;
     setSyncing(true);
-    await startSync(filename);
+    await startSync(filename, kind);
     await refresh();
     setSyncing(false);
-  }, [filename, refresh]);
+  }, [filename, kind, refresh]);
 
   return { status, triggerSync, syncing, refresh };
 }

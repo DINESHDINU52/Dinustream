@@ -309,10 +309,38 @@ export function useWatchTogether(groupId: string = 'cinema-suite-alpha') {
     });
   }, []);
 
-  const startSyncAndPlay = useCallback(() => {
-    setGroup((prev) => (prev ? { ...prev, isPlaying: true, state: 'PLAYING' as const } : null));
-    if (!DEMO) void lobby.play();
-  }, [lobby]);
+  const startSyncAndPlay = useCallback(
+    async (onLaunch?: (movieId: string, groupId: string) => void) => {
+      setGroup((prev) => (prev ? { ...prev, isPlaying: true, state: 'PLAYING' as const } : null));
+
+      const movieId = group?.selectedMovie?.id || group?.queue?.[0]?.movieId;
+      const gid = group?.id;
+
+      if (!DEMO && movieId) {
+        try {
+          await lobby.queueItems([movieId]);
+          await lobby.play();
+        } catch (err) {
+          console.warn('[useWatchTogether] SyncPlay launch failed:', err);
+        }
+      }
+
+      if (gid && typeof window !== 'undefined') {
+        try {
+          const ch = new BroadcastChannel(`dinustream_sync_${gid}`);
+          ch.postMessage({ type: 'SCREENING_LAUNCH', movieId, groupId: gid });
+          setTimeout(() => ch.close(), 500);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (movieId && gid) {
+        onLaunch?.(movieId, gid);
+      }
+    },
+    [group, lobby]
+  );
 
   const resetGroup = useCallback(async () => {
     setGroup(null);

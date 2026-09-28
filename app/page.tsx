@@ -222,9 +222,9 @@ export default function CinemaHomePage() {
     }
   };
 
-  /** Series open their episode list; movies go straight to synchronized playback. */
+  /** Series open their episode list; movies go straight to playback. */
   const playItem = (item: MediaItem) => {
-    router.push(item.type === 'series' ? `/series/${item.id}` : `/watch/${item.id}?sync=true`);
+    router.push(item.type === 'series' ? `/series/${item.id}` : `/watch/${item.id}`);
   };
 
   const chipCount: Record<string, number | undefined> = {
@@ -469,7 +469,7 @@ export default function CinemaHomePage() {
                 subtitle={`Pick up right where ${profile.name} left off with frame-accurate sync.`}
                 items={continueWatching}
                 type="continue"
-                onPlay={(item) => router.push(`/watch/${item.id}?sync=true`)}
+                onPlay={(item) => router.push(`/watch/${item.id}`)}
               />
             </div>
           )}

@@ -201,7 +201,16 @@ export function usePlaybackSession(options: UsePlaybackSessionOptions): UsePlayb
           method = 'hls';
           directPlay = false;
           transcodingUrl = mediaSource.TranscodingUrl;
-          url = getJellyfinBaseUrl() + mediaSource.TranscodingUrl;
+          if (
+            mediaSource.TranscodingUrl.startsWith('http://') ||
+            mediaSource.TranscodingUrl.startsWith('https://')
+          ) {
+            url = mediaSource.TranscodingUrl;
+          } else if (mediaSource.TranscodingUrl.startsWith(getJellyfinBaseUrl())) {
+            url = mediaSource.TranscodingUrl;
+          } else {
+            url = jfUrl(mediaSource.TranscodingUrl);
+          }
         } else {
           method = 'direct';
           directPlay = Boolean(mediaSource.SupportsDirectPlay);

@@ -36,31 +36,63 @@ export function useSyncPlayback(options: UseSyncPlaybackOptions = {}) {
   callbacksRef.current = options;
 
   // -------------------------------------------------------------------------
+  // Session registration: join the SyncPlay group on Jellyfin backend.
+  // Without this, Jellyfin returns 403 Forbidden for all commands and does
+  // not route outbound events to this session.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!options.enabled || DEMO || !options.groupId) return;
+    const gid = options.groupId;
+    let active = true;
+
+    syncPlay.joinGroup(gid).catch((err) => {
+      console.warn('[useSyncPlayback] Failed to join SyncPlay group:', err);
+    });
+
+    const pingInterval = setInterval(() => {
+      if (active) {
+        syncPlay.ping(20).catch(() => {});
+      }
+    }, 10_000);
+
+    return () => {
+      active = false;
+      clearInterval(pingInterval);
+    };
+  }, [options.enabled, options.groupId]);
+
+  // -------------------------------------------------------------------------
   // Realtime: receive SyncPlay commands from the server and drive the player.
   // -------------------------------------------------------------------------
   useEffect(() => {
     const { enabled, groupId } = options;
     if (!enabled || DEMO) return;
 
+    const normGid = groupId ? groupId.toLowerCase().replace(/-/g, '') : '';
+
     const unsubscribe = subscribeSyncPlay((message: SyncPlaySocketMessage) => {
       if (message.MessageType !== 'SyncPlayCommand') return;
       const data = message.Data as { GroupId?: string; Command?: string; PositionTicks?: number | null };
       if (!data || !data.Command) return;
-      if (groupId && data.GroupId && data.GroupId !== groupId) return;
+      if (normGid && data.GroupId) {
+        const msgGid = String(data.GroupId).toLowerCase().replace(/-/g, '');
+        if (msgGid !== normGid) return;
+      }
 
       const cb = callbacksRef.current;
       switch (data.Command) {
         case 'Unpause':
+          setIsPlaying(true);
           cb.onRemotePlay?.('dinu', 1);
           break;
         case 'Pause':
-          cb.onRemotePause?.('dinu', 1);
-          break;
         case 'Stop':
+          setIsPlaying(false);
           cb.onRemotePause?.('dinu', 1);
           break;
         case 'Seek': {
           const seconds = (data.PositionTicks ?? 0) / TICKS_PER_SECOND;
+          setCurrentTime(seconds);
           cb.onRemoteSeek?.(seconds, 'dinu', 1);
           break;
         }
@@ -71,6 +103,45 @@ export function useSyncPlayback(options: UseSyncPlaybackOptions = {}) {
 
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options.enabled, options.groupId]);
+
+  // -------------------------------------------------------------------------
+  // Local dual-sync: same-browser tabs communicate via BroadcastChannel
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!options.enabled || !options.groupId || typeof window === 'undefined') return;
+    const gid = options.groupId;
+    try {
+      const channel = new BroadcastChannel(`dinustream_playback_${gid}`);
+      channel.onmessage = (event) => {
+        if (!event.data || typeof event.data !== 'object') return;
+        const cb = callbacksRef.current;
+        switch (event.data.type) {
+          case 'PLAY':
+            setIsPlaying(true);
+            cb.onRemotePlay?.(event.data.sender || 'dinu', 1);
+            break;
+          case 'PAUSE':
+            setIsPlaying(false);
+            cb.onRemotePause?.(event.data.sender || 'dinu', 1);
+            break;
+          case 'SEEK':
+            setCurrentTime(event.data.position || 0);
+            cb.onRemoteSeek?.(event.data.position || 0, event.data.sender || 'dinu', 1);
+            break;
+          case 'REACTION':
+            if (event.data.reaction) {
+              setReactions((prev) => [...prev.slice(-15), event.data.reaction]);
+            }
+            break;
+        }
+      };
+      return () => {
+        channel.close();
+      };
+    } catch {
+      /* ignore */
+    }
   }, [options.enabled, options.groupId]);
 
   const session: SyncPlaybackSession = useMemo(
@@ -93,49 +164,105 @@ export function useSyncPlayback(options: UseSyncPlaybackOptions = {}) {
     [options.groupId, options.groupName, options.mediaId, options.episodeId, isPlaying, currentTime]
   );
 
-  const sendReaction = useCallback((emoji: QuickReactionEmoji) => {
-    const reaction: FloatingReactionEvent = {
-      id: 'reaction-' + Date.now() + '-' + Math.random(),
-      emoji,
-      senderId: 'dinu',
-      senderName: 'Dinu',
-      timestamp: Date.now(),
-      xOffsetPercent: Math.random() * 80 + 10,
-    };
-    setReactions((prev) => [...prev.slice(-15), reaction]);
-  }, []);
-
-  // --- Outbound commands → SyncPlay REST ---
-  const broadcastPlay = useCallback(
-    (_time?: number) => {
-      setIsPlaying(true);
-      if (!DEMO && options.enabled) syncPlay.play().catch(() => {});
+  const sendReaction = useCallback(
+    (emoji: QuickReactionEmoji) => {
+      const reaction: FloatingReactionEvent = {
+        id: 'reaction-' + Date.now() + '-' + Math.random(),
+        emoji,
+        senderId: 'dinu',
+        senderName: 'Dinu',
+        timestamp: Date.now(),
+        xOffsetPercent: Math.random() * 80 + 10,
+      };
+      setReactions((prev) => [...prev.slice(-15), reaction]);
+      if (options.groupId && typeof window !== 'undefined') {
+        try {
+          const ch = new BroadcastChannel(`dinustream_playback_${options.groupId}`);
+          ch.postMessage({ type: 'REACTION', reaction });
+          setTimeout(() => ch.close(), 100);
+        } catch {
+          /* ignore */
+        }
+      }
     },
-    [options.enabled]
+    [options.groupId]
+  );
+
+  // --- Outbound commands → SyncPlay REST + BroadcastChannel ---
+  const broadcastPlay = useCallback(
+    (time?: number) => {
+      setIsPlaying(true);
+      if (!DEMO && options.enabled && options.groupId) {
+        syncPlay.play().catch(() => {});
+      }
+      if (options.groupId && typeof window !== 'undefined') {
+        try {
+          const ch = new BroadcastChannel(`dinustream_playback_${options.groupId}`);
+          ch.postMessage({ type: 'PLAY', position: time, sender: 'dinu' });
+          setTimeout(() => ch.close(), 100);
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [options.enabled, options.groupId]
   );
 
   const broadcastPause = useCallback(
-    (_time?: number) => {
+    (time?: number) => {
       setIsPlaying(false);
-      if (!DEMO && options.enabled) syncPlay.pause().catch(() => {});
+      if (!DEMO && options.enabled && options.groupId) {
+        syncPlay.pause().catch(() => {});
+      }
+      if (options.groupId && typeof window !== 'undefined') {
+        try {
+          const ch = new BroadcastChannel(`dinustream_playback_${options.groupId}`);
+          ch.postMessage({ type: 'PAUSE', position: time, sender: 'dinu' });
+          setTimeout(() => ch.close(), 100);
+        } catch {
+          /* ignore */
+        }
+      }
     },
-    [options.enabled]
+    [options.enabled, options.groupId]
   );
 
   const broadcastSeek = useCallback(
     (target: number) => {
       setCurrentTime(target);
-      if (!DEMO && options.enabled) syncPlay.seek(target * TICKS_PER_SECOND).catch(() => {});
+      if (!DEMO && options.enabled && options.groupId) {
+        syncPlay.seek(target * TICKS_PER_SECOND).catch(() => {});
+      }
+      if (options.groupId && typeof window !== 'undefined') {
+        try {
+          const ch = new BroadcastChannel(`dinustream_playback_${options.groupId}`);
+          ch.postMessage({ type: 'SEEK', position: target, sender: 'dinu' });
+          setTimeout(() => ch.close(), 100);
+        } catch {
+          /* ignore */
+        }
+      }
     },
-    [options.enabled]
+    [options.enabled, options.groupId]
   );
 
   const broadcastSkipSegment = useCallback(
     (_type: 'INTRO' | 'RECAP' | 'OUTRO', target: number) => {
       setCurrentTime(target);
-      if (!DEMO && options.enabled) syncPlay.seek(target * TICKS_PER_SECOND).catch(() => {});
+      if (!DEMO && options.enabled && options.groupId) {
+        syncPlay.seek(target * TICKS_PER_SECOND).catch(() => {});
+      }
+      if (options.groupId && typeof window !== 'undefined') {
+        try {
+          const ch = new BroadcastChannel(`dinustream_playback_${options.groupId}`);
+          ch.postMessage({ type: 'SEEK', position: target, sender: 'dinu' });
+          setTimeout(() => ch.close(), 100);
+        } catch {
+          /* ignore */
+        }
+      }
     },
-    [options.enabled]
+    [options.enabled, options.groupId]
   );
 
   const performDriftCorrection = useCallback((_target: number) => {}, []);

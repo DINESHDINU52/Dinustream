@@ -87,13 +87,19 @@ export function WatchGroupLobby({
   const currentProfileName =
     group.participants.find((p) => p.id === currentUserId || p.name === currentUserId)?.name ?? String(currentUserId);
 
-  // Live reactions across tabs (local delight; Jellyfin has no reaction channel).
+  // Live reactions & screening launch across tabs
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       const channel = new BroadcastChannel(`dinustream_sync_${group.id}`);
       channelRef.current = channel;
       channel.onmessage = (event) => {
+        if (event.data?.type === 'SCREENING_LAUNCH' && event.data?.movieId) {
+          router.push(
+            `/watch/${event.data.movieId}?room=${encodeURIComponent(group.id)}&group=${encodeURIComponent(group.id)}&sync=true`
+          );
+          return;
+        }
         if (event.data?.type !== 'REACTION') return;
         const reaction: FloatingReactionEvent = {
           id: event.data.id || `rx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -115,7 +121,16 @@ export function WatchGroupLobby({
     } catch {
       /* BroadcastChannel unsupported */
     }
-  }, [group.id]);
+  }, [group.id, router]);
+
+  // Auto-route participants when the room state turns PLAYING with a selected movie
+  useEffect(() => {
+    if ((group.state === 'PLAYING' || group.isPlaying) && group.selectedMovie?.id) {
+      router.push(
+        `/watch/${group.selectedMovie.id}?room=${encodeURIComponent(group.id)}&group=${encodeURIComponent(group.id)}&sync=true`
+      );
+    }
+  }, [group.state, group.isPlaying, group.selectedMovie, group.id, router]);
 
   const handleBroadcastReaction = useCallback(
     (emoji: QuickReactionEmoji) => {
