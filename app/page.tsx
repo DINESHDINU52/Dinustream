@@ -96,13 +96,25 @@ export default function CinemaHomePage() {
         mediaService.getNewlyAddedMovies(20, forceRefresh),
       ]);
 
-      setFeaturedItems(featured || []);
-      setMovies(moviesData || []);
-      setSeries(seriesData || []);
-      setRecentlyAdded(recentData || []);
-      setNewlyAddedMovies(
-        newMoviesData && newMoviesData.length > 0 ? newMoviesData : (moviesData || []).slice(0, 10)
-      );
+      const finalFeatured = featured || [];
+      const finalMovies = moviesData || [];
+      const finalSeries = seriesData || [];
+      const finalRecent = recentData || [];
+      const finalNewMovies =
+        newMoviesData && newMoviesData.length > 0 ? newMoviesData : (moviesData || []).slice(0, 10);
+
+      setFeaturedItems(finalFeatured);
+      setMovies(finalMovies);
+      setSeries(finalSeries);
+      setRecentlyAdded(finalRecent);
+      setNewlyAddedMovies(finalNewMovies);
+
+      // Cache the real library data so page transitions/refreshes never flash mock data
+      mediaCache.set('featured_7', finalFeatured);
+      mediaCache.set('movies_50', finalMovies);
+      mediaCache.set('series_20', finalSeries);
+      mediaCache.set('recent_20', finalRecent);
+      mediaCache.set('new_movies_20', finalNewMovies);
 
       if (forceRefresh) {
         setToastInfo({

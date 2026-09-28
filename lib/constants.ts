@@ -14,7 +14,7 @@ export const PROFILES: Record<string, UserProfile> = {
     glowColor: 'rgba(229, 9, 20, 0.45)',
     favoriteGenre: 'Sci-Fi, IMAX & 4K Epics',
     isOnline: true,
-    statusMessage: 'Ready for Dune: Part Two in 4K Atmos',
+    statusMessage: 'Ready for 4K Dolby Atmos Screening',
     pinProtected: true,
     isGuest: false,
   },

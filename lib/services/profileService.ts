@@ -1,7 +1,6 @@
 import { ContinueWatchingItem, UserProfile, UserProfileId } from '@/types/cinema';
 import { UserPreferences, UserProfileData, WatchHistoryItem } from '@/types/profile';
 import { PROFILES } from '@/lib/constants';
-import { MOCK_CONTINUE_WATCHING, MOCK_MEDIA_ITEMS } from '@/lib/mock-data';
 
 const ACTIVE_KEY = 'dinustream_ui_active_profile';
 const STORE_KEY = 'dinustream_ui_profiles_store';
@@ -17,50 +16,36 @@ const DEFAULT_SETTINGS: UserPreferences = {
   reducedMotion: false,
 };
 
+const MOCK_IDS = new Set([
+  'dune-part-two',
+  'oppenheimer',
+  'interstellar',
+  'blade-runner-2049',
+  'spider-man-across-the-spider-verse',
+  'cyberpunk-edgerunners',
+]);
+
+function sanitizeProfile(data: UserProfileData): UserProfileData {
+  return {
+    ...data,
+    continueWatching: (data.continueWatching || []).filter((item) => !MOCK_IDS.has(item.id)),
+    myList: (data.myList || []).filter((id) => !MOCK_IDS.has(id)),
+  };
+}
+
 function getStore(): Record<string, UserProfileData> {
-  if (typeof window === 'undefined') {
-    return {
-      dinu: {
-        profile: PROFILES.dinu,
-        continueWatching: MOCK_CONTINUE_WATCHING,
-        myList: ['dune-part-two', 'oppenheimer'],
-        watchHistory: [],
-        settings: { ...DEFAULT_SETTINGS },
-      },
-      kanmani: {
-        profile: PROFILES.kanmani,
-        continueWatching: MOCK_CONTINUE_WATCHING.slice(0, 2),
-        myList: ['spider-man-across-the-spider-verse'],
-        watchHistory: [],
-        settings: { ...DEFAULT_SETTINGS },
-      },
-      guest: {
-        profile: PROFILES.guest,
-        continueWatching: [],
-        myList: [],
-        watchHistory: [],
-        settings: { ...DEFAULT_SETTINGS },
-      },
-    };
-  }
-
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-
-  const initial: Record<string, UserProfileData> = {
+  const blankStore: Record<string, UserProfileData> = {
     dinu: {
       profile: PROFILES.dinu,
-      continueWatching: MOCK_CONTINUE_WATCHING,
-      myList: ['dune-part-two', 'oppenheimer'],
+      continueWatching: [],
+      myList: [],
       watchHistory: [],
       settings: { ...DEFAULT_SETTINGS },
     },
     kanmani: {
       profile: PROFILES.kanmani,
-      continueWatching: MOCK_CONTINUE_WATCHING.slice(0, 2),
-      myList: ['spider-man-across-the-spider-verse'],
+      continueWatching: [],
+      myList: [],
       watchHistory: [],
       settings: { ...DEFAULT_SETTINGS },
     },
@@ -72,10 +57,29 @@ function getStore(): Record<string, UserProfileData> {
       settings: { ...DEFAULT_SETTINGS },
     },
   };
+
+  if (typeof window === 'undefined') {
+    return blankStore;
+  }
+
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(initial));
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const cleaned: Record<string, UserProfileData> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          cleaned[k] = sanitizeProfile(v as UserProfileData);
+        }
+        return cleaned;
+      }
+    }
   } catch (e) {}
-  return initial;
+
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(blankStore));
+  } catch (e) {}
+  return blankStore;
 }
 
 function saveStore(store: Record<string, UserProfileData>) {
@@ -109,7 +113,7 @@ export const profileService = {
     return (
       store[pid] || {
         profile: PROFILES[pid] || PROFILES.dinu,
-        continueWatching: MOCK_CONTINUE_WATCHING,
+        continueWatching: [],
         myList: [],
         watchHistory: [],
         settings: { ...DEFAULT_SETTINGS },
@@ -197,7 +201,7 @@ export const profileService = {
   getContinueWatching(id?: UserProfileId): ContinueWatchingItem[] {
     const pid = id || this.getActiveProfileId();
     const store = getStore();
-    return store[pid]?.continueWatching || MOCK_CONTINUE_WATCHING;
+    return store[pid]?.continueWatching || [];
   },
 
   updateContinueWatching(id: UserProfileId, item: ContinueWatchingItem): void {

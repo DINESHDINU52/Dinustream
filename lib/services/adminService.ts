@@ -7,9 +7,59 @@ import {
   SSDStorageMetrics,
   ActivePlaybackTelemetry,
 } from '@/types/admin';
-import { MOCK_ADMIN_TELEMETRY } from '@/lib/mock-data';
 
-let telemetryStore: AdminTelemetrySummary = { ...MOCK_ADMIN_TELEMETRY };
+const CLEAN_TELEMETRY: AdminTelemetrySummary = {
+  jellyfin: {
+    name: 'Jellyfin Media Server',
+    status: 'healthy',
+    latencyMs: 12,
+    uptime: '99.98%',
+    details: 'Direct Stream active • Hardware NVENC Transcode Ready',
+    endpoint: 'https://jellyfin.local:8096',
+    lastChecked: 'Just now',
+  },
+  syncManager: {
+    name: 'Sync Engine & Cache Daemon',
+    status: 'healthy',
+    latencyMs: 3,
+    uptime: '100%',
+    details: 'Zero buffer starvation • NVMe cache ready',
+    lastChecked: 'Just now',
+  },
+  googleDrive: {
+    name: 'High-Speed Cloud Vault',
+    status: 'healthy',
+    latencyMs: 24,
+    uptime: '99.9%',
+    details: 'API Quota: OK • Multi-thread Rclone ready',
+    lastChecked: 'Just now',
+  },
+  firebase: {
+    name: 'Realtime Sync & Presence',
+    status: 'healthy',
+    latencyMs: 8,
+    uptime: '100%',
+    details: 'WebSocket active • Authoritative server clock',
+    lastChecked: 'Just now',
+  },
+  storage: {
+    totalGb: 200,
+    usedGb: 0,
+    freeGb: 200,
+    usedPercentage: 0,
+    breakdown: {
+      moviesGb: 0,
+      seriesGb: 0,
+      spatialAudioGb: 0,
+      systemBufferGb: 0,
+    },
+  },
+  cachedMedia: [],
+  syncJobs: [],
+  livePlayback: null,
+};
+
+let telemetryStore: AdminTelemetrySummary = { ...CLEAN_TELEMETRY };
 const subscribers = new Set<() => void>();
 
 function notify() {
@@ -39,6 +89,16 @@ export const adminService = {
 
   async getLivePlayback(): Promise<ActivePlaybackTelemetry | null> {
     return telemetryStore.livePlayback;
+  },
+
+  setLivePlayback(playback: ActivePlaybackTelemetry | null): void {
+    telemetryStore.livePlayback = playback;
+    notify();
+  },
+
+  updateStorage(storage: SSDStorageMetrics): void {
+    telemetryStore.storage = storage;
+    notify();
   },
 
   removeCachedMedia(id: string): void {

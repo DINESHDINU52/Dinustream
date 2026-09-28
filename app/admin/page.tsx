@@ -10,12 +10,68 @@ import { SyncJobsTracker } from '@/components/admin/SyncJobsTracker';
 import { LivePlaybackTelemetry } from '@/components/admin/LivePlaybackTelemetry';
 import { adminService } from '@/lib/services/adminService';
 import { listCachedFiles, deleteCachedFile } from '@/lib/api/syncManager';
-import { AdminTelemetrySummary, CachedMedia } from '@/types/admin';
+import { jfFetch } from '@/lib/jellyfin/client';
+import { AdminTelemetrySummary, CachedMedia, ActivePlaybackTelemetry } from '@/types/admin';
 import { ShieldCheck, RefreshCw, Server } from 'lucide-react';
 
-/** "Dune.2021.2160p.mkv" -> "Dune 2021 2160p". */
+/** Format filename into human-readable title. */
 function prettyTitle(filename: string): string {
   return filename.replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[._]+/g, ' ').trim() || filename;
+}
+
+async function fetchLivePlayback(): Promise<ActivePlaybackTelemetry | null> {
+  try {
+    const sessions = await jfFetch<any[]>('/Sessions');
+    if (!Array.isArray(sessions)) return null;
+    const active = sessions.find((s) => s?.NowPlayingItem && s?.PlayState);
+    if (!active || !active.NowPlayingItem) return null;
+
+    const item = active.NowPlayingItem;
+    const TICKS = 10_000_000;
+    const curSec = Math.round((active.PlayState?.PositionTicks || 0) / TICKS);
+    const durSec = Math.round((item.RunTimeTicks || 0) / TICKS) || 1;
+    const bitrateMbps = active.TranscodingInfo?.Bitrate
+      ? Number((active.TranscodingInfo.Bitrate / 1_000_000).toFixed(1))
+      : 24.5;
+    const width = active.TranscodingInfo?.Width || 3840;
+    const height = active.TranscodingInfo?.Height || 2160;
+
+    const userName = (active.UserName || 'dinu').toLowerCase();
+    const participantId: 'dinu' | 'kanmani' = userName.includes('kanmani') ? 'kanmani' : 'dinu';
+    const participantName = participantId === 'kanmani' ? 'Kanmani' : 'Dinu';
+    const avatarUrl =
+      participantId === 'kanmani'
+        ? '/avatars/characters/spider-man.svg'
+        : '/avatars/characters/iron-man.svg';
+
+    return {
+      groupId: active.Id || 'live-screening',
+      groupName: `${active.UserName || 'Viewer'}'s Screening`,
+      mediaId: item.Id,
+      title: item.Name,
+      posterUrl: `/jellyfin/Items/${item.Id}/Images/Primary`,
+      currentTimeSec: curSec,
+      durationSec: durSec,
+      isPlaying: !active.PlayState?.IsPaused,
+      bitrateMbps,
+      resolution: `${width}x${height}`,
+      audioTrack: 'Direct Stream (Atmos / 5.1)',
+      syncPlaySynced: true,
+      participants: [
+        {
+          id: participantId,
+          name: participantName,
+          avatarUrl,
+          status: active.PlayState?.IsPaused ? 'paused' : 'watching',
+          currentPositionSec: curSec,
+          driftMs: 0,
+          device: active.DeviceName || 'Browser / Cinema Display',
+        },
+      ],
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -59,8 +115,40 @@ export default function AdminPage() {
   const spinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadCache = useCallback(async () => {
-    const files = await listCachedFiles();
-    setCachedMedia(files.map(toCachedMedia));
+    const [files, live] = await Promise.all([
+      listCachedFiles(),
+      fetchLivePlayback(),
+    ]);
+
+    const mapped = files.map(toCachedMedia);
+    setCachedMedia(mapped);
+
+    const totalBytes = files.reduce((acc, f) => acc + (f.sizeBytes || 0), 0);
+    const usedGb = Number((totalBytes / 1e9).toFixed(1));
+    const totalGb = 200;
+    const freeGb = Math.max(0, Number((totalGb - usedGb).toFixed(1)));
+    const usedPercentage = Number(((usedGb / totalGb) * 100).toFixed(1));
+
+    const moviesBytes = files.filter((f) => f.kind === 'movie').reduce((acc, f) => acc + (f.sizeBytes || 0), 0);
+    const seriesBytes = files.filter((f) => f.kind === 'show').reduce((acc, f) => acc + (f.sizeBytes || 0), 0);
+
+    setTelemetry((prev) => ({
+      ...prev,
+      storage: {
+        totalGb,
+        usedGb,
+        freeGb,
+        usedPercentage,
+        breakdown: {
+          moviesGb: Number((moviesBytes / 1e9).toFixed(1)),
+          seriesGb: Number((seriesBytes / 1e9).toFixed(1)),
+          spatialAudioGb: 0,
+          systemBufferGb: 0,
+        },
+      },
+      cachedMedia: mapped,
+      livePlayback: live,
+    }));
   }, []);
 
   useEffect(() => {
@@ -81,7 +169,6 @@ export default function AdminPage() {
 
   const handleManualRefresh = () => {
     setIsRefreshing(true);
-    setTelemetry(adminService.getTelemetry());
     void loadCache();
     if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
     spinTimerRef.current = setTimeout(() => setIsRefreshing(false), 600);

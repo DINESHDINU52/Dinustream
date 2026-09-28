@@ -145,7 +145,7 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search movies, series, episodes, music (e.g. Dune, DC, Hans Zimmer)..."
+            placeholder="Search movies, series, episodes, music (e.g. Oppenheimer, Interstellar)..."
             id="global-search-input"
             className="w-full bg-transparent text-sm sm:text-base text-white placeholder-slate-500 outline-none font-medium selection:bg-sky-500/30"
           />
